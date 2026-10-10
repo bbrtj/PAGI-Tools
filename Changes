@@ -167,6 +167,10 @@
     started after the response (the connection's on_complete), and no
     longer uses IO::Async; a Cookbook recipe, "Work After the Response",
     explains the choice.
+  - PAGI::SSE and PAGI::WebSocket document handlers and disconnects:
+    strict sends for messages that must arrive, try_send_* for setup steps
+    and broadcasts, start, accept and keepalive safe once the client has
+    gone. The sse-dashboard example drops its is_closed checks.
 
   [Breaking -- see UPGRADING.md]
   - PAGI::App::Router and PAGI::Endpoint::Router are removed; PAGI::Routing

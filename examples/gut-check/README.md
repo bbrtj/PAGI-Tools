@@ -167,9 +167,15 @@ Most important first, as found; each now says what PAGI-Tools 0.003000 does.
    now drives the event loop in all of them, so 05 is tested in-process like the
    others.
 
-10. **SSE handler ceremony.** Real SSE handlers check `return if
-    $sse->is_closed;` after nearly every `await` during setup (see
-    `examples/sse-dashboard`). Still open.
+10. **SSE handler ceremony.** Real SSE handlers checked `return if
+    $sse->is_closed;` after nearly every `await` during setup. Changed, in
+    the docs and examples: `start` and `keepalive` were already safe once the
+    client has gone, and a setup step that may find it gone uses the
+    best-effort send, `return unless await $sse->try_send_event(...)`. Strict
+    sends stay for messages that must arrive, and stay loud.
+    `examples/sse-dashboard` now reads that way (see "HANDLERS AND
+    DISCONNECTS" in `PAGI::SSE`). 03 keeps one `is_closed` check: it is not a
+    send guard, but keeps a watcher that already left from being registered.
 
 11. **There was no "after the response" task.** A correction: the connection's
     `on_complete` already runs work once the response has been delivered, in

@@ -1362,6 +1362,40 @@ You may make one and drop the returned Future -- the usual shape of a
 broadcast loop. The send keeps itself alive until it settles, so it still goes
 out even when it must wait behind a send already in flight.
 
+=head1 HANDLERS AND DISCONNECTS
+
+A client can leave at any C<await>, and nothing interrupts your handler when
+it does. Choose the send by what a lost message means:
+
+=over 4
+
+=item * B<Strict sends for messages that must arrive.> C<send>, C<send_json>,
+C<send_event> and C<send_comment> die once the connection is closing or
+closed, and the failure is reported like any other. Use them where a send
+that cannot happen is an error worth hearing about.
+
+=item * B<C<try_send*> for setup steps and broadcasts.> They return false
+instead of dying once the connection is closing or closed, so a handler can
+stop quietly when its client has gone:
+
+    await $sse->start;
+    await $sse->keepalive(25);
+    return unless await $sse->try_send_event(event => 'welcome', data => $state);
+
+A broadcast to many streams uses them for the same reason: a departed client
+cannot end the loop. A true return is not a delivery receipt (see
+L</"try_send, try_send_json, try_send_comment, try_send_event">), so cleanup
+still belongs in C<on_close>.
+
+=item * B<C<start> and C<keepalive> are already safe.> Once the connection is
+closing or closed, or after L</decline>, they return without sending, so they
+need no check.
+
+=item * B<Cleanup belongs in C<on_close>.> Register it before the first
+C<await>; it runs however the connection ends.
+
+=back
+
 =head1 KEEPALIVE
 
 =head2 keepalive

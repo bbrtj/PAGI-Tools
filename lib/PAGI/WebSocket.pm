@@ -1293,7 +1293,8 @@ methods), the callbacks are quiet no-ops and C<is_writable> is true.
     await $ws->send_bytes("\x00\x01\x02");
     await $ws->send_json({ action => 'greet', name => 'Alice' });
 
-Send a message. Dies if connection is closed.
+Send a message. Dies if the connection is closing or closed; see
+L</HANDLERS AND DISCONNECTS>.
 
 B<Sends go out one at a time.> PAGI::Spec::Www requires that an application
 not issue a send before the previous one has resolved. This object does that
@@ -1583,6 +1584,39 @@ Callback-based event loop (alternative to C<each_*> iteration).
 Runs until disconnect, dispatching messages to registered callbacks.
 Errors in callbacks are passed to error handlers and, on connection-backed
 scopes, propagate so the server can determine the terminal outcome.
+
+=head1 HANDLERS AND DISCONNECTS
+
+A client can leave at any C<await>, and nothing interrupts your handler when
+it does. Choose the send by what a lost message means:
+
+=over 4
+
+=item * B<Strict sends for messages that must arrive.> C<send_text>,
+C<send_bytes> and C<send_json> die once the connection is closing or closed,
+and the failure is reported like any other. They also die after a refused
+handshake: that is a programming error, not a disconnect.
+
+=item * B<C<try_send_*> for setup steps and broadcasts.> They return false
+instead of dying unless the socket is connected, so a handler can stop
+quietly when its client has gone:
+
+    await $ws->accept;
+    return unless await $ws->try_send_json({ type => 'welcome' });
+
+Before C<accept> they return false just as quietly, so while developing use
+the strict sends. A broadcast to many sockets uses C<try_send_*> for the same
+reason as setup: a departed client cannot end the loop. A true return is not
+a delivery receipt (see L</"try_send_text, try_send_bytes, try_send_json">),
+so cleanup still belongs in C<on_close>.
+
+=item * B<C<accept> and C<keepalive> are already safe.> Once the connection
+is closing or closed, or a refusal has started, they return without sending.
+
+=item * B<Cleanup belongs in C<on_close>.> Register it before the first
+C<await>; it runs however the connection ends.
+
+=back
 
 =head1 KEEPALIVE
 

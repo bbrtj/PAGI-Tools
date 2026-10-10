@@ -33,13 +33,14 @@ async sub events {
     my ($sse) = @_;
     $sse->on_close(sub { ... });     # registered before any awaited I/O
 
+    # The client may leave at any await: start and keepalive do nothing once
+    # it has gone, and try_send_event returns false.
     await $sse->start;
-    return if $sse->is_closed;       # the client may leave at any await
     await $sse->keepalive(25);       # protocol keepalive for proxies
-    await $sse->send_event(event => 'connected', data => {...});
+    return unless await $sse->try_send_event(event => 'connected', data => {...});
 
     if (my $last_id = $sse->last_event_id) {    # a reconnect
-        await $sse->send_event(event => 'reconnected', data => {...});
+        return unless await $sse->try_send_event(event => 'reconnected', data => {...});
     }
 
     ...subscribe...
