@@ -153,9 +153,8 @@ subtest 'WebSocket and SSE state use Request\'s strict optional contract' => sub
     # Before: raw hashref or fabricated empty hashref
     # my $db = $websocket->state->{db};
 
-    # After: the same strict optional contract as Request
-    my $websocket_state = $websocket->state
-        or die 'lifespan state required';
+    # After: the same strict facade as Request
+    my $websocket_state = $websocket->state;
     my $websocket_db = $websocket_state->get('db');
 
     isa_ok($websocket_state, 'PAGI::State');
@@ -179,8 +178,7 @@ subtest 'WebSocket and SSE state use Request\'s strict optional contract' => sub
         \&receive_empty,
         \&send_empty,
     );
-    my $sse_state = $sse->state
-        or die 'lifespan state required';
+    my $sse_state = $sse->state;
 
     isa_ok($sse_state, 'PAGI::State');
     is($sse_state->get('db'), 'SSE fixture-db',

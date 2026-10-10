@@ -1103,7 +1103,7 @@ Shortcut for C<< query_param($name, raw => 1) >>.
 
 Returns a L<PAGI::State> facade for application state injected by
 L<PAGI::Lifespan>. Without application state the facade is empty, and its
-C<get> dies naming the likely cause (did lifespan startup run?
+C<get> and C<data> die naming the likely cause (did lifespan startup run?
 L<PAGI::Test::Client> needs C<< lifespan => 1 >>); present state must be a
 hashref or this method croaks. The facade is read-oriented and catches
 missing top-level keys through C<get>.

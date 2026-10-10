@@ -717,7 +717,9 @@ before starting the stream. `decline` is new in this release; `deny` took
 ## Breaking: direct WebSocket and SSE `state` matches Request
 
 `PAGI::Request`, `PAGI::WebSocket` and `PAGI::SSE` share one application-state
-contract: `state` returns a `PAGI::State` or `undef`.
+contract: `state` always returns a `PAGI::State`. Without application state it
+is an empty facade whose `get` and `data` die naming the likely cause (did
+lifespan startup run?); `app_state($scope)` still returns `undef` there.
 
 **Before:** WebSocket and SSE returned a raw hashref (or an empty one).
 
@@ -728,9 +730,7 @@ my $db = $websocket->state->{db};
 **After:**
 
 ```perl
-my $state = $websocket->state
-    or die 'lifespan state required';
-my $db = $state->get('db');
+my $db = $websocket->state->get('db');
 ```
 
 A temporary `%{}` overload still allows `->state->{db}` (with a warning), but

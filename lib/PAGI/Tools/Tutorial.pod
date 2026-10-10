@@ -531,7 +531,7 @@ spelled C<state (...)> parses as Perl's C<state> declarator instead of calling a
 imported function. C<< $request->state >>, C<< $websocket->state >>, and
 C<< $sse->state >> are equivalent direct forms: each returns the same strict
 L<PAGI::State> facade, empty when the scope has no application state (its
-C<get> then names the likely cause). C<< app_state($scope) >> remains the
+C<get> and C<data> then name the likely cause). C<< app_state($scope) >> remains the
 raw-PAGI/protocol-neutral spelling, and returns C<undef> without state.
 C<get> catches missing-key typos and C<data> is the explicit escape hatch for
 code that requires a real HashRef.

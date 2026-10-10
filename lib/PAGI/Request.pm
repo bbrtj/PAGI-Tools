@@ -1298,8 +1298,9 @@ and handlers. Construct from a Request object or scope:
 Returns a L<PAGI::State> facade over the application state injected by
 L<PAGI::Lifespan>. This contains worker-level shared state like database
 connections and configuration. Always returns a facade: without application
-state it is empty, and its C<get> dies naming the likely cause (did lifespan
-startup run? L<PAGI::Test::Client> needs C<< lifespan => 1 >>). Croaks if a
+state it is empty, and its C<get> and C<data> die naming the likely cause
+(did lifespan startup run? L<PAGI::Test::Client> needs C<< lifespan => 1 >>).
+Croaks if a
 present state value is not a hashref. C<has_state> tells whether state exists.
 
 Repeated calls are not guaranteed to return the same facade object.
