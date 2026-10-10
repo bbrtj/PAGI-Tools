@@ -71,6 +71,18 @@ subtest 'error_context is exported only on request' => sub {
     package Local::NoImport;
     use PAGI::ErrorContext;
     ::ok(!Local::NoImport->can('error_context'), 'nothing is exported by default');
+
+    package Local::AllImport;
+    PAGI::ErrorContext->import(':all');
+    ::ok(Local::AllImport->can('error_context'), 'lowercase :all exports error_context');
+
+    my $uppercase_tag_error;
+    {
+        local $SIG{__WARN__} = sub { };
+        $uppercase_tag_error = ::dies { PAGI::ErrorContext->import(':ALL') };
+    }
+    ::like($uppercase_tag_error, qr/"?:?ALL"? is not defined|Can't continue/i,
+        'uppercase :ALL is not an export tag');
 };
 
 done_testing;

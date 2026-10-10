@@ -8,7 +8,7 @@ use PAGI::Utils::Scope ();
 
 our @EXPORT = ();
 our @EXPORT_OK = qw(session);
-our %EXPORT_TAGS = (ALL => [@EXPORT_OK]);
+our %EXPORT_TAGS = (all => [@EXPORT_OK]);
 
 =head1 NAME
 
@@ -116,7 +116,7 @@ for keys that may or may not be present.
 
 Constructs a session facade from exactly one unblessed scope hashref or object
 with a C<scope> method. This function is an opt-in named export and is also
-available through the uppercase C<:ALL> tag. Nothing is exported by default.
+available through the C<:all> tag. Nothing is exported by default.
 
 =cut
 

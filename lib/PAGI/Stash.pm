@@ -7,7 +7,7 @@ use PAGI::Utils::Scope ();
 
 our @EXPORT = ();
 our @EXPORT_OK = qw(stash);
-our %EXPORT_TAGS = (ALL => [@EXPORT_OK]);
+our %EXPORT_TAGS = (all => [@EXPORT_OK]);
 
 =head1 NAME
 
@@ -56,7 +56,7 @@ middleware, handlers, and protocol objects processing the same request.
 
 Constructs a stash facade from exactly one unblessed scope hashref or object
 with a C<scope> method. This function is an opt-in named export and is also
-available through the uppercase C<:ALL> tag. Nothing is exported by default.
+available through the C<:all> tag. Nothing is exported by default.
 
 =cut
 

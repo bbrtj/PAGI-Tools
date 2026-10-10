@@ -10,7 +10,7 @@ use PAGI::Utils::Scope ();
 
 our @EXPORT = ();
 our @EXPORT_OK = qw(error_context);
-our %EXPORT_TAGS = (ALL => [@EXPORT_OK]);
+our %EXPORT_TAGS = (all => [@EXPORT_OK]);
 
 # Reason phrases for 400-599 from the IANA HTTP Status Code Registry
 # (RFC 9110 and the RFCs it lists).

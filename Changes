@@ -145,6 +145,9 @@
     data die naming the likely cause (lifespan startup did not run;
     PAGI::Test::Client needs lifespan => 1). app_state and
     PAGI::State->new still return undef there.
+  - Every module's tag for all its exports is :all. Compose, CSRF,
+    Transport, Stash, Session, ErrorContext, Routing, State and
+    Routing::URL used :ALL, which no release shipped.
 
   [Breaking -- see UPGRADING.md]
   - PAGI::App::Router and PAGI::Endpoint::Router are removed; PAGI::Routing

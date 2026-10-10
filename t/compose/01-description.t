@@ -15,7 +15,7 @@ use PAGI::Routing qw(router route middleware);
 }
 {
     package ComposeAllImports;
-    use PAGI::Compose qw(:ALL);
+    use PAGI::Compose qw(:all);
 }
 {
     package ComposeConfiguredMiddleware;
@@ -24,19 +24,19 @@ use PAGI::Routing qw(router route middleware);
 }
 
 ok(!ComposeNoImports->can('compose'), 'nothing exports by default');
-ok(ComposeAllImports->can('compose'), 'uppercase ALL exports compose');
+ok(ComposeAllImports->can('compose'), 'lowercase all exports compose');
 
-my ($lowercase_error, $lowercase_stderr);
+my ($uppercase_error, $uppercase_stderr);
 {
     local *STDERR;
-    open STDERR, '>', \$lowercase_stderr or die "capture STDERR: $!";
-    $lowercase_error = dies {
-        eval q{ package ComposeBadImports; use PAGI::Compose qw(:all); 1 }
+    open STDERR, '>', \$uppercase_stderr or die "capture STDERR: $!";
+    $uppercase_error = dies {
+        eval q{ package ComposeBadImports; use PAGI::Compose qw(:ALL); 1 }
             or die $@;
     };
 }
-like($lowercase_error, qr/Can't continue after import errors/, 'lowercase tag is rejected');
-like($lowercase_stderr, qr/"all" is not defined/, 'diagnostic names the invalid tag');
+like($uppercase_error, qr/Can't continue after import errors/, 'uppercase tag is rejected');
+like($uppercase_stderr, qr/"ALL" is not defined/, 'diagnostic names the invalid tag');
 
 my $leaf = route('/' => sub {
     return PAGI::Response::Text->new('home');

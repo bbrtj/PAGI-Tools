@@ -9,7 +9,7 @@ use overload '%{}' => '_deprecated_hashref', fallback => 1;
 
 our @EXPORT = ();
 our @EXPORT_OK = qw(app_state);
-our %EXPORT_TAGS = (ALL => [@EXPORT_OK]);
+our %EXPORT_TAGS = (all => [@EXPORT_OK]);
 
 my %WARNED;
 
@@ -73,7 +73,7 @@ startup and change what is inside it.
 Constructs a state facade from an unblessed scope hashref or an object with a
 C<scope> method, including L<PAGI::Request>, L<PAGI::WebSocket>, and
 L<PAGI::SSE>. This function is an opt-in named export and is also available
-through the uppercase C<:ALL> tag. Nothing is exported by default.
+through the C<:all> tag. Nothing is exported by default.
 
 =cut
 

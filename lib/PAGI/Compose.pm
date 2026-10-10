@@ -8,7 +8,7 @@ use PAGI::Routing::Middleware ();
 use PAGI::Routing::Router ();
 
 our @EXPORT_OK = qw(compose);
-our %EXPORT_TAGS = (ALL => [@EXPORT_OK]);
+our %EXPORT_TAGS = (all => [@EXPORT_OK]);
 
 sub compose {
     return __PACKAGE__->new(@_);
@@ -166,12 +166,12 @@ remain supported alternatives.
 =head1 IMPORTS
 
 Nothing is exported by default. Import C<compose> explicitly or through the
-uppercase C<:ALL> tag:
+C<:all> tag:
 
     use PAGI::Compose qw(compose);
-    use PAGI::Compose qw(:ALL);
+    use PAGI::Compose qw(:all);
 
-There is no lowercase C<:all> alias.
+L<PAGI::Tools> also exports C<compose>.
 
 =head1 CONSTRUCTOR
 

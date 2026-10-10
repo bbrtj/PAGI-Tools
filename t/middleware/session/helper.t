@@ -20,7 +20,7 @@ my $named_imported = eval q{
 
 my $all_imported = eval q{
     package Local::Session::All;
-    PAGI::Session->import(':ALL');
+    PAGI::Session->import(':all');
     1;
 };
 
@@ -29,15 +29,15 @@ ok($no_default_imported && !Local::Session::NoDefault->can('session'),
 ok($named_imported && Local::Session::Named->can('session'),
     'session is available as a named export');
 ok($all_imported && Local::Session::All->can('session'),
-    'uppercase :ALL exports session');
+    'lowercase :all exports session');
 
-my $lowercase_tag_error;
+my $uppercase_tag_error;
 {
     local $SIG{__WARN__} = sub { };
-    $lowercase_tag_error = dies { PAGI::Session->import(':all') };
+    $uppercase_tag_error = dies { PAGI::Session->import(':ALL') };
 }
-like($lowercase_tag_error, qr/"?:all"? is not defined|Can't continue/i,
-    'lowercase :all is not an export tag');
+like($uppercase_tag_error, qr/"?:?ALL"? is not defined|Can't continue/i,
+    'uppercase :ALL is not an export tag');
 
 # ===================
 # set and get round-trip

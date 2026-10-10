@@ -9,7 +9,7 @@ our @EXPORT_OK = qw(router route websocket sse mount middleware request_response
 our %EXPORT_TAGS = (
     routes     => [qw(router route websocket sse mount)],
     middleware => [qw(middleware)],
-    ALL        => [@EXPORT_OK],
+    all        => [@EXPORT_OK],
 );
 
 sub router {
@@ -161,7 +161,7 @@ Nothing is exported by default.
 in C<:routes> because it adapts a handler into an app object rather than
 constructing a route-tree node.
 
-=item * Uppercase C<:ALL> exports all public functions. Lowercase C<:all> is invalid.
+=item * C<:all> exports all public functions.
 
 =back
 

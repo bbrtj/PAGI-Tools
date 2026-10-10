@@ -10,7 +10,7 @@ use PAGI::Utils::Scope ();
 
 our @EXPORT = ();
 our @EXPORT_OK = qw(url path_for url_for);
-our %EXPORT_TAGS = (ALL => [@EXPORT_OK]);
+our %EXPORT_TAGS = (all => [@EXPORT_OK]);
 
 =encoding UTF-8
 
@@ -49,7 +49,7 @@ supplies its request-local namespace, captures, root boundary, and scope.
 =head1 EXPORTS
 
 Nothing is exported by default. C<url>, C<path_for>, and C<url_for> are opt-in
-named exports and are all available through the uppercase C<:ALL> tag.
+named exports and are all available through the C<:all> tag.
 
 =head2 url
 

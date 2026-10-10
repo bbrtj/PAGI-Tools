@@ -9,7 +9,7 @@ use PAGI::Utils::Scope ();
 
 our @EXPORT = ();
 our @EXPORT_OK = qw(transport);
-our %EXPORT_TAGS = (ALL => [@EXPORT_OK]);
+our %EXPORT_TAGS = (all => [@EXPORT_OK]);
 
 =head1 NAME
 
@@ -45,7 +45,7 @@ calls.
 Returns C<undef> when the source has no transport handle. Otherwise constructs
 a facade from exactly one unblessed scope hashref or object with a C<scope>
 method. This function is an opt-in named export and is also available through
-the uppercase C<:ALL> tag. Nothing is exported by default.
+the C<:all> tag. Nothing is exported by default.
 
 =cut
 
