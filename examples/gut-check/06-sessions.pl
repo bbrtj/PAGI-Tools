@@ -13,8 +13,9 @@
 #
 # Two differences show up at once:
 # - Starlette's default session lives in a signed cookie (works across
-#   workers); PAGI's default lives in this process's memory, and the cookie
-#   store is a separate distribution (PAGI-Middleware-Session-Store-Cookie).
+#   workers); PAGI's default lives in this process's memory, says so in a
+#   warning at startup, and the cookie store is a separate distribution
+#   (PAGI-Middleware-Session-Store-Cookie).
 # - PAGI's get is strict, like State and Stash: $session->get('name') dies
 #   when 'name' was never set, to catch typos. Pass a default for optional
 #   keys.

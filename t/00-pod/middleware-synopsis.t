@@ -35,13 +35,20 @@ for my $name (@middleware) {
     subtest $name => sub {
         my $code = compose_form($name);
         like($code, qr/middleware\('\Q$name\E'/, 'the SYNOPSIS opens with the Compose form');
-        ok(no_warnings {
+        my $runs = sub {
             my $app = eval "package PAGITest::MiddlewareSynopsis::$name; $code; \$app";
             is($@, '', 'it runs as published');
             isa_ok($app, 'PAGI::Compose');
             ok(lives { $app->to_app }, 'building the application constructs the middleware')
                 or note($@);
-        }, 'without warnings');
+        };
+        # Session's SYNOPSIS uses the default store, which announces itself.
+        if ($name eq 'Session') {
+            like(warnings { $runs->() }, [qr/\APAGI::Middleware::Session: no store given/], 'the default store says so');
+        }
+        else {
+            ok(no_warnings { $runs->() }, 'without warnings');
+        }
     };
 }
 

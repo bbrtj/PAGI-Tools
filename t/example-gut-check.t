@@ -138,7 +138,9 @@ subtest '05: streaming' => sub {
 };
 
 subtest '06: sessions' => sub {
-    my $client = PAGI::Test::Client->new(app => load_app('06-sessions.pl'));
+    my $app = load_app('06-sessions.pl');
+    like(warning { $app->to_app }, qr/\APAGI::Middleware::Session: no store given/, 'the default store says so');
+    my $client = PAGI::Test::Client->new(app => $app);
 
     is($client->get('/visits')->json, { visits => 1, name => undef }, 'a first visit');
     is($client->get('/visits')->json, { visits => 2, name => undef }, 'counts with the cookie');

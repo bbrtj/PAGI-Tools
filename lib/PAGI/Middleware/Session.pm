@@ -11,6 +11,9 @@ use PAGI::Utils::Random qw(secure_random_bytes);
 
 our @EXPORT_OK = qw(session_state session_store);
 
+# Set once the default in-memory store has been announced in this process.
+my $warned_default_store = 0;
+
 sub session_state { return _build_named('session_state', 'State', @_) }
 sub session_store { return _build_named('session_store', 'Store', @_) }
 
@@ -179,7 +182,10 @@ see L</STATE CLASSES>.
 
 A L<PAGI::Middleware::Session::Store> object that implements async C<get($id)>,
 C<set($id, $data)>, and C<delete($id)>. If not provided, a
-L<PAGI::Middleware::Session::Store::Memory> instance is created.
+L<PAGI::Middleware::Session::Store::Memory> instance is created, and the first
+middleware built that way in a process warns that its sessions are kept in
+memory. Pass C<< store => session_store('Memory') >> to choose that store
+deliberately, without the warning.
 
 =back
 
@@ -448,6 +454,14 @@ sub _init {
     }
     PAGI::Utils::_reject_unknown_options('Session', $config,
         qw(expire secret state store));
+
+    # The fallback store suits development and a single worker only, so a
+    # middleware built with it says so, once per process.
+    warn "PAGI::Middleware::Session: no store given, so sessions are kept in "
+        . "this process's memory: lost on restart and not shared between "
+        . "workers. Fine for development; pass store => session_store(...) "
+        . "to choose one.\n"
+        if !$config->{store} && !$warned_default_store++;
 }
 
 sub wrap {

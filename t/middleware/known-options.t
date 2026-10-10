@@ -23,6 +23,11 @@ my @classes = qw(AccessLog Authentication ConditionalGet ContentLength ContentNe
     Maintenance MethodOverride RateLimit RequestId ReverseProxy Rewrite Runtime
     SecurityHeaders Session SSE::Retry Static TrustedHosts XSendfile);
 
+# Session's default store announces itself once per process; take that here
+# so the loop's output stays clean.
+require PAGI::Middleware::Session;
+like(warning { PAGI::Middleware::Session->new }, qr/\APAGI::Middleware::Session: no store given/, 'the Session default store says so');
+
 for my $name (@classes) {
     my $class = "PAGI::Middleware::$name";
     subtest $name => sub {

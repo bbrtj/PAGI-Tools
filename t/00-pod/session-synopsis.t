@@ -24,8 +24,16 @@ my $code = join "\n",
     grep { /\A[ \t]/ } split /\n{2,}/, ($section // '') =~ s/\A\n+//r;
 
 local $ENV{STORE_SECRET}   = 'another-test-secret-at-least-32-bytes!';
-my ($app, $production) = eval "package PAGITest::SessionSynopsis; $code; (\$app, \$production)";
-is($@, '', 'the SYNOPSIS compiles and runs as published');
+my ($app, $production, $error);
+like(
+    warnings {
+        ($app, $production) = eval "package PAGITest::SessionSynopsis; $code; (\$app, \$production)";
+        $error = $@;
+    },
+    [qr/\APAGI::Middleware::Session: no store given/],
+    'its default store says so',
+);
+is($error, '', 'the SYNOPSIS compiles and runs as published');
 
 for my $case ([default => $app], [production => $production]) {
     my ($name, $built) = @$case;

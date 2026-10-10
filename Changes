@@ -28,6 +28,9 @@
     PAGI::Request::BodyError (bad bodies answer 400 or 413).
   - Request charset: the Content-Type charset parameter, to decode a
     streamed body by (body_stream(decode => $req->charset // 'UTF-8')).
+  - Session warns, once per process, when it falls back to the in-memory
+    store because no store was given: those sessions are lost on restart
+    and not shared between workers.
   - WebSocket and SSE connection, as Request has: the scope's
     pagi.connection. Its on_end cleans up what a handler creates after the
     handshake, at once if the client has already gone.
