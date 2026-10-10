@@ -725,17 +725,35 @@ async sub each_bytes {
     return;
 }
 
+# A message that is not JSON goes to the caller's on_invalid_json, else to
+# handle_invalid_json. The loop ends once the connection is no longer
+# connected: after our Close the peer may still send data (RFC 6455), and
+# none of it reaches the callback.
 async sub each_json {
-    my ($self, $callback) = @_;
-
+    my ($self, $callback, %opts) = @_;
+    my $on_invalid = $opts{on_invalid_json};
     while (1) {
         my $text = await $self->receive_text;
         last unless defined $text;
-
-        my $data = JSON::MaybeXS::decode_json($text);
-        await $callback->($data);
+        my $data;
+        unless (eval { $data = JSON::MaybeXS::decode_json($text); 1 }) {
+            my $error = $@;
+            await Future->wrap($on_invalid
+                ? $on_invalid->($text, $error)
+                : $self->handle_invalid_json($text, $error));
+            last unless $self->is_connected;
+            next;
+        }
+        await Future->wrap($callback->($data));
+        last unless $self->is_connected;
     }
+    return;
+}
 
+# A client's invalid JSON is its error, not the server's: close with 1007.
+async sub handle_invalid_json {
+    my ($self, $text, $error) = @_;
+    await $self->close(1007, 'invalid JSON');
     return;
 }
 
@@ -1358,7 +1376,9 @@ Waits for specific frame type, skipping others. Returns undef on disconnect.
 
     my $data = await $ws->receive_json;
 
-Receives text frame and decodes as JSON. Dies on invalid JSON.
+Receives text frame and decodes as JSON. Dies on invalid JSON: the
+primitives raise, and the loop, C<each_json>, owns the policy for a client's
+bad JSON.
 
 =head1 ITERATION HELPERS
 
@@ -1378,6 +1398,60 @@ Receives text frame and decodes as JSON. Dies on invalid JSON.
 
 Loops until disconnect, calling callback for each message.
 Exceptions in callback propagate to caller.
+
+=head2 each_json and invalid JSON
+
+    await $ws->each_json(\&on_message);    # bad JSON: close 1007, return
+
+    await $ws->each_json(\&on_message, on_invalid_json => async sub {
+        my ($text, $error) = @_;
+        await $ws->send_json({ error => 'expected JSON' });    # and keep reading
+    });
+
+A message that is not JSON is the client's error, not the server's. Without
+C<on_invalid_json>, C<each_json> calls C<handle_invalid_json>, which closes
+the socket with 1007 C<invalid JSON>; the loop then ends and C<each_json>
+returns normally.
+
+C<on_invalid_json>, sync or async, receives C<($text, $error)> and replaces
+C<handle_invalid_json> for that call. To keep the default and add to it, call
+C<handle_invalid_json> inside it:
+
+    await $ws->each_json(\&on_message, on_invalid_json => async sub {
+        my ($text, $error) = @_;
+        $metrics->count('invalid_json');
+        await $ws->handle_invalid_json($text, $error);    # still close 1007
+    });
+
+A subclass overrides C<handle_invalid_json> instead.
+
+The loop ends as soon as the socket is no longer connected, checked after the
+invalid-JSON handler and after each callback: after our Close the peer may
+still send data (RFC 6455), and none of it reaches the callback. A handler or
+callback that dies propagates as an application error, which the client sees
+as 1011.
+
+C<$error> is the JSON backend's wording (Cpanel::JSON::XS, JSON::XS or
+JSON::PP): use it for diagnostics only; do not match on it or send it to the
+client. C<$text> can be as large as the largest message the server accepts,
+so do not log it raw. Under the default nothing is logged: watch for it in
+C<on_close>, which sees 1007, or with C<on_invalid_json>.
+
+C<receive_json> still dies on invalid JSON: primitives raise, loops own the
+policy.
+
+=head2 handle_invalid_json
+
+    package My::WebSocket;
+    use parent 'PAGI::WebSocket';
+
+    async sub handle_invalid_json {
+        my ($self, $text, $error) = @_;
+        await $self->send_json({ error => 'expected JSON' });
+    }
+
+What C<each_json> does with a message that is not JSON when the call passes no
+C<on_invalid_json>. The default closes the socket with 1007 C<invalid JSON>.
 
 =head1 EVENT CALLBACKS
 

@@ -189,7 +189,9 @@ explicitly choose the send method (C<send_json>, C<send_text>, C<send_bytes>).
 
 =item C<bytes> - Messages passed as raw bytes
 
-=item C<json> - Messages automatically decoded from JSON to Perl data structures
+=item C<json> - Messages automatically decoded from JSON to Perl data structures.
+A message that is not JSON closes the socket with 1007, as
+L<PAGI::WebSocket/"each_json and invalid JSON"> describes.
 
 =back
 
