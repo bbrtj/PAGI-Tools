@@ -26,6 +26,8 @@ right track. This is a record of how the shapes compare; it is not a bug hunt.
 | `04b-bundled-middleware` | the same jobs with Tools' own `Runtime` and `Maintenance` | same statuses and headers; the 503 body is the stock "Service Unavailable" | 19 (5) | (none shipped) |
 | `05-streaming` | slow NDJSON feed and a custom tab-separated format | identical | 34 (12) | 23 (5) |
 | `06-sessions` | visit counter, a name, and a typo'd key | identical | 26 (6) | 17 (5) |
+| `07-upload-relay` | relay an upload back, transform it chunk by chunk, checksum it | checksum identical; Starlette's relay and transform fail (see below) | 27 (6) | 22 (4) |
+| `08-negotiation` | one URL, HTML or JSON by `Accept` (q-values), else 406 | same for plain `Accept`s; with `text/html;q=0.9, application/json;q=0.5` PAGI serves HTML, the usual hand-written Starlette check serves JSON | 13 (5) | 12 (3) |
 
 Run any PAGI one with `pagi-server --app examples/gut-check/<file> --port 5000`.
 Run a Starlette one with `pip install starlette uvicorn itsdangerous`, then
@@ -42,6 +44,23 @@ Run a Starlette one with `pip install starlette uvicorn itsdangerous`, then
     `TestClient` buffers a response until it ends, so a request to an endless
     SSE stream never returns, and the SSE half of 03 cannot be tested in
     Starlette.
+  - **Streaming an upload straight back out (07).** PAGI relays a 4,000,001-byte
+    upload byte for byte (`pipe_from`) and transforms it chunk by chunk, under
+    `pagi-server` and in its test client. Starlette 1.7 can't: a
+    `StreamingResponse` that reads `request.stream()` returns 0 bytes (relay) or
+    hangs (transform), under uvicorn and in its TestClient. Its own disconnect
+    watcher reads `receive()` and takes the body (`starlette/responses.py`). The
+    checksum route, which reads the body before responding, matches on both
+    sides.
+  - **Content negotiation built in (08).** `$request->preferred_type('html',
+    'json')` honours quality values and returns the name you asked for.
+    Starlette ships no helper, and the usual hand-written header check picks
+    JSON for `text/html;q=0.9, application/json;q=0.5`.
+  - **Negotiated error pages, one line away.** Compose's default 404 is plain
+    text, exactly like Starlette's (checked with HTML, JSON and problem+json
+    `Accept`s). `http_default => not_found()` from `PAGI::Pages` serves an HTML
+    page to browsers and RFC 9457 `application/problem+json` to API clients.
+    Starlette has nothing comparable built in.
   - **Throwing the response itself (01).** With one small handler, a thrown
     `response('JSON', ...)` answers the request. Starlette can raise only
     `HTTPException`; raising a response object gives a 500 there (checked).
@@ -59,8 +78,8 @@ Run a Starlette one with `pip install starlette uvicorn itsdangerous`, then
   - **Strict session keys (06).** `get('nmae')` dies with "Available keys:
     name, visits"; Starlette's `session["nmae"]` is a bare `KeyError`. It's the
     same contract with a better message.
-- **Where PAGI is longer:** five of six pairs (only 03 is shorter), and it's
-  mostly imports. Each Perl package block repeats its `use` lines (19 in 02
+- **Where PAGI is longer:** seven of the eight pairs with a Starlette version
+  (only 03 is shorter; 08 is 13 lines against 12), and it's mostly imports. Each Perl package block repeats its `use` lines (19 in 02
   against Python's 5). Without imports, PAGI's logic is shorter for 02 (31
   against 39 lines) and 03 (29 against 41), and 2 to 8 lines longer for the
   rest. See finding 1.
@@ -94,6 +113,11 @@ Most important first.
    | `PAGI::WebSocket` | `query` only (no `query_param`) | `query_params` |
    | `PAGI::SSE` | `query_param` | `query_params` |
 
+   The deprecated short names on Request don't even map to the same shape:
+   `query()` becomes the single-value `query_param()`, `form()` becomes the
+   all-values `form_params()`, and `raw_query()`/`raw_form()` follow the same
+   split. WebSocket keeps `query` and `raw_query` as live methods.
+
 4. **The best-effort send families overlap.** WebSocket has `try_send_text`/
    `_bytes`/`_json` (never throws, returns a boolean) and
    `send_text_if_connected`/... (a silent no-op when closed). SSE has only the
@@ -112,9 +136,17 @@ Most important first.
    `$request->state` can be undef (hence `starlette-apples`' `or die`).
    Starlette uses `app.state.notes` on both sides.
 
-7. **Links are functions, not request methods.**
-   `path_for($request, 'note', {id => 1})`, imported from
-   `PAGI::Routing::URL`, against Starlette's `request.url_for('note', id=1)`.
+7. **Links: a function or a facade, never a request method, and names inside
+   mounts use a slash.**
+   - **The calls:** it's `path_for($request, 'note', {id => 1})`, or
+     `url($request)->path_for(...)`, against Starlette's
+     `request.url_for('note', id=1)`. `url_for` takes a params hashref in one
+     call form and named `query =>`/`fragment =>` options in the other.
+   - **Names inside a mount:** a route named `note` inside a mount named `api`
+     is `api/note` (checked: `note`, `api.note` and `api:note` are "unknown
+     route name"). Starlette spells it `api:note` (checked). The slash reads
+     like a path, and `PAGI::Routing::URL`'s docs never show it; I found it by
+     trying spellings.
 
 8. **Route constraints name a Perl function inside a string.**
    `'/notes/{id:&Int}'` works because `use Types::Standard qw(Int)` put `Int`
