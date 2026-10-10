@@ -49,9 +49,11 @@ Run a Starlette one with `pip install starlette uvicorn itsdangerous`, then
     hub serve three protocols in 35 lines. The Starlette version needs a queue
     and a sender task per WebSocket (46 lines), or the separate `broadcaster`
     package.
-  - **Batteries (04b).** Tools ships about 30 middlewares, including
-    `Maintenance` and `Runtime`. Starlette ships neither, and its sessions need
-    the extra `itsdangerous` package.
+  - **Batteries (04b).** Tools bundles 29 middlewares, including
+    `Maintenance`, `Runtime`, `RateLimit`, `ETag` and `SecurityHeaders`.
+    Starlette 1.7 ships 9 user-facing ones (authentication, body limit, CORS,
+    GZip, HTTPS redirect, OpenTelemetry, sessions, trusted hosts, WSGI), and
+    its sessions need the extra `itsdangerous` package.
   - **Responses are values.** A 503 page built once serves every request (04),
     and a ten-line Stream subclass is a new streaming format (05).
   - **Strict session keys (06).** `get('nmae')` dies with "Available keys:
@@ -154,3 +156,6 @@ Checked and fine as it is:
   this is parity.
 - **WebSocket `accept` against SSE `start`,** which follows the protocols.
 - **Strict handler returns,** where returning a hashref is an error.
+- **Running a legacy app beside new routes** is parity: Tools has
+  `PAGI::App::WrapPSGI` (see `examples/psgi-bridge`), and Starlette 1.7 still
+  ships `WSGIMiddleware`.
