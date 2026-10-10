@@ -1038,6 +1038,47 @@ C<named_routes> maps absolute addresses to their original leaves. Immutable
 Router C<app> mounts are inspected recursively; other applications are opaque.
 C<desc> is a human note for listings and tools.
 
+=head2 Linking inside a mounted app
+
+Route names are logical addresses, not URL paths. A Mount named C<api>
+holding a route named C<note> gives the address C</api/note>, whatever
+prefix the Mount serves. A reference without a leading C</> resolves from
+the namespace of the handler that calls it, so routes inside a Mount link to
+their siblings, and up to their parent, without knowing where they are
+mounted:
+
+  use v5.40;
+  use PAGI::Tools qw(compose mount path_for response route);
+  use PAGI::Test::Client;
+
+  my $app = compose(routes => [
+      route('/' => sub ($request) {
+          # An absolute reference names the full address, from anywhere.
+          response('JSON', { note => path_for($request, '/api/note', { id => 1 }) });
+      }, name => 'home'),
+      mount('/api', routes => [
+          route('/notes/{id}' => sub ($request) {
+              response('JSON', { id => $request->path_param('id') });
+          }, name => 'note'),
+          route('/notes' => sub ($request) {
+              response('JSON', {
+                  notes => path_for($request, 'notes'),     # a sibling: /api/notes
+                  home  => path_for($request, '../home'),   # the parent's: /
+              });
+          }, name => 'notes'),
+      ], name => 'api'),
+  ]);
+
+  my $client = PAGI::Test::Client->new(app => $app);
+  my $from_root = $client->get('/')->json;           # { note => '/api/notes/1' }
+  my $from_api  = $client->get('/api/notes')->json;  # { notes => '/api/notes', home => '/' }
+
+Mount the same routes again at C</v2> under the name C<v2>, and
+C<path_for($request, 'notes')> gives C</v2/notes> there with no change to the
+handlers. The full rules -- C<./> and C<../>, absolute references, and which
+captures a relative reference inherits -- are in
+L<PAGI::Routing/"REVERSE ROUTING AND INSPECTION">.
+
 =head2 Matched-Route Metadata
 
 Each compiled router publishes a request-local, read-only convention before

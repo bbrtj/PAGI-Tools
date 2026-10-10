@@ -243,6 +243,17 @@ subtest 'Serving behind a proxy prefix recipe executes as published' => sub {
     );
 };
 
+subtest 'Linking inside a mounted app recipe executes as published' => sub {
+    my $recipe = first_code_block($cookbook, '=head2 Linking inside a mounted app');
+    perl_script_runs(
+        'mounted app links',
+        $recipe
+            . "die 'absolute from the root' unless \$from_root->{note} eq '/api/notes/1';\n"
+            . "die 'relative sibling' unless \$from_api->{notes} eq '/api/notes';\n"
+            . "die 'parent' unless \$from_api->{home} eq '/';\n",
+    );
+};
+
 subtest 'Declaring what a route requires recipe executes as published' => sub {
     my $recipe = first_code_block($cookbook, '=head2 Declaring what a route requires');
     perl_script_runs(

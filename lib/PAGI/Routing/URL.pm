@@ -94,6 +94,23 @@ with C</>. Relative calls inherit only captures required by the exact target;
 explicit parameters override inherited values. The compiled routing boundary's
 C<root_path> is encoded and applied exactly once.
 
+Names are logical addresses, not URL paths. Inside a Mount:
+
+    compose(routes => [
+        route('/' => \&home, name => 'home'),
+        mount('/api', routes => [
+            route('/notes/{id}' => \&show_note,  name => 'note'),
+            route('/notes'      => \&list_notes, name => 'notes'),
+        ], name => 'api'),
+    ]);
+
+    path_for($request, '/api/note', { id => 1 });   # /api/notes/1, from anywhere
+    path_for($request, 'notes');                      # /api/notes, from a handler in api
+    path_for($request, '../home');                    # /, from a handler in api
+
+L<PAGI::Tools::Cookbook/"Linking inside a mounted app"> runs this example;
+L<PAGI::Routing/"REVERSE ROUTING AND INSPECTION"> has the full rules.
+
 =cut
 
 sub path_for {
