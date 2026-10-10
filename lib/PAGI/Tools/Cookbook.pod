@@ -734,6 +734,31 @@ C<exception after response completed: ...> for a re-raised error, or raises it
 with C<< raise_app_exceptions => 1 >>. A test that deliberately provokes a 500
 should capture that warning.
 
+=head3 Thrown pages and house-styled errors
+
+Return responses; throw only from code far from the handler. When you do,
+L<PAGI::Exception::HTTP> says what went wrong and a thrown Response is an
+answer in itself. One ErrorHandler handler can honour thrown pages as they
+are and give every other client error the house style:
+
+  use Scalar::Util qw(blessed);
+  use PAGI::ErrorContext qw(error_context);
+  use PAGI::Response qw(response);
+
+  middleware('ErrorHandler', handler => sub {
+      my ($request) = @_;
+      my $error = error_context($request);
+      my $thrown = $error->exception;
+      # A page: no status_code, a to_app. Facts are checked first.
+      return $thrown
+          if blessed($thrown) && !$thrown->can('status_code') && $thrown->can('to_app');
+      return $error->default if $error->is_server_error;
+      return response('JSON', { error => $error->message });
+  })
+
+A thrown page below 400, such as C<die response('Redirect', '/login')>,
+never reaches the handler: ErrorHandler sends it at once.
+
 =head2 Real Catch-All Routes
 
 A Router default means "nothing matched." A wildcard is a real route:

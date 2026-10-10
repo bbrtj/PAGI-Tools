@@ -134,6 +134,12 @@
     (client_closed, a closed tab): a client cannot announce that it is
     leaving, so that is the stream's ordinary end. Other abnormal ends,
     and WebSocket and HTTP disconnects, are still noted.
+  - ErrorHandler answers a thrown page -- a value with to_app and no
+    status_code, such as a Response -- with the page itself. Below 400 it
+    is sent as it is, with no on_error, handler or re-raise, so
+    die response('Redirect', '/login') redirects; from 400 to 599 it goes
+    through on_error and the handler, and $error->default is the page. A
+    thrown Response used to be a 500.
 
   [Breaking -- see UPGRADING.md]
   - PAGI::App::Router and PAGI::Endpoint::Router are removed; PAGI::Routing

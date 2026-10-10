@@ -45,6 +45,25 @@ sub _reason_phrase {
     return $REASON{$status} // ($status < 500 ? 'Client Error' : 'Server Error');
 }
 
+# A thrown value with no status_code but a to_app is a page: it renders
+# itself. ErrorHandler and default share this one reading of it.
+sub _is_page {
+    my ($thrown) = @_;
+    return 0 unless blessed($thrown);
+    my $is_page = eval { !$thrown->can('status_code') && $thrown->can('to_app') };
+    return $is_page ? 1 : 0;
+}
+
+# A page's own status when it is an integer from 100 to 599; undef when it
+# has no status method, or the method dies or returns anything else.
+sub _page_status {
+    my ($page) = @_;
+    my $status = eval { $page->can('status') ? $page->status : undef };
+    return undef
+        unless defined($status) && !ref($status) && $status =~ /\A[1-5][0-9][0-9]\z/;
+    return 0 + $status;
+}
+
 sub new {
     my ($class, @args) = @_;
     my $scope = PAGI::Utils::Scope::scope_from_source($class, @args);
@@ -85,6 +104,10 @@ sub detail {
 
 sub default {
     my ($self) = @_;
+    # A thrown page answers as thrown; ErrorHandler took its status from it.
+    my $exception = $self->exception;
+    return $exception
+        if _is_page($exception) && (_page_status($exception) // 0) == $self->status;
     my $body = $self->message;
     my $detail = $self->detail;
     $body .= "\n\n$detail" if defined($detail) && length($detail);
@@ -146,7 +169,8 @@ What was thrown, unchanged.
 =head2 status
 
 The status ErrorHandler chose, 400-599: the exception's C<status_code> when it
-claims one in that range, otherwise ErrorHandler's C<status> option.
+claims one in that range, a thrown page's own status, otherwise ErrorHandler's
+C<status> option (a page without a usable status is 500).
 
 =head2 reason
 
@@ -170,8 +194,10 @@ True for 400-499 and 500-599.
 
 =head2 default
 
-ErrorHandler's built-in answer, as a L<PAGI::Response::Text>: C<message>,
-followed in development by a blank line and C<detail>, with the status and
+ErrorHandler's built-in answer. When the exception is a thrown page (a value
+with C<to_app> and no C<status_code>) whose status is C<status>, that is the
+page itself. Otherwise it is a L<PAGI::Response::Text>: C<message>, followed
+in development by a blank line and C<detail>, with the status and
 C<Cache-Control: no-store>. A handler returns it to leave an error to the
 built-in answer.
 
