@@ -32,7 +32,7 @@ written against it; the Starlette versions are unchanged.
 |---|---|---|---|---|
 | `01-errors-as-responses` | throw a 404 from the model, real bugs get a 500 | identical | 22 (4) | 19 (4) |
 | `02-notes-resource` | CRUD resource: class endpoints, lifespan store, named links, typed `{id}` | identical, incl. 204 and the typed-path 404 | 48 (17) | 44 (5) |
-| `03-broadcast-hub` | WebSocket chat + SSE watcher + HTTP announce on one fan-out | identical where Starlette can be tested (see below) | 33 (4) | 46 (5) |
+| `03-broadcast-hub` | WebSocket chat + SSE watcher + HTTP announce on one fan-out | identical where Starlette can be tested (see below) | 32 (4) | 46 (5) |
 | `04-everyday-middleware` | `Server-Timing` and maintenance mode, hand-written | identical | 25 (4) | 26 (7) |
 | `04b-bundled-middleware` | the same jobs with Tools' own `Runtime` and `Maintenance` | same statuses and `Retry-After`; the timing header is `X-Runtime`, and the 503 body is the stock "Service Unavailable" | 17 (3) | (none shipped) |
 | `05-streaming` | slow NDJSON feed and a custom tab-separated format | identical | 32 (10) | 23 (5) |
@@ -88,7 +88,7 @@ Run a Starlette one with `pip install starlette uvicorn itsdangerous`, then
     redirects. Starlette can raise only `HTTPException`; raising a response
     object gives a 500 there (checked).
   - **Fan-out without extra machinery (03).** PAGI's best-effort sends let one
-    hub serve three protocols in 33 lines. The Starlette version needs a queue
+    hub serve three protocols in 32 lines. The Starlette version needs a queue
     and a sender task per WebSocket (46 lines), or the separate `broadcaster`
     package.
   - **Batteries (04b).** Tools bundles 29 middlewares, including
@@ -106,7 +106,7 @@ Run a Starlette one with `pip install starlette uvicorn itsdangerous`, then
   lines. One `use PAGI::Tools qw(...)` line replaced the per-module imports;
   02's 17 import lines are mostly the `package` and `use` lines each of its
   four packages repeats (Python's file has 5). Without imports, PAGI's logic is
-  shorter for 02 (31 against 39 lines), 03 (29 against 41) and 08 (8 against
+  shorter for 02 (31 against 39 lines), 03 (28 against 41) and 08 (8 against
   9), and 2 to 8 lines longer for the rest.
 
 None of the rough edges below was architectural.
@@ -181,8 +181,9 @@ Most important first, as found; each now says what PAGI-Tools 0.003000 does.
     best-effort send, `return unless await $sse->try_send_event(...)`. Strict
     sends stay for messages that must arrive, and stay loud.
     `examples/sse-dashboard` now reads that way (see "HANDLERS AND
-    DISCONNECTS" in `PAGI::SSE`). 03 keeps one `is_closed` check: it is not a
-    send guard, but keeps a watcher that already left from being registered.
+    DISCONNECTS" in `PAGI::SSE`). 03 needs no `is_closed` check: each handler
+    registers its listener after the handshake, then its cleanup with the
+    connection's `on_end`, which runs at once if the client has already left.
 
 11. **There was no "after the response" task.** A correction: the connection's
     `on_complete` already runs work once the response has been delivered, in

@@ -4,8 +4,10 @@ use utf8;
 use Test2::V0;
 use FindBin qw($Bin);
 use lib "$Bin/../lib";
+use lib "$Bin/lib";
 use Digest::SHA qw(sha256_hex);
 use PAGI::Test::Client;
+use PAGITest::LeavingClient qw(leaves_at_handshake);
 
 # The gut-check apps (examples/gut-check), each driven with the request
 # sequence its README describes. Each file compiles in a package of its own,
@@ -79,6 +81,15 @@ subtest '03: broadcast hub' => sub {
 
     $ws->close;
     $sse->close;
+    is($client->post('/announce', body => 'x')->json, { delivered_to => 0 },
+        'nobody listens once both have left');
+
+    # Clients that leave as the handshake goes out must not stay registered.
+    $client = PAGI::Test::Client->new(app => leaves_at_handshake(load_app('03-broadcast-hub.pl')));
+    $client->websocket('/chat', sub { });
+    $client->sse('/watch', sub { });
+    is($client->post('/announce', body => 'x')->json, { delivered_to => 0 },
+        'clients that left at the handshake are not listening');
 };
 
 subtest '04: everyday middleware, hand-written' => sub {

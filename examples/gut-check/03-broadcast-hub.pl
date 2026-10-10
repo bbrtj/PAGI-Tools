@@ -35,27 +35,24 @@ sub publish ($from, $text)
     return scalar keys %listeners;
 }
 
+# Each handler listens once its handshake is done, and the connection's on_end
+# stops it however the connection ends: at once if the client has already left.
 async sub chat ($ws)
 {
-    my $id = refaddr $ws;
-    $ws->on_close(sub { stop_listening($id) });
-
     await $ws->accept;
+    my $id = refaddr $ws;
     listen_to($id, sub ($line) { $ws->try_send_text($line) });
+    $ws->connection->on_end(sub { stop_listening($id) });
 
     await $ws->each_text(async sub ($text) { publish('chat', $text) });
 }
 
 async sub watch ($sse)
 {
-    my $id = refaddr $sse;
-    $sse->on_close(sub { stop_listening($id) });
-
     await $sse->start;
-    # Not a send guard: a watcher that already left must not be registered,
-    # or its listener would never be removed.
-    return if $sse->is_closed;
+    my $id = refaddr $sse;
     listen_to($id, sub ($line) { $sse->try_send_event(event => 'line', data => $line) });
+    $sse->connection->on_end(sub { stop_listening($id) });
 
     await $sse->run;
 }
