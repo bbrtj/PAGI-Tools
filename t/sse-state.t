@@ -31,7 +31,7 @@ subtest 'state facade is absent when not set' => sub {
     my $missing = PAGI::SSE->new($scope, sub { }, sub { });
 
     ok(!$missing->has_state, 'has_state is false when application state is absent');
-    is($missing->state, undef, 'state is undef when application state is absent');
+    isa_ok($missing->state, ['PAGI::State'], 'state is an empty facade when application state is absent');
 };
 
 subtest 'malformed state is rejected' => sub {

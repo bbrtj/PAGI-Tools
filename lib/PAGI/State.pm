@@ -13,6 +13,10 @@ our %EXPORT_TAGS = (ALL => [@EXPORT_OK]);
 
 my %WARNED;
 
+# Why a handler's state facade is empty: said by get and data.
+my $NO_STATE = 'this scope has no application state '
+    . '(did lifespan startup run? PAGI::Test::Client needs lifespan => 1)';
+
 =head1 NAME
 
 PAGI::State - Strict read-oriented access to application state
@@ -31,9 +35,31 @@ PAGI::State - Strict read-oriented access to application state
 =head1 DESCRIPTION
 
 C<PAGI::State> wraps the optional C<< $scope->{state} >> hash with strict,
-read-oriented access. Missing application state returns C<undef>; malformed
-present state is rejected. The raw backing hash remains available through
-L</data> when an integration requires it.
+read-oriented access. Malformed present state is rejected. The raw backing
+hash remains available through L</data> when an integration requires it.
+
+Without application state, C<app_state> and C<new> return C<undef>, for
+integrations that must tell. The C<state> accessor of L<PAGI::Request>,
+L<PAGI::WebSocket> and L<PAGI::SSE> returns an empty facade instead, whose
+C<get> and C<data> die naming the likely cause: lifespan startup did not run
+(L<PAGI::Test::Client> runs it only with C<< lifespan => 1 >>).
+
+=head1 WRITTEN AT STARTUP, READ THROUGH A FACADE
+
+Lifespan startup writes the raw hash (L<PAGI::Compose>'s
+C<< startup => sub { my ($state, $scope) = @_; $state->{db} = ...; } >>);
+requests read it through this read-only facade. The asymmetry is deliberate.
+Each request scope gets a I<shallow copy> of the state
+(L<PAGI::Spec::Lifespan/"Lifespan State">): the values, such as a database
+pool, are shared, but a top-level key assigned in one scope changes only that
+scope's copy, and every other scope silently keeps its own. So store each
+shared object once at startup, mutate it through its reference, and never
+assign a top-level key afterwards.
+
+That includes the startup C<$state> itself, kept in a closure: a timer that
+later does C<< $state->{count}++ >> or C<< $state->{queue} = [] >> changes
+only the lifespan's copy, and request scopes desync. Store a container at
+startup and change what is inside it.
 
 =head1 FUNCTIONS
 
@@ -73,6 +99,13 @@ sub new {
     return bless [$scope->{state}], $class;
 }
 
+# The facade a handler gets on a scope with no application state: empty, and
+# its get and data say why.
+sub _without_state {
+    my ($class) = @_;
+    return bless [{}, 1], $class;
+}
+
 =head1 METHODS
 
 =head2 get
@@ -81,7 +114,8 @@ sub new {
     my $value = $state->get('optional', $default);
 
 The one-argument form croaks when the key is absent and lists the available
-keys. The two-argument form returns the supplied default for an absent key.
+keys; on the empty facade of a scope with no application state it says so
+instead. The two-argument form returns the supplied default for an absent key.
 
 =cut
 
@@ -93,6 +127,7 @@ sub get {
     my $data = $self->[0];
     if (!exists $data->{$key}) {
         return $default[0] if @default;
+        croak "State key '$key' does not exist: $NO_STATE" if $self->[1];
         my @keys = sort CORE::keys %{$data};
         croak "State key '$key' does not exist. Available keys: "
             . (@keys ? join(', ', @keys) : '(none)');
@@ -125,11 +160,17 @@ sub keys {
 =head2 data
 
 Returns the backing hashref. This is the explicit escape hatch for integrations
-that require raw hash access.
+that require raw hash access. On the empty facade of a scope with no
+application state it croaks, naming the likely cause, rather than hand back a
+hash that nothing else would see.
 
 =cut
 
-sub data { return $_[0][0] }
+sub data {
+    my ($self) = @_;
+    croak "State data is unavailable: $NO_STATE" if $self->[1];
+    return $self->[0];
+}
 
 sub _deprecated_hashref {
     my ($self) = @_;

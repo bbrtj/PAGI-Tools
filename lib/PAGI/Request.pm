@@ -306,7 +306,7 @@ sub has_state {
 sub state {
     my $self = shift;
     require PAGI::State;
-    return PAGI::State->new($self);
+    return PAGI::State->new($self) // PAGI::State->_without_state;
 }
 
 # Body streaming - mutually exclusive with buffered body methods
@@ -1297,8 +1297,10 @@ and handlers. Construct from a Request object or scope:
 
 Returns a L<PAGI::State> facade over the application state injected by
 L<PAGI::Lifespan>. This contains worker-level shared state like database
-connections and configuration. Returns C<undef> if no state was injected and
-croaks if a present state value is not a hashref.
+connections and configuration. Always returns a facade: without application
+state it is empty, and its C<get> dies naming the likely cause (did lifespan
+startup run? L<PAGI::Test::Client> needs C<< lifespan => 1 >>). Croaks if a
+present state value is not a hashref. C<has_state> tells whether state exists.
 
 Repeated calls are not guaranteed to return the same facade object.
 

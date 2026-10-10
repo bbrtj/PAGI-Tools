@@ -140,6 +140,11 @@
     die response('Redirect', '/login') redirects; from 400 to 599 it goes
     through on_error and the handler, and $error->default is the page. A
     thrown Response used to be a 500.
+  - $request->state, $ws->state and $sse->state always return a
+    PAGI::State. Without application state it is empty, and its get and
+    data die naming the likely cause (lifespan startup did not run;
+    PAGI::Test::Client needs lifespan => 1). app_state and
+    PAGI::State->new still return undef there.
 
   [Breaking -- see UPGRADING.md]
   - PAGI::App::Router and PAGI::Endpoint::Router are removed; PAGI::Routing

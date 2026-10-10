@@ -170,8 +170,8 @@ subtest 'WebSocket and SSE state use Request\'s strict optional contract' => sub
         \&receive_empty,
         \&send_empty,
     );
-    is($websocket_without_state->state, undef,
-        'WebSocket returns undef without state');
+    isa_ok($websocket_without_state->state, ['PAGI::State'],
+        'WebSocket returns an empty facade without state');
 
     my $sse_backing = { db => 'SSE fixture-db' };
     my $sse = PAGI::SSE->new(
@@ -194,7 +194,7 @@ subtest 'WebSocket and SSE state use Request\'s strict optional contract' => sub
         \&receive_empty,
         \&send_empty,
     );
-    is($sse_without_state->state, undef, 'SSE returns undef without state');
+    isa_ok($sse_without_state->state, ['PAGI::State'], 'SSE returns an empty facade without state');
 };
 
 subtest 'optional capabilities come from their owning helpers' => sub {

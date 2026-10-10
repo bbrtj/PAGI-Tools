@@ -186,7 +186,7 @@ sub has_state {
 sub state {
     my $self = shift;
     require PAGI::State;
-    return PAGI::State->new($self);
+    return PAGI::State->new($self) // PAGI::State->_without_state;
 }
 
 # Path parameter accessors - captured from URL path by router
@@ -1099,12 +1099,12 @@ Shortcut for C<< query_param($name, raw => 1) >>.
 
 =head2 state
 
-    my $state = $sse->state
-        or die 'application requires lifespan state';
-    my $db = $state->get('db');
+    my $db = $sse->state->get('db');
 
-Returns C<PAGI::State|undef> for application state injected by
-L<PAGI::Lifespan>. Absent state returns C<undef>; present state must be a
+Returns a L<PAGI::State> facade for application state injected by
+L<PAGI::Lifespan>. Without application state the facade is empty, and its
+C<get> dies naming the likely cause (did lifespan startup run?
+L<PAGI::Test::Client> needs C<< lifespan => 1 >>); present state must be a
 hashref or this method croaks. The facade is read-oriented and catches
 missing top-level keys through C<get>.
 

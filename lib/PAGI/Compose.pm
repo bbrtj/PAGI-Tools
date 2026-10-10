@@ -433,6 +433,14 @@ scope keys and may not fabricate or replace the state reference. Compose does
 not create fallback state or copy state into request scopes; the server owns
 that propagation.
 
+Startup writes the raw hash; handlers read it through a read-only
+L<PAGI::State> facade (C<< $request->state->get('db') >>). Each request scope
+gets a shallow copy of the state, so a top-level key assigned after startup --
+in a request, or by a timer that kept startup's C<$state> -- changes only one
+copy and silently desyncs the rest. Store each shared object once in startup
+and change it through its reference; see
+L<PAGI::State/"WRITTEN AT STARTUP, READ THROUGH A FACADE">.
+
 With callbacks configured, missing, malformed, replaced, or unprovable server
 state prevents both callbacks from running and sends:
 
