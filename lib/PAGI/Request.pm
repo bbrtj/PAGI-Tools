@@ -89,6 +89,13 @@ sub content_type {
     return $self->headers->content_type(@opts) // '';
 }
 
+# The Content-Type charset parameter, as sent (undef when there is none)
+sub charset {
+    my $self = shift;
+    my $parameters = $self->headers->content_type_parameters or return undef;
+    return $parameters->{charset};
+}
+
 # Content-Length shortcut
 sub content_length {
     my $self = shift;
@@ -737,6 +744,17 @@ Accepts C<raise_on_error =E<gt> 1> to report duplicate or malformed input.
 Use C<< $request->header('Content-Type') >> for the raw last-value lookup;
 parsing does not alter the stored field.
 
+=head2 charset
+
+    my $charset = $request->charset;    # 'ISO-8859-1', or undef
+
+The C<charset> parameter of the Content-Type field, exactly as the client
+sent it (unquoted), or C<undef> when the field has none or is absent,
+duplicated or malformed. Nothing is decoded because of it: pass it on when
+you decide to read the body as text, for example
+C<< body_stream(decode => $request->charset // 'UTF-8') >> (see
+L</body_stream>).
+
 =head2 content_length
 
 Content-Length header value.
@@ -922,7 +940,7 @@ a body, form, or upload cache is already present.
     my $stream = $req->body_stream;
     my $stream = $req->body_stream(
         max_bytes => 10 * 1024 * 1024,  # 10MB limit
-        decode    => 'UTF-8',            # Decode to UTF-8
+        decode    => 'UTF-8',            # Decode from UTF-8
         strict    => 1,                  # Strict UTF-8 decoding
     );
 
@@ -936,11 +954,24 @@ B<Options:>
 
 =item * C<max_bytes> - Maximum body size. Defaults to Content-Length header if present.
 
-=item * C<decode> - Encoding to decode chunks to (typically 'UTF-8').
+=item * C<decode> - The encoding to decode chunks from, such as C<'UTF-8'>.
+Without it, chunks are the bytes the client sent. A character split across
+two chunks is held back until it is complete.
 
 =item * C<strict> - If true, throw on invalid UTF-8. Default: false (use replacement chars).
 
 =back
+
+B<Bytes or text.> A request body is bytes (a zip upload, an image, text in
+any encoding), so the stream never decodes on its own. Decode only when the
+route treats its body as text, using the client's declared charset and
+UTF-8 when it declares none:
+
+    my $stream = $req->body_stream(decode => $req->charset // 'UTF-8');
+
+A route that decodes mangles a binary upload (invalid sequences become
+U+FFFD, or the stream dies with C<strict>), so leave C<decode> off for any
+route that may receive one.
 
 B<Important:> Body streaming is mutually exclusive with buffered body methods
 (C<body>, C<text>, C<json>, C<form_params>). Once you start streaming, you cannot use

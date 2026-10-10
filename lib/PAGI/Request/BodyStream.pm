@@ -85,7 +85,7 @@ you cannot use those methods.
     my $stream = PAGI::Request::BodyStream->new(
         receive    => $receive,      # Required: PAGI receive callback
         max_bytes  => 10485760,      # Optional: max body size
-        decode     => 'UTF-8',       # Optional: decode to UTF-8
+        decode     => 'UTF-8',       # Optional: decode from UTF-8
         strict     => 1,             # Optional: strict UTF-8 (croak on invalid)
         limit_name => 'body_size',   # Optional: name for limit error message
     );
@@ -98,7 +98,9 @@ Creates a new body stream.
 
 =item * C<max_bytes> - Optional. Maximum bytes to read. Throws error if exceeded.
 
-=item * C<decode> - Optional. Encoding to decode chunks to (typically 'UTF-8').
+=item * C<decode> - Optional. The encoding to decode chunks from, such as
+C<'UTF-8'> (or C<< $request->charset // 'UTF-8' >>). Without it, chunks are
+bytes.
 
 =item * C<strict> - Optional. If true, throw on invalid UTF-8. If false (default),
 use replacement characters.

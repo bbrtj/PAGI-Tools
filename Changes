@@ -26,6 +26,8 @@
     path_from_root, pagi_env and environment predicates.
   - request_uri and raw_path_info on Request, WebSocket and SSE;
     PAGI::Request::BodyError (bad bodies answer 400 or 413).
+  - Request charset: the Content-Type charset parameter, to decode a
+    streamed body by (body_stream(decode => $req->charset // 'UTF-8')).
   - Session's session_state and session_store constructors.
   - PAGI::Test::Client root_path; PAGI::Middleware::BufferedResponse;
     App::File from_app_path; the process-streaming example.

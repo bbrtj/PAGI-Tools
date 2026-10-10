@@ -473,6 +473,12 @@ Options: C<max_bytes> (a size cap; defaults to the Content-Length header),
 C<decode> (e.g. C<'UTF-8'>, which handles multi-byte sequences split across
 chunk boundaries), and C<strict> (throw on invalid UTF-8).
 
+Chunks are bytes unless you pass C<decode>, so a zip or image upload passes
+through untouched. A route that reads its body as text decodes by the
+client's declared charset, falling back to UTF-8:
+
+  my $stream = $req->body_stream(decode => $req->charset // 'UTF-8');
+
 B<Streaming is mutually exclusive with the buffered methods.> Once you call
 C<body_stream>, C<body>/C<text>/C<json>/C<form_params> are unavailable on that
 request (and vice versa) — a body can only be consumed once.

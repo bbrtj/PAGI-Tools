@@ -274,6 +274,26 @@ subtest 'content-type parameter stripping' => sub {
     is($req_plain->content_type, '', 'absent field retains empty-string fallback');
 };
 
+subtest 'charset is the Content-Type charset parameter' => sub {
+    my $req = PAGI::Request->new({
+        type => 'http', method => 'POST',
+        headers => [['content-type', 'text/plain; charset=ISO-8859-1']],
+    }, $receive);
+    is($req->charset, 'ISO-8859-1', 'the charset as sent');
+
+    $req->headers->set('Content-Type', 'text/plain; format=flowed; charset="utf-8"');
+    is($req->charset, 'utf-8', 'a quoted charset among other parameters');
+
+    $req->headers->set('Content-Type', 'application/zip');
+    is($req->charset, undef, 'undef without a charset parameter');
+
+    $req->headers->set('Content-Type', 'text/plain; charset=');
+    is($req->charset, undef, 'undef for a malformed field');
+
+    $req->headers->remove('Content-Type');
+    is($req->charset, undef, 'undef without a Content-Type');
+};
+
 subtest 'constructor requires a supported request scope and receive callback' => sub {
     my $scope = {
         type => 'http',
