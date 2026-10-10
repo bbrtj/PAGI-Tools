@@ -1379,6 +1379,10 @@ returns, unless it already is: a normal peer Close, and in C<manual> close
 mode the transport is completed too, so the application's C<receive> loop
 ends.
 
+An application may await real I/O (L<Future::IO>) before it accepts or
+refuses: C<websocket> drives the event loop for up to 5 seconds while it
+waits.
+
 An application that fails after accepting the socket fails the test, as an
 HTTP application's failure does: the test client stands in for the server,
 which would report it. The failure -- including one from an C<on_close>
@@ -1435,6 +1439,9 @@ portable and extension denial paths, and C<simulate_abnormal_close>.
 
 See L<PAGI::Test::SSE> for the SSE connection API and its send strictness
 (L<PAGI::Test::SSE/SEND STRICTNESS>).
+
+An application may await real I/O before it starts or refuses the stream:
+C<sse> drives the event loop for up to 5 seconds while it waits.
 
 An application that fails after starting the stream fails the test, raised
 once in the same places as for L</websocket>: as C<sse> returns (in either

@@ -84,6 +84,7 @@ sub _start {
 
         if ($type eq 'sse.start') {
             $self->{started} = 1;
+            PAGI::Test::_Drive::signal_arrival($self);
             $self->{status} = $event->{status} // 200;
             $self->{headers} = $event->{headers} // [];
             $conn->_mark_response_started if $conn;
@@ -139,7 +140,12 @@ sub _start {
         }
         $conn->_deliver_notifications;
     });
-    $self->pump;
+    # The handler may await real I/O before it starts or refuses.
+    PAGI::Test::_Drive::wait_for($self, $PAGI::Test::_Drive::TIMEOUT, sub {
+        $self->pump;
+        return 1 if $self->{started} || $self->{refused} || $self->{app_future}->is_ready;
+        return;
+    });
 
     unless ($self->{started} || $self->{refused}) {
         $self->{app_future}->get if $self->{app_future}->is_ready;

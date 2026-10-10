@@ -89,6 +89,7 @@ sub _start {
 
         if ($type eq 'websocket.accept') {
             $self->{accepted} = 1;
+            PAGI::Test::_Drive::signal_arrival($self);
             $conn->_mark_response_started if $conn;
         }
         elsif ($type eq 'websocket.send') {
@@ -149,7 +150,12 @@ sub _start {
         }
         $conn->_deliver_notifications;
     });
-    $self->pump;
+    # The handler may await real I/O before it accepts or refuses.
+    PAGI::Test::_Drive::wait_for($self, $PAGI::Test::_Drive::TIMEOUT, sub {
+        $self->pump;
+        return 1 if $self->{accepted} || $self->{refused} || $self->{app_future}->is_ready;
+        return;
+    });
 
     unless ($self->{accepted} || $self->{refused}) {
         # Surface an application/send failure instead of replacing it with a

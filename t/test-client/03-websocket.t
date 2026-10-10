@@ -232,4 +232,23 @@ subtest 'receive gives up at once when no more data can arrive' => sub {
     $ws->complete_close;
 };
 
+subtest 'a handler that awaits real I/O before accept connects' => sub {
+    require Future::IO;
+    my $app = async sub {
+        my ($scope, $receive, $send) = @_;
+        my $event = await $receive->();
+        return unless $event->{type} eq 'websocket.connect';
+        await Future::IO->sleep(0.1);
+        await $send->({ type => 'websocket.accept' });
+        await $send->({ type => 'websocket.send', text => 'hello' });
+        while (1) {
+            my $msg = await $receive->();
+            last if $msg->{type} eq 'websocket.disconnect';
+        }
+    };
+    my $ws = PAGI::Test::Client->new(app => $app)->websocket('/ws');
+    is($ws->receive_text(2), 'hello', 'the connection is accepted');
+    $ws->close;
+};
+
 done_testing;

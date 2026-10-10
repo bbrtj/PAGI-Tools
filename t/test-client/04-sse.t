@@ -96,4 +96,21 @@ subtest 'receive_event waits for an event sent after real I/O' => sub {
     $sse->close;
 };
 
+subtest 'a handler that awaits real I/O before start connects' => sub {
+    require Future::IO;
+    my $app = async sub {
+        my ($scope, $receive, $send) = @_;
+        await Future::IO->sleep(0.1);
+        await $send->({ type => 'sse.start', status => 200, headers => [] });
+        await $send->({ type => 'sse.send', data => 'hello' });
+        while (1) {    # until the client closes
+            my $event = await $receive->();
+            last if ($event->{type} // '') eq 'sse.disconnect';
+        }
+    };
+    my $sse = PAGI::Test::Client->new(app => $app)->sse('/events');
+    is($sse->receive_event(timeout => 2)->{data}, 'hello', 'the stream is started');
+    $sse->close;
+};
+
 done_testing;
