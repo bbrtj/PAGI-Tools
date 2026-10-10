@@ -160,6 +160,10 @@
     compose middleware without Compose.
   - The Tutorial's middleware part leads with Compose's middleware list
     and wrap; Builder is a short section for applications without Compose.
+  - The background-tasks example shows work started at once next to work
+    started after the response (the connection's on_complete), and no
+    longer uses IO::Async; a Cookbook recipe, "Work After the Response",
+    explains the choice.
 
   [Breaking -- see UPGRADING.md]
   - PAGI::App::Router and PAGI::Endpoint::Router are removed; PAGI::Routing

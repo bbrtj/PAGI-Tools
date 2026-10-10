@@ -15,7 +15,6 @@ unlike($source, qr/\bas_app_object\b/, 'no route needs as_app_object');
 unlike($source, qr/\(\$scope,\s*\$receive,\s*\$send\)|invoke_app|PAGI::WebSocket->new/,
     'no raw PAGI application');
 like($source, qr/route\('\/async'\s*=>\s*\\&async_tasks\)/, '/async is a Request handler');
-like($source, qr/route\('\/blocking'\s*=>\s*\\&blocking_tasks\)/, '/blocking is a Request handler');
 like($source, qr/route\('\/signup'\s*=>\s*\\&signup,\s*methods\s*=>\s*\['POST'\]\)/,
     '/signup is a POST Request handler');
 like($source, qr/websocket\('\/ws'\s*=>\s*\\&messages\)/, '/ws is a one-$ws handler');

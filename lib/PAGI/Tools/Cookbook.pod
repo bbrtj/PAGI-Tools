@@ -2623,6 +2623,55 @@ B<Middleware authors:> If your middleware inherits from L<IO::Async::Notifier>,
 use C<< $self->adopt_future($f) >> instead. It properly tracks futures and
 propagates unhandled errors to the notifier's C<invoke_error> method.
 
+=head2 Work After the Response
+
+Some work should start only once the client has its answer: a welcome email
+for a signup that succeeded, say. Register it on the connection's
+C<on_complete> (L<PAGI::Request/connection>), and hand what it starts to the
+same lifespan-owned L<PAGI::FutureOwner>:
+
+  use v5.40;
+  use Future::AsyncAwait;
+  use Future::IO;    # pagi-server binds the implementation
+  use PAGI::FutureOwner;
+  use PAGI::Tools qw(compose response route);
+
+  my $background = PAGI::FutureOwner->new(
+      on_failure => sub ($error) { warn "Background task failed: $error" },
+  );
+
+  async sub send_welcome_email ($email) {
+      await Future::IO->sleep(2);    # in reality, an async HTTP call
+      warn "Email sent to $email\n";
+  }
+
+  async sub signup ($request) {
+      my $email = (await $request->json)->{email};
+      # ... create the account: everything that can fail comes first ...
+      $request->connection->on_complete(sub {
+          $background->adopt(send_welcome_email($email));
+      });
+      return response('JSON', { status => 'created' }, status => 201);
+  }
+
+  my $app = compose(
+      routes   => [route('/signup' => \&signup, methods => ['POST'])],
+      lifespan => {
+          # Emails still being sent finish before the process exits.
+          shutdown => async sub { await $background->settled },
+      },
+  );
+
+C<on_complete> runs once the response has been delivered, whatever its
+status; a client that disconnects first does not trigger it. A 500 is
+delivered too, so a handler that registers C<on_complete> and then dies still
+fires it: register it just before C<return>, after everything that can fail.
+C<on_end> runs however the connection ends; use it for cleanup that must
+always run, not for work that assumes success.
+
+Start the work in the handler instead (L</Background Work the Client Does Not
+Wait For>) when it does not depend on the client getting its answer.
+
 =head2 CPU-Bound Work in Subprocess
 
 B<Note:> This pattern uses L<IO::Async::Function>, which is specific to
@@ -2685,7 +2734,9 @@ For blocking or CPU-intensive work, use L<IO::Async::Function> to run in a child
 
 B<Warning:> IO::Async::Function forks child processes. If running with C<--workers N>, each server worker forks its own Function workers. With 4 server workers and 2 Function workers each, you have 12 processes. For high-volume CPU work, consider a dedicated job queue instead.
 
-See C<examples/background-tasks/> for complete working examples.
+C<examples/background-tasks/> shows the asynchronous patterns;
+C<examples/process-streaming/> drives a subprocess through L<Future::IO>,
+without naming an event loop.
 
 =head1 FORMS & UPLOADS
 

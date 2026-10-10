@@ -1,13 +1,12 @@
 # Background Tasks Example
 
-Patterns for starting background work from a request without making the
-client wait for it.
+Work the client does not wait for, three ways: started now, alongside the
+response; started once the response has been delivered; or quick bookkeeping
+done inline.
 
-Every route is an ordinary handler. An HTTP handler receives one
-`PAGI::Request`, starts its background work -- asynchronous I/O, or a
-subprocess for blocking work -- and returns its Response; the WebSocket
-handler receives one `PAGI::WebSocket`. The background work runs on after the
-handler has returned, so the response is not held up by it:
+Every route is an ordinary handler. Work it starts and does not await belongs
+to a `PAGI::FutureOwner`, which reports failures and lets shutdown wait for
+it:
 
 ```perl
 my $background = PAGI::FutureOwner->new(
@@ -17,13 +16,14 @@ my $background = PAGI::FutureOwner->new(
 async sub signup {
     my ($request) = @_;
     my $data = await $request->json;
-    $background->adopt(send_welcome_email($data->{email}));
+    $request->connection->on_complete(sub {
+        $background->adopt(send_welcome_email($data->{email}));
+    });
     return response('JSON', { status => 'created' }, status => 201);
 }
 
 compose(routes => [
     route('/signup' => \&signup, methods => ['POST']),
-    websocket('/ws' => \&messages),
     ...
 ], lifespan => {
     shutdown => async sub { await $background->settled },
@@ -40,45 +40,57 @@ Watch the server console for background task output.
 
 ## Patterns
 
-### 1. Async I/O (Non-Blocking)
+### 1. Start now
 
-For network calls, database queries, file I/O using async libraries:
-
-```perl
-$background->adopt(send_welcome_email($email));
-```
-
-Hand work the client does not wait for to a `PAGI::FutureOwner`, and await its
-`settled` in `lifespan.shutdown`: its failures are reported, and shutdown waits
-for it.
-
-### 2. Blocking/CPU Work (Subprocess)
-
-For CPU-intensive or blocking operations, use `IO::Async::Function` (this
-pattern ties the application to IO::Async, the loop `pagi-server` runs):
+Begin the work in the handler and hand its Future to `$background`. It runs
+alongside the response, so it may still be running, or may already be done,
+when the client gets its answer:
 
 ```perl
-run_blocking_task("heavy_computation", 3);
-```
-
-Runs in a child process, doesn't block the event loop.
-
-### 3. Quick Sync Work
-
-For very fast bookkeeping (<10ms), call it in the handler before returning.
-It delays that response by however long it takes:
-
-```perl
-quick_sync_task("log");
+$background->adopt(log_to_analytics('page_view', { path => '/' }));
 return response('JSON', { status => 'ok' });
 ```
 
-**Warning:** Any blocking here blocks ALL requests! Anything slower belongs
-in pattern 1 or 2.
+### 2. After the response
+
+Register the work on the connection's `on_complete`. It starts once the
+response has been delivered; a client that disconnects first does not trigger
+it, so it gets no email:
+
+```perl
+$request->connection->on_complete(sub {
+    $background->adopt(send_welcome_email($email));
+});
+return response('JSON', { status => 'created' }, status => 201);
+```
+
+`on_complete` means "delivered", whatever the status: a handler that
+registers it and then dies still delivers a 500, and the work still starts.
+Register it just before returning, after anything that can fail. For cleanup
+that must run however the connection ends, use `on_end`.
+
+### 3. Quick sync work
+
+For very fast bookkeeping, call it in the handler before returning. It delays
+the response by however long it takes, and a blocking call here blocks every
+request.
+
+### Start now, or after the response?
+
+- **Start now** when the work does not depend on the client getting its
+  answer and starting early helps: analytics, cache warming, logging.
+- **After the response** when the work only makes sense once the client has
+  the response: a welcome email for a signup that succeeded, a notification
+  that a change was accepted.
+
+### Blocking or CPU-heavy work
+
+These patterns are for asynchronous work. Blocking or CPU-heavy work belongs
+in another process: `examples/process-streaming` runs one through
+`Future::IO`, without naming an event loop.
 
 ## Endpoints
 
-- `GET /async` - Fire-and-forget async I/O
-- `GET /blocking` - CPU work in subprocess
-- `POST /signup` - Real-world example with background email
+- `GET /async` - analytics started now, alongside the response
+- `POST /signup` - analytics started now; the welcome email after the response
 - `WS /ws` - WebSocket replies, with background analytics per message

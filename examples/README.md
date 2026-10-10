@@ -74,7 +74,7 @@ Lifespan and background work:
 
 - `lifespan-utils` - lifespan hooks via `PAGI::Utils`
 - `test-lifespan-shutdown` - testing graceful lifespan shutdown hooks
-- `background-tasks` - starting fire-and-forget work from ordinary handlers
+- `background-tasks` - work the client does not wait for: started at once, or after the response is delivered (`on_complete`)
 
 Each example has its own `README.md` explaining how to run it.
 
