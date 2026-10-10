@@ -523,4 +523,23 @@ subtest 'a request that never completes fails at the harness timeout' => sub {
     ok(Time::HiRes::time() - $started < 2, 'at the timeout, not after the app\'s 3s');
 };
 
+subtest 'an app awaiting a Future subclass that real I/O resolves completes' => sub {
+    require Future::IO;
+    { package PAGITest::SubclassFuture; our @ISA = ('Future'); }
+    my $app = async sub {
+        my ($scope, $receive, $send) = @_;
+        my $ready = PAGITest::SubclassFuture->new;
+        my $timer = Future::IO->sleep(0.1)->on_done(sub { $ready->done });
+        await $ready;
+        await $send->({
+            type    => 'http.response.start',
+            status  => 200,
+            headers => [['content-type', 'text/plain']],
+        });
+        await $send->({ type => 'http.response.body', body => 'ready', more => 0 });
+    };
+    is(PAGI::Test::Client->new(app => $app)->get('/')->content, 'ready',
+        'the loop is driven whatever class the app\'s Future has');
+};
+
 done_testing;
