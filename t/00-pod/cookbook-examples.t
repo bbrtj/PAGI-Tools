@@ -296,6 +296,33 @@ subtest 'Streaming Response Formats recipe executes as published' => sub {
     );
 };
 
+subtest 'Thrown pages recipe executes as published' => sub {
+    my $recipe = code_block_containing($cookbook,
+        '=head3 Thrown pages and house-styled errors', "middleware('ErrorHandler'");
+    perl_script_runs(
+        'thrown pages recipe',
+        "use PAGI::Compose qw(compose);\nuse PAGI::Routing qw(middleware route);\n"
+            . "use PAGI::Exception::HTTP;\nuse PAGI::Test::Client;\n"
+            . "my \$psgi_called = 0;\n"
+            . "{ package Local::PlackStyle; sub new { bless {}, \$_[0] } sub to_app { \$psgi_called++; sub { [200, [], ['psgi']] } } }\n"
+            . "my \$errors = do {\n" . $recipe . "};\n"
+            . "my \$app = compose(middleware => [\$errors], routes => [\n"
+            . "    route('/plack' => sub { die Local::PlackStyle->new }),\n"
+            . "    route('/page' => sub { die response('Text', 'down', status => 503) }),\n"
+            . "    route('/fact' => sub { die PAGI::Exception::HTTP->new(404, 'nope') }),\n"
+            . "]);\n"
+            . "local \$SIG{__WARN__} = sub {};\n"
+            . "my \$client = PAGI::Test::Client->new(app => \$app);\n"
+            . "my \$res = \$client->get('/plack');\n"
+            . "die 'plack-style: expected the stock 500' unless \$res->status == 500;\n"
+            . "die 'plack-style: its PSGI to_app ran as a PAGI app' if \$psgi_called;\n"
+            . "\$res = \$client->get('/page');\n"
+            . "die 'a 503 page answers as thrown' unless \$res->status == 503 && \$res->text eq 'down';\n"
+            . "\$res = \$client->get('/fact');\n"
+            . "die 'a fact gets the house style' unless \$res->status == 404 && \$res->json->{error} eq 'nope';\n",
+    );
+};
+
 subtest 'Tutorial routing object example executes exactly as published' => sub {
     my $source = code_block_containing(
         $tutorial,
