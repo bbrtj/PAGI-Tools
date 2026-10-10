@@ -484,7 +484,8 @@ Drains pending receives and deferred terminal notifications. Public client
 operations and application Future completion do this automatically. If a test
 resolves an external Future and the app then parks again after a terminal
 send, call C<pump> to deliver its queued notifications. Terminal facts are
-already readable before pumping. This in-process client has no event loop.
+already readable before pumping. Receives drive the event loop themselves while
+they wait.
 
 =head1 SSE PROTOCOL
 
