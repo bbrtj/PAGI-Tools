@@ -1,0 +1,73 @@
+use strict;
+use warnings;
+use Test2::V0;
+
+use lib 'lib';
+use PAGI::Test::Client;
+
+# PAGI::Tools re-exports toolkit functions by name: each is its source
+# module's own sub, so declaration-package rules such as &Name constraint
+# providers see the importing package.
+
+my %SOURCE = (
+    compose               => 'PAGI::Compose',
+    response              => 'PAGI::Response',
+    router                => 'PAGI::Routing',
+    route                 => 'PAGI::Routing',
+    websocket             => 'PAGI::Routing',
+    sse                   => 'PAGI::Routing',
+    mount                 => 'PAGI::Routing',
+    middleware            => 'PAGI::Routing',
+    request_response      => 'PAGI::Routing',
+    url                   => 'PAGI::Routing::URL',
+    path_for              => 'PAGI::Routing::URL',
+    url_for               => 'PAGI::Routing::URL',
+    error_context         => 'PAGI::ErrorContext',
+    app_state             => 'PAGI::State',
+    stash                 => 'PAGI::Stash',
+    session               => 'PAGI::Session',
+    clone_scope           => 'PAGI::Utils::Middleware',
+    wrap_send             => 'PAGI::Utils::Middleware',
+    wrap_receive          => 'PAGI::Utils::Middleware',
+    wrap_response_headers => 'PAGI::Utils::Middleware',
+);
+
+{
+    package Local::Facade::All;
+    use PAGI::Tools qw(:all);
+}
+
+subtest 'each name is its source module\'s own sub' => sub {
+    for my $name (sort keys %SOURCE) {
+        ok(\&{"Local::Facade::All::$name"} == \&{"$SOURCE{$name}::$name"},
+            "$name is $SOURCE{$name}::$name");
+    }
+};
+
+subtest 'an unknown name dies at compile time' => sub {
+    like(dies { eval q{ package Local::Facade::Unknown; use PAGI::Tools qw(nope); 1 } or die $@ },
+        qr/"nope" is not exported by the PAGI::Tools module/);
+};
+
+subtest 'a &Name provider resolves in the importing package' => sub {
+    my $app = eval q{
+        package Local::Facade::Provider;
+        use PAGI::Tools qw(compose response route);
+        sub Int { qr/\A[0-9]+\z/ }
+        compose(routes => [route('/notes/{id:&Int}' => sub {
+            my ($request) = @_;
+            response('Text', 'note ' . $request->path_param('id'));
+        })]);
+    } or die $@;
+    my $client = PAGI::Test::Client->new(app => $app);
+    is($client->get('/notes/7')->text, 'note 7', 'a matching id');
+    is($client->get('/notes/x')->status, 404, 'Local::Facade::Provider::Int rejects the rest');
+};
+
+subtest 'the tags hold exactly the listed names' => sub {
+    is([sort @{ $PAGI::Tools::EXPORT_TAGS{routes} }], [sort qw(router route websocket sse mount)], ':routes');
+    is([sort @{ $PAGI::Tools::EXPORT_TAGS{urls} }], [sort qw(url path_for url_for)], ':urls');
+    is([sort @{ $PAGI::Tools::EXPORT_TAGS{all} }], [sort keys %SOURCE], ':all');
+};
+
+done_testing;

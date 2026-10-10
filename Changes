@@ -49,6 +49,10 @@
     599 and an optional client message --
     PAGI::Exception::HTTP->throw(404, 'no such note') -- and ErrorHandler
     answers with that status and message.
+  - PAGI::Tools exports the everyday toolkit functions by name -- use
+    PAGI::Tools qw(compose response route path_for) -- or by the :routes,
+    :urls and :all tags. Each is its source module's own function, so
+    importing from the modules themselves still works the same.
 
   [Changed]
   - raw_path is the full requested path at every mount level; AccessLog

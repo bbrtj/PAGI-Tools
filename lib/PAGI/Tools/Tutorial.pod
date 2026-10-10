@@ -91,8 +91,7 @@ handlers receive their direct protocol objects:
   Mount app object                     -> app object via to_app
 
   use Future::AsyncAwait;
-  use PAGI::Routing qw(:routes);
-  use PAGI::Response qw(response);
+  use PAGI::Tools qw(:routes response);
 
   async sub home {
       my ($request) = @_;
@@ -121,6 +120,11 @@ handlers receive their direct protocol objects:
   );
 
   my $routing_component = $routing->to_app;
+
+L<PAGI::Tools> re-exports the everyday functions by name (see
+L<PAGI::Tools/IMPORTS>); C<use PAGI::Routing qw(:routes)> and
+C<use PAGI::Response qw(response)> import the same functions from their own
+modules.
 
 Constructors validate and build immutable descriptions. C<to_app> compiles a
 fresh native PAGI wrapper graph and starts no request; call it once for the app
