@@ -37,7 +37,7 @@ written against it; the Starlette versions are unchanged.
 | `04b-bundled-middleware` | the same jobs with Tools' own `Runtime` and `Maintenance` | same statuses and `Retry-After`; the timing header is `X-Runtime`, and the 503 body is the stock "Service Unavailable" | 17 (3) | (none shipped) |
 | `05-streaming` | slow NDJSON feed and a custom tab-separated format | identical | 32 (10) | 23 (5) |
 | `06-sessions` | visit counter, a name, and a typo'd key | identical | 23 (3) | 17 (5) |
-| `07-upload-relay` | relay an upload back, transform it chunk by chunk, checksum it | checksum identical; Starlette's relay and transform fail (see below) | 25 (4) | 22 (4) |
+| `07-upload-relay` | relay an upload back, shout it back as text chunk by chunk, checksum it | checksum identical; Starlette's relay and transform fail (see below), and PAGI's transform decodes by the declared charset where Python's `bytes.upper()` knows only ASCII | 26 (5) | 22 (4) |
 | `08-negotiation` | one URL, HTML or JSON by `Accept` (q-values), else 406 | same for plain `Accept`s; with `text/html;q=0.9, application/json;q=0.5` PAGI serves HTML, the usual hand-written Starlette check serves JSON | 11 (3) | 12 (3) |
 
 The first pass measured the PAGI side at 28, 50, 35, 28, 19, 34, 26, 27 and 13
@@ -61,8 +61,12 @@ Run a Starlette one with `pip install starlette uvicorn itsdangerous`, then
     SSE stream never returns, and the SSE half of 03 cannot be tested in
     Starlette.
   - **Streaming an upload straight back out (07).** PAGI relays a 4,000,001-byte
-    upload byte for byte (`pipe_from`) and transforms it chunk by chunk, under
-    `pagi-server` and in its test client. Starlette 1.7 can't: a
+    upload byte for byte (`pipe_from`) and transforms a text upload chunk by
+    chunk, under `pagi-server` and in its test client. The transform reads its
+    body as text, decoded by the charset the client declares (UTF-8 when it
+    declares none, via `$request->charset`), so "café" shouts as "CAFÉ"; the
+    relay and checksum stay on bytes, so a zip passes through untouched.
+    Starlette 1.7 can't: a
     `StreamingResponse` that reads `request.stream()` returns 0 bytes (relay) or
     hangs (transform), under uvicorn and in its TestClient. Its own disconnect
     watcher reads `receive()` and takes the body (`starlette/responses.py`). The

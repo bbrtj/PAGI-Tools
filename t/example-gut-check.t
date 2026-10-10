@@ -144,7 +144,14 @@ subtest '07: upload relay' => sub {
     my $body = join '', map { chr($_ % 256) } 0 .. 99_999;
 
     is($client->post('/relay', body => $body)->content, $body, 'the upload is relayed byte for byte');
-    is($client->post('/shout', body => 'hello')->content, 'HELLO', 'and transformed chunk by chunk');
+    my $res = $client->post('/shout', body => 'hello');
+    is($res->content, 'HELLO', 'and transformed chunk by chunk');
+    is($res->header('content-type'), 'text/plain; charset=utf-8', 'as UTF-8 text');
+    is($client->post('/shout', body => "caf\xc3\xa9 \xe2\x82\xac \xc2\xb5")->content,
+        "CAF\xc3\x89 \xe2\x82\xac \xce\x9c", 'UTF-8 when no charset is declared');
+    is($client->post('/shout', body => "caf\xe9",
+            headers => { 'Content-Type' => 'text/plain; charset=ISO-8859-1' })->content,
+        "CAF\xc3\x89", 'by the declared charset otherwise');
     is($client->post('/sha256', body => $body)->json,
         { bytes => length($body), sha256 => sha256_hex($body) }, 'and checksummed');
 };
