@@ -101,7 +101,8 @@ async sub messages {
     await $ws->each_text(async sub {
         my ($text) = @_;
 
-        # The reply is part of the conversation, so it is awaited.
+        # The reply is best-effort: a client that has already gone has
+        # nobody to tell, and that is not an error.
         await $ws->try_send_text("Got: $text");
 
         # Background work is not awaited: $background owns it.
