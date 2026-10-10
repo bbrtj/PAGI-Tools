@@ -320,11 +320,10 @@ sub _status_for_error {
         # A page claims its own status; without a usable one it is a 500.
         my $page_status = PAGI::ErrorContext::_page_status($error);
         return $page_status if defined $page_status;
-        eval {
-            warn "PAGI ErrorHandler rejected a thrown page's status: "
-                . "it is missing or not an integer from 100 to 599\n";
-            1;
-        };
+        $self->_diagnose_rejected_status(
+            'it is missing or not an integer from 100 to 599',
+            "a thrown page's status",
+        );
         return 500;
     }
     unless (defined($claimed)) {
@@ -353,10 +352,13 @@ sub _status_for_error {
     return $numeric;
 }
 
+# $subject names what was rejected: an exception's status_code claim unless
+# given, or a thrown page's own status.
 sub _diagnose_rejected_status {
-    my ($self, $reason) = @_;
+    my ($self, $reason, $subject) = @_;
+    $subject //= 'exception status_code claim';
     eval {
-        warn "PAGI ErrorHandler rejected exception status_code claim: $reason\n";
+        warn "PAGI ErrorHandler rejected $subject: $reason\n";
         1;
     };
     return;
