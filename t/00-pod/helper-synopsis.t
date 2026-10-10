@@ -7,6 +7,7 @@ use PAGI::Test::Client;
 use Future;
 use lib "$FindBin::Bin/../lib";
 use PAGITest::Connected qw(sse_scope);
+use PAGITest::LeavingClient qw(leaves_at_handshake);
 
 no warnings 'once';    # the SYNOPSIS variables are read from their packages
 
@@ -112,6 +113,14 @@ subtest 'PAGI::SSE' => sub {
     $disconnect->done({ type => 'sse.disconnect' });
     ok $handler->is_done, 'the stream ends when the client goes away';
     is \@warnings, [], 'and nothing complains';
+};
+
+subtest 'PAGI::SSE: a client that leaves as the stream starts' => sub {
+    my $app = synopsis_app('SSE', 'PAGITest::SSESynopsisLeaving') or return;
+    my $client = PAGI::Test::Client->new(app => leaves_at_handshake($app));
+
+    ok(lives { $client->sse('/events', sub { }) }, 'the handler does not die') or note $@;
+    is \%PAGITest::SSESynopsisLeaving::subscribers, {}, 'and leaves no subscriber';
 };
 
 done_testing;

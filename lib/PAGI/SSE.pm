@@ -91,6 +91,7 @@ sub disconnect_detail {
 
 # Scope property accessors
 sub scope        { shift->{scope} }
+sub connection   { shift->{scope}{'pagi.connection'} }
 sub path         { shift->{scope}{path} // '/' }
 sub raw_path      { PAGI::Utils::Scope::raw_path(shift->{scope}) }
 sub request_uri   { PAGI::Utils::Scope::request_uri(shift->{scope}) }
@@ -893,18 +894,18 @@ PAGI::SSE - Convenience wrapper for PAGI Server-Sent Events connections
             await $sse->keepalive(25);
             await $sse->start;
 
-            $sse->on_close(sub {
-                my ($sse, $reason) = @_;    # undef after an explicit close
-                delete $subscribers{refaddr $sse};
-            });
-
             # Replay what a reconnecting client missed, then go live. Sends go
             # out in the order they are made, so making the replay sends and
             # subscribing in one step (no await between) puts anything
             # published meanwhile after the replay: nothing missed or reordered.
             my $seen = $sse->last_event_id // 0;
             my @replay = map { $sse->send_event(%$_) } @history[$seen .. $#history];
-            $subscribers{refaddr $sse} = $sse;
+            my $id = refaddr $sse;
+            $subscribers{$id} = $sse;
+
+            # Unsubscribe however the stream ends: the connection runs this
+            # at once if the client has already gone.
+            $sse->connection->on_end(sub { delete $subscribers{$id} });
             await Future->needs_all(@replay);
 
             await $sse->run;    # until the client disconnects
@@ -1398,7 +1399,10 @@ closing or closed, or after L</decline>, they return without sending, so they
 need no check.
 
 =item * B<Cleanup belongs in C<on_close>.> Register it before the first
-C<await>; it runs however the connection ends.
+C<await>; it runs however the connection ends. For something you create
+after C<start> (a subscription, a listener), register its cleanup once it
+exists with C<< $sse->connection->on_end >>: it runs at once if the client
+has already gone, so the new thing cannot be left behind (see L</connection>).
 
 =back
 
@@ -1553,6 +1557,8 @@ the connection outcome.
 Registers cleanup for the connection's terminal C<on_end> notification.
 Register before awaited I/O. Registration after cleanup has started or
 finished (including constructor-time terminal notification) croaks.
+To clean up something you create after C<start>, use L</connection>'s
+C<on_end> instead.
 Callbacks can be regular subs or async subs — async results are
 automatically awaited. Multiple callbacks run in registration order. A
 callback that dies does not stop the others; once all have run, the first
@@ -1589,6 +1595,31 @@ The connection retains the helper until terminal notification. The helper's
 own L<PAGI::FutureOwner> then holds the single worker that runs the hooks,
 surviving handler return until cleanup settles and releases the hooks and
 helper.
+
+=head2 connection
+
+    my $conn = $sse->connection;
+
+Returns the server-supplied object under C<pagi.connection>. Its interface is
+defined by the PAGI specification (L<PAGI::Spec::Www>); callers use those
+public methods rather than requiring a particular server's connection class.
+
+Its C<on_end> is the cleanup for something you create after the handshake,
+registered once that thing exists:
+
+    use Scalar::Util qw(refaddr);
+
+    await $sse->start;
+    my $id = refaddr $sse;
+    $listeners{$id} = $sse;
+    $sse->connection->on_end(sub { delete $listeners{$id} });
+
+C<on_end> runs once, however the connection ends, and at once if it has
+already ended: a client can leave during the handshake, and C<start>
+still returns. Registered after the resource exists, it cannot miss it, so no
+C<is_closed> check is needed. L</on_close> is for cleanup you register before
+the handshake; registering it afterwards croaks if the client has already
+left.
 
 =head2 finished
 
@@ -1665,15 +1696,6 @@ Returns C<$self> for chaining.
 
         my $sse = PAGI::SSE->new($scope, $receive, $send);
 
-        my $sub_id;
-        $sse->on_close(sub {
-            my ($sse, $reason) = @_;
-            unsubscribe_metrics($sub_id) if defined $sub_id;
-            # Log abnormal disconnects for debugging
-            warn "SSE client disconnected: $reason"
-                if defined $reason;
-        });
-
         await $sse->keepalive(25);
 
         # Send initial state
@@ -1682,10 +1704,8 @@ Returns C<$self> for chaining.
             data  => { time => time() },
         );
 
-        return if $sse->is_closed;
-
         # Subscribe to metrics
-        $sub_id = subscribe_metrics(sub {
+        my $sub_id = subscribe_metrics(sub {
             my ($metrics) = @_;
             $sse->try_send_event(
                 event => 'metrics',
@@ -1693,8 +1713,17 @@ Returns C<$self> for chaining.
             );
         });
 
+        # Unsubscribe however the stream ends, at once if the client has
+        # already gone.
+        $sse->connection->on_end(sub {
+            my ($reason) = @_;
+            unsubscribe_metrics($sub_id);
+            # Log abnormal disconnects for debugging
+            warn "SSE client disconnected: $reason"
+                if defined $reason;
+        });
+
         await $sse->run;
-        await $sse->finished;    # its on_close cleanup is part of this call
     }
 
 =head1 SEE ALSO

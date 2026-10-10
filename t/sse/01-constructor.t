@@ -113,4 +113,10 @@ subtest 'an sse connection without end_future is refused at construction' => sub
     );
 };
 
+subtest 'connection is the scope\'s pagi.connection' => sub {
+    my $scope = sse_scope();
+    my $sse = PAGI::SSE->new($scope, sub {}, sub {});
+    ref_is($sse->connection, $scope->{'pagi.connection'}, 'the server-supplied object');
+};
+
 done_testing;

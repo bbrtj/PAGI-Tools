@@ -2415,7 +2415,9 @@ Server-Sent Events are ideal for real-time dashboards:
           );
       });
 
-      $sse->on_close(sub { unsubscribe_metrics($sub_id) });
+      # Unsubscribe however the stream ends, at once if the client has
+      # already gone.
+      $sse->connection->on_end(sub { unsubscribe_metrics($sub_id) });
       await $sse->run;
   }),
   ]);

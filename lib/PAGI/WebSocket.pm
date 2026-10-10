@@ -92,6 +92,7 @@ sub disconnect_detail {
 
 # Scope property accessors
 sub scope        { shift->{scope} }
+sub connection   { shift->{scope}{'pagi.connection'} }
 sub path         { shift->{scope}{path} }
 sub raw_path      { PAGI::Utils::Scope::raw_path(shift->{scope}) }
 sub request_uri   { PAGI::Utils::Scope::request_uri(shift->{scope}) }
@@ -1476,7 +1477,8 @@ with a signature must accept all three; lifecycle
 reason is available through C<disconnect_reason>. Register before awaited I/O:
 registration after cleanup has begun (including constructor-time terminal
 notification) croaks. A local C<close> request alone does not start cleanup.
-Callbacks can be regular subs or async subs — async results are
+To clean up something you create after C<accept>, use L</connection>'s
+C<on_end> instead. Callbacks can be regular subs or async subs — async results are
 automatically awaited. Multiple callbacks run in registration order. A
 callback that dies does not stop the others; once all have run, the first
 failure is reported through L</finished>.
@@ -1496,6 +1498,31 @@ own L<PAGI::FutureOwner> then holds the worker that runs all hooks in order;
 it survives handler return and cancellation of cleanup observers, and
 releases hooks and helper references when cleanup finishes. There is no
 background receive watcher.
+
+=head2 connection
+
+    my $conn = $ws->connection;
+
+Returns the server-supplied object under C<pagi.connection>. Its interface is
+defined by the PAGI specification (L<PAGI::Spec::Www>); callers use those
+public methods rather than requiring a particular server's connection class.
+
+Its C<on_end> is the cleanup for something you create after the handshake,
+registered once that thing exists:
+
+    use Scalar::Util qw(refaddr);
+
+    await $ws->accept;
+    my $id = refaddr $ws;
+    $listeners{$id} = $ws;
+    $ws->connection->on_end(sub { delete $listeners{$id} });
+
+C<on_end> runs once, however the connection ends, and at once if it has
+already ended: a client can leave during the handshake, and C<accept>
+still returns. Registered after the resource exists, it cannot miss it, so no
+C<is_closed> check is needed. L</on_close> is for cleanup you register before
+the handshake; registering it afterwards croaks if the client has already
+left.
 
 =head2 finished
 
@@ -1614,7 +1641,10 @@ so cleanup still belongs in C<on_close>.
 is closing or closed, or a refusal has started, they return without sending.
 
 =item * B<Cleanup belongs in C<on_close>.> Register it before the first
-C<await>; it runs however the connection ends.
+C<await>; it runs however the connection ends. For something you create
+after C<accept> (a subscription, a listener), register its cleanup once it
+exists with C<< $ws->connection->on_end >>: it runs at once if the client
+has already gone, so the new thing cannot be left behind (see L</connection>).
 
 =back
 
