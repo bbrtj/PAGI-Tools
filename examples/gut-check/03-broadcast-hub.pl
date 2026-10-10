@@ -13,7 +13,7 @@
 #
 # Run:  pagi-server --app examples/gut-check/03-broadcast-hub.pl --port 5000
 # Try:  websocat ws://localhost:5000/chat
-#       curl -N localhost:5000/watch
+#       curl -N -H 'Accept: text/event-stream' localhost:5000/watch
 #       curl -X POST localhost:5000/announce -d 'tea is ready'
 
 use v5.40;

@@ -38,11 +38,11 @@ package NoteStore {
     sub find ($self, $id) { $self->{notes}{$id} }
     sub add ($self, $data) { my $id = $self->{next}++; $self->{notes}{$id} = { id => $id, text => $data->{text} } }
     sub remove ($self, $id) { delete $self->{notes}{$id} }
-}
 
-# Lifespan state is written as a hash at startup, but read through an object
-# here: $request->state->get('notes').
-sub store ($request) { $request->state->get('notes') }
+    # Lifespan state is written as a hash at startup, but read through an
+    # object here: $request->state->get('notes').
+    sub for_request ($class, $request) { $request->state->get('notes') }
+}
 
 package Notes {
     use v5.40;
@@ -53,12 +53,12 @@ package Notes {
 
     async sub get ($self, $request)
     {
-        return response('JSON', main::store($request)->all);
+        return response('JSON', NoteStore->for_request($request)->all);
     }
 
     async sub post ($self, $request)
     {
-        my $note = main::store($request)->add(await $request->json);
+        my $note = NoteStore->for_request($request)->add(await $request->json);
         return response('JSON', $note,
             status => 201,
             headers => [Location => path_for($request, 'note', { id => $note->{id} })],
@@ -74,14 +74,14 @@ package Note {
 
     async sub get ($self, $request)
     {
-        my $note = main::store($request)->find($request->path_param('id'))
+        my $note = NoteStore->for_request($request)->find($request->path_param('id'))
             or return response('JSON', { error => 'no such note' }, status => 404);
         return response('JSON', $note);
     }
 
     async sub delete ($self, $request)
     {
-        main::store($request)->remove($request->path_param('id'))
+        NoteStore->for_request($request)->remove($request->path_param('id'))
             or return response('JSON', { error => 'no such note' }, status => 404);
         return response('Empty');
     }

@@ -12,8 +12,11 @@ right track. This is a record of how the shapes compare; it is not a bug hunt.
   sequence through each framework's own in-process test client:
   - `PAGI::Test::Client`;
   - `starlette.testclient.TestClient`.
-- **The exception:** `05-streaming.pl` was checked under `pagi-server` with
-  `curl`, for the reason in finding 9.
+- **The exception:** `05-streaming.pl` could only be checked under
+  `pagi-server`, for the reason in finding 9.
+- **Real servers too:** every PAGI example was also run under `pagi-server`
+  and exercised with `curl` (and `websocat` for 03's WebSocket). 07's
+  Starlette version was also run under uvicorn.
 - **Line counts** below are code lines (no blanks, comments or lone braces),
   with the import/package lines counted separately.
 
@@ -181,6 +184,16 @@ Most important first.
       than the house style, `response('JSON', ...)`;
     - the test client warns "exception after response completed" even for
       errors that were answered with a 500, so tests of error pages are noisy.
+    - **App files compile in different packages in tests and under the
+      server.** `pagi-server` loads an app file with `do` from inside
+      `PAGI::Server::Runner`, so the file's top-level subs land in that package
+      (a `do`-loaded file starts in its caller's package; checked). In a test,
+      or a plain `do` from `main`, they land in `main`. My first 02 called
+      `main::store` and passed every in-process test, then failed with
+      "Undefined subroutine" under `pagi-server`. A top-level `sub run` or
+      `sub mode` in an app file would also replace Runner's own method of that
+      name. Plack loads `.psgi` files into a per-file sandbox package for this
+      reason.
 
 Checked and fine as it is:
 - **`query_params` returns a multi-value object** that JSON can't encode.
@@ -188,6 +201,27 @@ Checked and fine as it is:
   this is parity.
 - **WebSocket `accept` against SSE `start`,** which follows the protocols.
 - **Strict handler returns,** where returning a hashref is an error.
+- **Malformed JSON over a WebSocket** is parity, with one shared weakness.
+  PAGI's `each_json` closes the connection with 1011 (internal error);
+  Starlette's `receive_json` raises `JSONDecodeError` out of the handler (both
+  checked). RFC 6455's 1007 (invalid payload data) is the precise code for a
+  client's bad message, and `each_json` is the natural place to send it.
 - **Running a legacy app beside new routes** is parity: Tools has
   `PAGI::App::WrapPSGI` (see `examples/psgi-bridge`), and Starlette 1.7 still
   ships `WSGIMiddleware`.
+
+## Time spent
+
+Measured from git and file timestamps, not estimated:
+- **Start:** the branch was created at 20:24:59 (2026-10-09, -0500), and the
+  first probe script was written at 20:25:53.
+- **First pass:** committed at 20:33:13. It was a single sketch, without
+  Starlette run and with some comparisons from memory.
+- **Checked pass:** at 21:10:49, after Starlette 1.7 was installed, every pair
+  was run on both sides and those comparisons were replaced with
+  measurements.
+- **More areas:** upload relay, negotiation, mount names, error pages and
+  WebSocket JSON were explored and committed after that.
+- **Real-server pass:** every example was run under `pagi-server` with
+  `curl`/`websocat`, finishing at 21:25:22, an hour after the branch was
+  created.
