@@ -15,13 +15,24 @@ PAGI::Middleware::Debug - Development debug panel middleware
 
 =head1 SYNOPSIS
 
-    use PAGI::Middleware::Builder;
+    use PAGI::Tools qw(compose middleware response route);
 
-    my $app = builder {
-        enable 'Debug',
-            enabled => $ENV{PAGI_DEBUG};
-        $my_app;
-    };
+    my $app = compose(
+        routes     => [route('/' => sub { response('Text', 'hello') })],
+        middleware => [middleware('Debug', enabled => $ENV{PAGI_DEBUG})],
+    );
+
+C<middleware('Debug', ...)> also goes in a Router's, Mount's or Route's
+C<middleware> list. It constructs the middleware and wraps the application
+inside it, which you can do yourself:
+
+    use PAGI::Middleware::Debug;
+
+    my $wrapped = PAGI::Middleware::Debug->new(enabled => $ENV{PAGI_DEBUG})
+        ->wrap($native_app);
+
+Without Compose, L<PAGI::Middleware::Builder> composes middleware the way
+Plack::Builder does.
 
 =head1 DESCRIPTION
 

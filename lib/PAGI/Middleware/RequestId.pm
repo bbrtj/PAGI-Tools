@@ -13,14 +13,27 @@ PAGI::Middleware::RequestId - Unique request ID middleware
 
 =head1 SYNOPSIS
 
-    use PAGI::Middleware::Builder;
+    use PAGI::Tools qw(compose middleware response route);
 
-    my $app = builder {
-        enable 'RequestId',
-            header       => 'X-Request-ID',
-            trust_incoming => 0;
-        $my_app;
-    };
+    my $app = compose(
+        routes     => [route('/' => sub { response('Text', 'hello') })],
+        middleware => [
+            middleware('RequestId', header => 'X-Request-ID', trust_incoming => 0),
+        ],
+    );
+
+C<middleware('RequestId', ...)> also goes in a Router's, Mount's or Route's
+C<middleware> list. It constructs the middleware and wraps the application
+inside it, which you can do yourself:
+
+    use PAGI::Middleware::RequestId;
+
+    my $wrapped = PAGI::Middleware::RequestId->new(
+        header => 'X-Request-ID', trust_incoming => 0,
+    )->wrap($native_app);
+
+Without Compose, L<PAGI::Middleware::Builder> composes middleware the way
+Plack::Builder does.
 
 =head1 DESCRIPTION
 

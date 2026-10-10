@@ -13,17 +13,34 @@ PAGI::Middleware::Healthcheck - Health check endpoint middleware
 
 =head1 SYNOPSIS
 
-    use PAGI::Middleware::Builder;
+    use PAGI::Tools qw(compose middleware response route);
 
-    my $app = builder {
-        enable 'Healthcheck',
-            path => '/health',
-            checks => {
-                database => sub { check_db_connection() },
-                cache    => sub { check_redis() },
-            };
-        $my_app;
-    };
+    my $app = compose(
+        routes     => [route('/' => sub { response('Text', 'hello') })],
+        middleware => [
+            middleware('Healthcheck',
+                path   => '/health',
+                checks => {
+                    database => sub { check_db_connection() },
+                    cache    => sub { check_redis() },
+                },
+            ),
+        ],
+    );
+
+C<middleware('Healthcheck', ...)> also goes in a Router's, Mount's or
+Route's C<middleware> list. It constructs the middleware and wraps the
+application inside it, which you can do yourself:
+
+    use PAGI::Middleware::Healthcheck;
+
+    my $wrapped = PAGI::Middleware::Healthcheck->new(
+        path   => '/health',
+        checks => { database => sub { check_db_connection() } },
+    )->wrap($native_app);
+
+Without Compose, L<PAGI::Middleware::Builder> composes middleware the way
+Plack::Builder does.
 
 =head1 DESCRIPTION
 

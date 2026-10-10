@@ -15,14 +15,19 @@ PAGI::Middleware::ContentNegotiation - HTTP content negotiation middleware
 
 =head1 SYNOPSIS
 
-    use PAGI::Response qw(response);
-    use PAGI::Routing qw(middleware mount);
+    use PAGI::Tools qw(compose middleware response route);
 
     # An API that only speaks JSON: anything else is refused with a 406
     # before a handler runs.
-    mount('/api', routes => [...], middleware => [
-        middleware('ContentNegotiation', supported_types => ['application/json']),
-    ]);
+    my $app = compose(
+        routes     => [route('/items' => sub { response('JSON', { items => [] }) })],
+        middleware => [
+            middleware('ContentNegotiation', supported_types => ['application/json']),
+        ],
+    );
+
+With more than one representation, handlers read the choice from the scope;
+C<refuse> replaces the stock 406:
 
     # Two representations; handlers read the choice from the scope.
     middleware('ContentNegotiation', supported_types => ['application/json', 'text/html'])
@@ -36,6 +41,19 @@ PAGI::Middleware::ContentNegotiation - HTTP content negotiation middleware
     # Refuse your own way
     middleware('ContentNegotiation', supported_types => ['application/json'],
         refuse => response('JSON', { detail => 'This API only speaks JSON' }, status => 406))
+
+C<middleware('ContentNegotiation', ...)> also goes in a Router's, Mount's or
+Route's C<middleware> list. It constructs the middleware and wraps the
+application inside it, which you can do yourself:
+
+    use PAGI::Middleware::ContentNegotiation;
+
+    my $wrapped = PAGI::Middleware::ContentNegotiation->new(
+        supported_types => ['application/json'],
+    )->wrap($native_app);
+
+Without Compose, L<PAGI::Middleware::Builder> composes middleware the way
+Plack::Builder does.
 
 =head1 DESCRIPTION
 

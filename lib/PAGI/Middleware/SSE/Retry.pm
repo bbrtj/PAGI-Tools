@@ -12,13 +12,23 @@ PAGI::Middleware::SSE::Retry - Add retry hints to SSE events
 
 =head1 SYNOPSIS
 
-    use PAGI::Middleware::Builder;
+    use PAGI::Tools qw(compose middleware response route);
 
-    my $app = builder {
-        enable 'SSE::Retry',
-            retry => 5000;  # 5 seconds
-        $my_app;
-    };
+    my $app = compose(
+        routes     => [route('/' => sub { response('Text', 'hello') })],
+        middleware => [middleware('SSE::Retry', retry => 5000)],    # 5 seconds
+    );
+
+C<middleware('SSE::Retry', ...)> also goes in a Router's, Mount's or Route's
+C<middleware> list. It constructs the middleware and wraps the application
+inside it, which you can do yourself:
+
+    use PAGI::Middleware::SSE::Retry;
+
+    my $wrapped = PAGI::Middleware::SSE::Retry->new(retry => 5000)->wrap($native_app);
+
+Without Compose, L<PAGI::Middleware::Builder> composes middleware the way
+Plack::Builder does.
 
 =head1 DESCRIPTION
 

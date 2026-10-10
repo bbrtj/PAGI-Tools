@@ -154,6 +154,10 @@
   - Every module's tag for all its exports is :all. Compose, CSRF,
     Transport, Stash, Session, ErrorContext, Routing, State and
     Routing::URL used :ALL, which no release shipped.
+  - Every bundled middleware's SYNOPSIS leads with Compose's
+    middleware('Name', ...), then shows PAGI::Middleware::Name->new(...)
+    ->wrap($app); PAGI::Middleware::Builder is documented as the way to
+    compose middleware without Compose.
 
   [Breaking -- see UPGRADING.md]
   - PAGI::App::Router and PAGI::Endpoint::Router are removed; PAGI::Routing

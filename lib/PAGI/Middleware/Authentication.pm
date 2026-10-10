@@ -65,17 +65,32 @@ PAGI::Middleware::Authentication - install request authentication results
 
 =head1 SYNOPSIS
 
-  use PAGI::Auth qw(unauth_result);
-  use PAGI::Middleware::Authentication;
+    use PAGI::Auth qw(unauth_result);
+    use PAGI::Tools qw(compose middleware response route);
 
-  my $middleware = PAGI::Middleware::Authentication->new(
-      backend => sub {
-          my ($request) = @_;
-          return unauth_result();
-      },
-  );
+    my $app = compose(
+        routes     => [route('/' => sub { response('Text', 'hello') })],
+        middleware => [
+            middleware('Authentication', backend => sub {
+                my ($request) = @_;
+                return unauth_result();
+            }),
+        ],
+    );
 
-  my $app = $middleware->wrap($next);
+C<middleware('Authentication', ...)> also goes in a Router's, Mount's or
+Route's C<middleware> list. It constructs the middleware and wraps the
+application inside it, which you can do yourself:
+
+    use PAGI::Middleware::Authentication;
+
+    my $wrapped = PAGI::Middleware::Authentication->new(backend => sub {
+        my ($request) = @_;
+        return unauth_result();
+    })->wrap($native_app);
+
+Without Compose, L<PAGI::Middleware::Builder> composes middleware the way
+Plack::Builder does.
 
 =head1 DESCRIPTION
 

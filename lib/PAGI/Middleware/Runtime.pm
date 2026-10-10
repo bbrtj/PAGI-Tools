@@ -14,14 +14,26 @@ PAGI::Middleware::Runtime - Request timing middleware
 
 =head1 SYNOPSIS
 
-    use PAGI::Middleware::Builder;
+    use PAGI::Tools qw(compose middleware response route);
 
-    my $app = builder {
-        enable 'Runtime',
-            header    => 'X-Runtime',
-            precision => 6;
-        $my_app;
-    };
+    my $app = compose(
+        routes     => [route('/' => sub { response('Text', 'hello') })],
+        middleware => [
+            middleware('Runtime', header => 'X-Runtime', precision => 6),
+        ],
+    );
+
+C<middleware('Runtime', ...)> also goes in a Router's, Mount's or Route's
+C<middleware> list. It constructs the middleware and wraps the application
+inside it, which you can do yourself:
+
+    use PAGI::Middleware::Runtime;
+
+    my $wrapped = PAGI::Middleware::Runtime->new(header => 'X-Runtime', precision => 6)
+        ->wrap($native_app);
+
+Without Compose, L<PAGI::Middleware::Builder> composes middleware the way
+Plack::Builder does.
 
 =head1 DESCRIPTION
 

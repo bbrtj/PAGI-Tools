@@ -13,15 +13,28 @@ PAGI::Middleware::Lint - Validate PAGI application compliance
 
 =head1 SYNOPSIS
 
-    use PAGI::Middleware::Builder;
+    use PAGI::Tools qw(compose middleware response route);
 
-    my $app = builder {
-        enable 'Lint',
-            strict => 1,
-            on_warning => sub  {
-        my ($msg) = @_; warn "PAGI Lint: $msg\n" };
-        $my_app;
-    };
+    my $app = compose(
+        routes     => [route('/' => sub { response('Text', 'hello') })],
+        middleware => [
+            middleware('Lint',
+                strict     => 1,
+                on_warning => sub { my ($msg) = @_; warn "PAGI Lint: $msg\n" },
+            ),
+        ],
+    );
+
+C<middleware('Lint', ...)> also goes in a Router's, Mount's or Route's
+C<middleware> list. It constructs the middleware and wraps the application
+inside it, which you can do yourself:
+
+    use PAGI::Middleware::Lint;
+
+    my $wrapped = PAGI::Middleware::Lint->new(strict => 1)->wrap($native_app);
+
+Without Compose, L<PAGI::Middleware::Builder> composes middleware the way
+Plack::Builder does.
 
 =head1 DESCRIPTION
 

@@ -15,17 +15,37 @@ PAGI::Middleware::CORS - Cross-Origin Resource Sharing middleware
 
 =head1 SYNOPSIS
 
-    use PAGI::Middleware::Builder;
+    use PAGI::Tools qw(compose middleware response route);
 
-    my $app = builder {
-        enable 'CORS',
-            origins     => ['https://example.com', 'https://app.example.com'],
-            methods     => ['GET', 'POST', 'PUT', 'DELETE'],
-            headers     => ['Content-Type', 'Authorization'],
-            credentials => 1,
-            max_age     => 86400;
-        $my_app;
-    };
+    my $app = compose(
+        routes     => [route('/' => sub { response('Text', 'hello') })],
+        middleware => [
+            middleware('CORS',
+                origins     => ['https://example.com', 'https://app.example.com'],
+                methods     => ['GET', 'POST', 'PUT', 'DELETE'],
+                headers     => ['Content-Type', 'Authorization'],
+                credentials => 1,
+                max_age     => 86400,
+            ),
+        ],
+    );
+
+C<middleware('CORS', ...)> also goes in a Router's, Mount's or Route's
+C<middleware> list. It constructs the middleware and wraps the application
+inside it, which you can do yourself:
+
+    use PAGI::Middleware::CORS;
+
+    my $wrapped = PAGI::Middleware::CORS->new(
+        origins     => ['https://example.com', 'https://app.example.com'],
+        methods     => ['GET', 'POST', 'PUT', 'DELETE'],
+        headers     => ['Content-Type', 'Authorization'],
+        credentials => 1,
+        max_age     => 86400,
+    )->wrap($native_app);
+
+Without Compose, L<PAGI::Middleware::Builder> composes middleware the way
+Plack::Builder does.
 
 =head1 DESCRIPTION
 

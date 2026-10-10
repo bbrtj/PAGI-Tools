@@ -12,14 +12,31 @@ PAGI::Middleware::MethodOverride - Override HTTP method from request data
 
 =head1 SYNOPSIS
 
-    use PAGI::Middleware::Builder;
+    use PAGI::Tools qw(compose middleware response route);
 
-    my $app = builder {
-        enable 'MethodOverride',
-            param => '_method',
-            allowed_methods => [qw(PUT PATCH DELETE)];
-        $my_app;
-    };
+    my $app = compose(
+        routes     => [route('/' => sub { response('Text', 'hello') })],
+        middleware => [
+            middleware('MethodOverride',
+                param           => '_method',
+                allowed_methods => [qw(PUT PATCH DELETE)],
+            ),
+        ],
+    );
+
+C<middleware('MethodOverride', ...)> also goes in a Router's, Mount's or
+Route's C<middleware> list. It constructs the middleware and wraps the
+application inside it, which you can do yourself:
+
+    use PAGI::Middleware::MethodOverride;
+
+    my $wrapped = PAGI::Middleware::MethodOverride->new(
+        param           => '_method',
+        allowed_methods => [qw(PUT PATCH DELETE)],
+    )->wrap($native_app);
+
+Without Compose, L<PAGI::Middleware::Builder> composes middleware the way
+Plack::Builder does.
 
 =head1 DESCRIPTION
 

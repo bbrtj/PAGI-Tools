@@ -24,17 +24,32 @@ PAGI::Middleware::ErrorHandler - Exception handling middleware
 
 =head1 SYNOPSIS
 
-    use PAGI::Middleware::Builder;
+    use PAGI::Tools qw(compose middleware response route);
 
-    my $app = builder {
-        enable 'ErrorHandler',
-            development => 1,
-            on_error    => sub  {
-                my ($error, $scope) = @_;
-                $tracker->capture($error, path => $scope->{path});
-            };
-        $my_app;
-    };
+    my $app = compose(
+        routes     => [route('/' => sub { response('Text', 'hello') })],
+        middleware => [
+            middleware('ErrorHandler',
+                development => 1,
+                on_error    => sub {
+                    my ($error, $scope) = @_;
+                    warn "error at $scope->{path}: $error";
+                },
+            ),
+        ],
+    );
+
+C<middleware('ErrorHandler', ...)> also goes in a Router's, Mount's or
+Route's C<middleware> list. It constructs the middleware and wraps the
+application inside it, which you can do yourself:
+
+    use PAGI::Middleware::ErrorHandler;
+
+    my $wrapped = PAGI::Middleware::ErrorHandler->new(development => 1)
+        ->wrap($native_app);
+
+Without Compose, L<PAGI::Middleware::Builder> composes middleware the way
+Plack::Builder does.
 
 =head1 DESCRIPTION
 

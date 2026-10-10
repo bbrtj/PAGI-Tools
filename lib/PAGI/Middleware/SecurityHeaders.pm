@@ -13,16 +13,32 @@ PAGI::Middleware::SecurityHeaders - Security headers middleware
 
 =head1 SYNOPSIS
 
-    use PAGI::Middleware::Builder;
+    use PAGI::Tools qw(compose middleware response route);
 
-    my $app = builder {
-        enable 'SecurityHeaders',
-            x_frame_options         => 'DENY',
-            x_content_type_options  => 'nosniff',
-            x_xss_protection        => '1; mode=block',
-            strict_transport_security => 'max-age=31536000; includeSubDomains';
-        $my_app;
-    };
+    my $app = compose(
+        routes     => [route('/' => sub { response('Text', 'hello') })],
+        middleware => [
+            middleware('SecurityHeaders',
+                x_frame_options           => 'DENY',
+                x_content_type_options    => 'nosniff',
+                x_xss_protection          => '1; mode=block',
+                strict_transport_security => 'max-age=31536000; includeSubDomains',
+            ),
+        ],
+    );
+
+C<middleware('SecurityHeaders', ...)> also goes in a Router's, Mount's or
+Route's C<middleware> list. It constructs the middleware and wraps the
+application inside it, which you can do yourself:
+
+    use PAGI::Middleware::SecurityHeaders;
+
+    my $wrapped = PAGI::Middleware::SecurityHeaders->new(
+        x_frame_options => 'DENY',
+    )->wrap($native_app);
+
+Without Compose, L<PAGI::Middleware::Builder> composes middleware the way
+Plack::Builder does.
 
 =head1 DESCRIPTION
 

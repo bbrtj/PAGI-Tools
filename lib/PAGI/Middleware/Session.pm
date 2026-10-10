@@ -52,10 +52,11 @@ PAGI::Middleware::Session - Session management middleware with pluggable State/S
         return response('JSON', { visits => $session->get('visits') });
     }
 
-    # Several workers, or sessions that survive a restart: keep the whole
-    # session encrypted in the cookie (distribution
-    # PAGI-Middleware-Session-Store-Cookie). To change the cookie itself,
-    # configure the State and pass it; nothing on the middleware reaches it.
+For several workers, or sessions that survive a restart, keep the whole
+session encrypted in the cookie (distribution
+PAGI-Middleware-Session-Store-Cookie). To change the cookie itself, configure
+the State and pass it; nothing on the middleware reaches it:
+
     use PAGI::Middleware::Session qw(session_state session_store);
 
     my $production = compose(
@@ -72,6 +73,15 @@ PAGI::Middleware::Session - Session management middleware with pluggable State/S
         ],
         routes => [route('/visits' => \&visits)],
     );
+
+C<middleware('Session', ...)> also goes in a Router's, Mount's or Route's
+C<middleware> list. It constructs the middleware and wraps the application
+inside it, which you can do yourself, around any native application:
+
+    my $wrapped = PAGI::Middleware::Session->new->wrap($app->to_app);
+
+Without Compose, L<PAGI::Middleware::Builder> composes middleware the way
+Plack::Builder does.
 
 =head1 DESCRIPTION
 
