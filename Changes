@@ -55,6 +55,9 @@
     importing from the modules themselves still works the same.
   - Cookbook: "Linking inside a mounted app"; PAGI::Routing::URL's
     path_for shows absolute, sibling and parent references in a Mount.
+  - examples/gut-check: everyday applications next to their Starlette
+    versions, with measured behaviour and line counts, tested in
+    t/example-gut-check.t.
 
   [Changed]
   - raw_path is the full requested path at every mount level; AccessLog

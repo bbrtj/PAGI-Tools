@@ -4,33 +4,44 @@ Everyday Starlette-shaped applications built with PAGI-Tools, each paired with
 a real Starlette version (`starlette/`), to check whether the API is on the
 right track. This is a record of how the shapes compare; it is not a bug hunt.
 
+The first pass (2026-10-09) found the rough edges listed under "What the gut
+check found". PAGI-Tools 0.003000 smooths them, and the applications here are
+written against it; the Starlette versions are unchanged.
+
 ## How this was checked
 
 - **Starlette:** 1.7.0 (with httpx 0.28.1 and itsdangerous) in a scratch
   virtualenv.
 - **Same requests, both sides:** every pair was driven with the same request
   sequence through each framework's own in-process test client:
-  - `PAGI::Test::Client`;
+  - `PAGI::Test::Client`, kept as `t/example-gut-check.t` in the PAGI-Tools
+    test suite;
   - `starlette.testclient.TestClient`.
-- **The exception:** `05-streaming.pl` could only be checked under
-  `pagi-server`, for the reason in finding 9.
 - **Real servers too:** every PAGI example was also run under `pagi-server`
   and exercised with `curl` (and `websocat` for 03's WebSocket). 07's
   Starlette version was also run under uvicorn.
-- **Line counts** below are code lines (no blanks, comments or lone braces),
-  with the import/package lines counted separately.
+- **Line counts** below are code lines (not blank, not a comment, not a lone
+  `{`, `}` or `};`), with the import lines (Perl's `use` and `package`,
+  Python's `import` and `from`) counted separately. From this directory:
+
+  ```
+  perl -nE 'if ($ARGV ne $f) { printf "%-32s %d (%d)\n", $f, $c, $i if $f; ($f, $c, $i) = ($ARGV, 0, 0) } next if /^\s*(?:#|$)/ || /^\s*[{}];?\s*$/; $c++; $i++ if /^\s*(?:use|package|import|from)\s/; END { printf "%-32s %d (%d)\n", $f, $c, $i }' *.pl starlette/*.py
+  ```
 
 | Pair | What it does | Behaviour | PAGI lines (imports) | Starlette lines (imports) |
 |---|---|---|---|---|
-| `01-errors-as-responses` | throw a 404 from the model, real bugs get a 500 | identical | 28 (6) | 19 (4) |
-| `02-notes-resource` | CRUD resource: class endpoints, lifespan store, named links, typed `{id}` | identical, incl. 204 and the typed-path 404 | 50 (19) | 44 (5) |
-| `03-broadcast-hub` | WebSocket chat + SSE watcher + HTTP announce on one fan-out | identical where Starlette can be tested (see below) | 35 (6) | 46 (5) |
-| `04-everyday-middleware` | `Server-Timing` and maintenance mode, hand-written | identical | 28 (7) | 26 (7) |
-| `04b-bundled-middleware` | the same jobs with Tools' own `Runtime` and `Maintenance` | same statuses and headers; the 503 body is the stock "Service Unavailable" | 19 (5) | (none shipped) |
-| `05-streaming` | slow NDJSON feed and a custom tab-separated format | identical | 34 (12) | 23 (5) |
-| `06-sessions` | visit counter, a name, and a typo'd key | identical | 26 (6) | 17 (5) |
-| `07-upload-relay` | relay an upload back, transform it chunk by chunk, checksum it | checksum identical; Starlette's relay and transform fail (see below) | 27 (6) | 22 (4) |
-| `08-negotiation` | one URL, HTML or JSON by `Accept` (q-values), else 406 | same for plain `Accept`s; with `text/html;q=0.9, application/json;q=0.5` PAGI serves HTML, the usual hand-written Starlette check serves JSON | 13 (5) | 12 (3) |
+| `01-errors-as-responses` | throw a 404 from the model, real bugs get a 500 | identical | 22 (4) | 19 (4) |
+| `02-notes-resource` | CRUD resource: class endpoints, lifespan store, named links, typed `{id}` | identical, incl. 204 and the typed-path 404 | 48 (17) | 44 (5) |
+| `03-broadcast-hub` | WebSocket chat + SSE watcher + HTTP announce on one fan-out | identical where Starlette can be tested (see below) | 33 (4) | 46 (5) |
+| `04-everyday-middleware` | `Server-Timing` and maintenance mode, hand-written | identical | 25 (4) | 26 (7) |
+| `04b-bundled-middleware` | the same jobs with Tools' own `Runtime` and `Maintenance` | same statuses and `Retry-After`; the timing header is `X-Runtime`, and the 503 body is the stock "Service Unavailable" | 17 (3) | (none shipped) |
+| `05-streaming` | slow NDJSON feed and a custom tab-separated format | identical | 32 (10) | 23 (5) |
+| `06-sessions` | visit counter, a name, and a typo'd key | identical | 23 (3) | 17 (5) |
+| `07-upload-relay` | relay an upload back, transform it chunk by chunk, checksum it | checksum identical; Starlette's relay and transform fail (see below) | 25 (4) | 22 (4) |
+| `08-negotiation` | one URL, HTML or JSON by `Accept` (q-values), else 406 | same for plain `Accept`s; with `text/html;q=0.9, application/json;q=0.5` PAGI serves HTML, the usual hand-written Starlette check serves JSON | 11 (3) | 12 (3) |
+
+The first pass measured the PAGI side at 28, 50, 35, 28, 19, 34, 26, 27 and 13
+lines (6, 19, 6, 7, 5, 12, 6, 6 and 5 of them imports).
 
 Run any PAGI one with `pagi-server --app examples/gut-check/<file> --port 5000`.
 Run a Starlette one with `pip install starlette uvicorn itsdangerous`, then
@@ -40,7 +51,7 @@ Run a Starlette one with `pip install starlette uvicorn itsdangerous`, then
 
 **On the right track.**
 - **Behaviour:** every pair behaves the same as its Starlette twin, status
-  codes and headers included.
+  codes and headers included (04b's timing header has another name).
 - **Where PAGI did better, measured:**
   - **Testing realtime code.** `PAGI::Test::Client` drives a WebSocket, an
     open SSE stream and an HTTP request together in one test (03). Starlette's
@@ -64,11 +75,14 @@ Run a Starlette one with `pip install starlette uvicorn itsdangerous`, then
     `Accept`s). `http_default => not_found()` from `PAGI::Pages` serves an HTML
     page to browsers and RFC 9457 `application/problem+json` to API clients.
     Starlette has nothing comparable built in.
-  - **Throwing the response itself (01).** With one small handler, a thrown
-    `response('JSON', ...)` answers the request. Starlette can raise only
-    `HTTPException`; raising a response object gives a 500 there (checked).
+  - **Throwing (01).** `PAGI::Exception::HTTP->throw(404, ...)` from deep in
+    the model answers 404 with no configuration, as Starlette's `HTTPException`
+    does; 01's one small handler only renders the errors it expects as JSON. A
+    thrown response answers itself too: `die response('Redirect', '/login')`
+    redirects. Starlette can raise only `HTTPException`; raising a response
+    object gives a 500 there (checked).
   - **Fan-out without extra machinery (03).** PAGI's best-effort sends let one
-    hub serve three protocols in 35 lines. The Starlette version needs a queue
+    hub serve three protocols in 33 lines. The Starlette version needs a queue
     and a sender task per WebSocket (46 lines), or the separate `broadcaster`
     package.
   - **Batteries (04b).** Tools bundles 29 middlewares, including
@@ -81,119 +95,104 @@ Run a Starlette one with `pip install starlette uvicorn itsdangerous`, then
   - **Strict session keys (06).** `get('nmae')` dies with "Available keys:
     name, visits"; Starlette's `session["nmae"]` is a bare `KeyError`. It's the
     same contract with a better message.
-- **Where PAGI is longer:** seven of the eight pairs with a Starlette version
-  (only 03 is shorter; 08 is 13 lines against 12), and it's mostly imports. Each Perl package block repeats its `use` lines (19 in 02
-  against Python's 5). Without imports, PAGI's logic is shorter for 02 (31
-  against 39 lines) and 03 (29 against 41), and 2 to 8 lines longer for the
-  rest. See finding 1.
+- **Length:** PAGI is now shorter in three of the eight pairs with a Starlette
+  version (03, 04 and 08) and longer in five (01, 02, 05, 06 and 07), by 3 to 9
+  lines. One `use PAGI::Tools qw(...)` line replaced the per-module imports;
+  02's 17 import lines are mostly the `package` and `use` lines each of its
+  four packages repeats (Python's file has 5). Without imports, PAGI's logic is
+  shorter for 02 (31 against 39 lines), 03 (29 against 41) and 08 (8 against
+  9), and 2 to 8 lines longer for the rest.
 
-None of the rough edges below is architectural.
+None of the rough edges below was architectural.
 
-## Shapes that felt ugly or inconsistent
+## What the gut check found, and what changed
 
-Most important first.
+Most important first, as found; each now says what PAGI-Tools 0.003000 does.
 
-1. **There is no single import for an application.** Every handler package
-   repeats `use Future::AsyncAwait; use PAGI::Response qw(response);
-   use PAGI::Routing qw(...); ...`, which is most of the size gap in the table.
-   A bundle (say `use PAGI::Tools ':app'`, enabling async/await and exporting
-   `response`, `route`, `compose`, `middleware`, `session`), as
-   Mojolicious::Lite and Dancer2 offer, would make PAGI the shorter side in
-   most pairs.
+1. **There was no single import for an application.** Changed:
+   `use PAGI::Tools qw(compose response route ...)` imports any of 20 toolkit
+   functions by name, in one line, with the tags `:routes`, `:urls` and `:all`.
+   It turns nothing on implicitly: `use Future::AsyncAwait;` stays the
+   application's own line. The per-module imports still work.
 
-2. **A thrown response is a 500 by default.** Starlette answers
-   `raise HTTPException(404)` with a 404 out of the box (checked). In PAGI,
-   `die response('JSON', ..., status => 404)` is a 500 until you add the six-line
-   ErrorHandler handler in 01. The Thunderhorse values port does this by
-   default. Compose's ErrorHandler could too, which would remove the repeated
-   "return a 404 JSON" blocks `starlette-apples` is full of.
+2. **A thrown response was a 500 by default.** Changed: ErrorHandler reads one
+   small protocol from what is thrown. An object with `status_code` is an HTTP
+   error (`PAGI::Exception::HTTP` is the one Tools ships); a response, or
+   anything else with `to_app`, answers itself, a redirect included. 01 now
+   throws `PAGI::Exception::HTTP` and keeps its handler only for the JSON house
+   style.
 
-3. **The query accessors disagree across Request, WebSocket and SSE.**
+3. **The query accessors disagreed across Request, WebSocket and SSE.**
+   Changed: all three have exactly `query_param`, `query_params`,
+   `raw_query_param` and `raw_query_params`. WebSocket's `query` and
+   `raw_query`, and Request's deprecated `query`, `raw_query`, `form` and
+   `raw_form`, are gone.
 
-   | | single value | all values |
-   |---|---|---|
-   | `PAGI::Request` | `query_param` (`query` is deprecated, and warns) | `query_params` |
-   | `PAGI::WebSocket` | `query` only (no `query_param`) | `query_params` |
-   | `PAGI::SSE` | `query_param` | `query_params` |
+4. **The best-effort send families overlapped.** Changed:
+   `send_*_if_connected` is gone. `try_send_*` sends only while connected (it
+   returns false before `accept` too) and is the one best-effort family.
 
-   The deprecated short names on Request don't even map to the same shape:
-   `query()` becomes the single-value `query_param()`, `form()` becomes the
-   all-values `form_params()`, and `raw_query()`/`raw_form()` follow the same
-   split. WebSocket keeps `query` and `raw_query` as live methods.
+5. **Middleware: the docs used the other composition style.** Changed: every
+   bundled middleware's SYNOPSIS opens with
+   `compose(... middleware => [middleware('Name', ...)])`, then shows
+   `PAGI::Middleware::Name->new(...)->wrap($app)`; Builder is for applications
+   that do not use Compose. There is still no request-level `call_next`; the
+   `app -> app` function form (04) is the mechanism.
 
-4. **The best-effort send families overlap.** WebSocket has `try_send_text`/
-   `_bytes`/`_json` (never throws, returns a boolean) and
-   `send_text_if_connected`/... (a silent no-op when closed). SSE has only the
-   `try_send*` family.
+6. **Lifespan state is written as a hash and read as an object.** Kept, and
+   explained in `PAGI::State`: each request gets a shallow copy of the state, so
+   a top-level write in a request would silently desync from every other one;
+   startup writes the hash once, and requests read a read-only view.
+   `$request->state` is now always an object, and on a request with no state
+   (a `PAGI::Test::Client` without `lifespan => 1`) `get` says so instead of
+   "Can't call method".
 
-5. **Middleware: two composition styles, and the docs use the other one.**
-   Compose takes `middleware => [middleware('Runtime')]`, but the bundled
-   middlewares' docs (`Maintenance`, `Runtime` and others) show only
-   `PAGI::Middleware::Builder`'s `builder { enable ... }`. I hand-wrote 04
-   before finding that 04b already existed. There's also no request-level
-   `call_next` convenience; the `app -> app` function form is fine underneath
-   one.
+7. **Links: names inside mounts use a slash.** Kept, and a correction:
+   `PAGI::Routing` documented the scheme fully (its "REVERSE ROUTING AND
+   INSPECTION" section); only `PAGI::Routing::URL`'s `path_for` lacked a mount
+   example, which it now has, with the Cookbook recipe "Linking inside a
+   mounted app". Names are logical addresses, not URL paths: `api/note` is the
+   route `note` in the mount `api`, and a handler inside that mount reaches a
+   sibling as plain `note`, wherever the mount is placed, which Starlette's
+   `api:note` cannot do.
 
-6. **Lifespan state is written as a hash and read as an object.** Startup does
-   `$state->{notes} = ...`; handlers do `$request->state->get('notes')`, and
-   `$request->state` can be undef (hence `starlette-apples`' `or die`).
-   Starlette uses `app.state.notes` on both sides.
+8. **Route constraints name a Perl function inside a string.** Kept:
+   `{id:&Int}` is the compact form, and the docs now lead with the explicit
+   one, `constraints => { id => Int }`, which 02 uses.
 
-7. **Links: a function or a facade, never a request method, and names inside
-   mounts use a slash.**
-   - **The calls:** it's `path_for($request, 'note', {id => 1})`, or
-     `url($request)->path_for(...)`, against Starlette's
-     `request.url_for('note', id=1)`. `url_for` takes a params hashref in one
-     call form and named `query =>`/`fragment =>` options in the other.
-   - **Names inside a mount:** a route named `note` inside a mount named `api`
-     is `api/note` (checked: `note`, `api.note` and `api:note` are "unknown
-     route name"). Starlette spells it `api:note` (checked). The slash reads
-     like a path, and `PAGI::Routing::URL`'s docs never show it; I found it by
-     trying spellings.
+9. **The test client didn't drive off-loop I/O during a request.** A
+   correction and a fix: plain handlers awaiting `Future::IO` always worked;
+   only a streamed response whose producer awaited real I/O failed (a 500), and
+   WebSocket and SSE receive timeouts were not honoured. `PAGI::Test::Client`
+   now drives the event loop in all of them, so 05 is tested in-process like the
+   others.
 
-8. **Route constraints name a Perl function inside a string.**
-   `'/notes/{id:&Int}'` works because `use Types::Standard qw(Int)` put `Int`
-   in the caller's package. A reader can't see where `&Int` comes from.
+10. **SSE handler ceremony.** Real SSE handlers check `return if
+    $sse->is_closed;` after nearly every `await` during setup (see
+    `examples/sse-dashboard`). Still open.
 
-9. **The test client doesn't drive off-loop I/O during a request.**
-   - **What happens:** a stream whose producer awaits `Future::IO->sleep` gets
-     an immediate 500 ("lost its returning future"), with or without
-     `Future::IO::Impl::IOAsync` loaded.
-   - **What works:** the same app works under `pagi-server` (five ticks over
-     1.1 s), and the client does drive the loop for lifespan startup and
-     shutdown.
-   - **Starlette:** its TestClient runs the equivalent `asyncio.sleep` stream
-     fine (1.0 s).
-   - **Docs:** the limit isn't documented.
-
-10. **SSE handler ceremony.** Real SSE handlers check
-    `return if $sse->is_closed;` after nearly every `await` during setup (see
-    `examples/sse-dashboard`).
-
-11. **There's no "after the response" task.** Starlette's `BackgroundTask` runs
-    once the response is produced (its TestClient waits for it: measured order
-    "handler returned, task ran, client got 200"). Here, work is started before
-    the handler returns and handed to `PAGI::FutureOwner`, so it races the
-    response. `examples/background-tasks` also uses `IO::Async::Function`,
-    against the "Future::IO only" rule for application code.
+11. **There was no "after the response" task.** A correction: the connection's
+    `on_complete` already runs work once the response has been delivered, in
+    the same place as Starlette's `BackgroundTask` (measured order: handler
+    returned, task ran, client got the response). Nothing showed it; the
+    Cookbook now has "Work After the Response", and `examples/background-tasks`
+    shows it next to work started at once, without IO::Async.
 
 12. **Small things:**
-    - an optional session key needs an explicit undef default
-      (`get('name', undef)`);
-    - `PAGI::Endpoint::HTTP`'s SYNOPSIS uses `PAGI::Response::JSON->new` rather
-      than the house style, `response('JSON', ...)`;
-    - the test client warns "exception after response completed" even for
-      errors that were answered with a 500, so tests of error pages are noisy.
+    - an optional session key needs an explicit default (`get('name', undef)`):
+      kept, the same idiom as State and Stash, and now shown in
+      `PAGI::Session`'s `get`;
+    - `PAGI::Endpoint::HTTP`'s SYNOPSIS now uses `response('JSON', ...)`;
+    - the test client's "exception after response completed" warning for an
+      answered 500 is what a server logs; `PAGI::Test::Client` shows how a test
+      captures and asserts it, and since finding 2 only real 5xx errors raise
+      it;
     - **App files compile in different packages in tests and under the
       server.** `pagi-server` loads an app file with `do` from inside
-      `PAGI::Server::Runner`, so the file's top-level subs land in that package
-      (a `do`-loaded file starts in its caller's package; checked). In a test,
-      or a plain `do` from `main`, they land in `main`. My first 02 called
-      `main::store` and passed every in-process test, then failed with
-      "Undefined subroutine" under `pagi-server`. A top-level `sub run` or
-      `sub mode` in an app file would also replace Runner's own method of that
-      name. Plack loads `.psgi` files into a per-file sandbox package for this
-      reason.
+      `PAGI::Server::Runner`, so the file's top-level subs land in that package;
+      in a test, or a plain `do` from `main`, they land in `main`. Still open,
+      in PAGI-Server: it will load each app file in a sandbox package of its
+      own, as Plack does. Until then, call your own subs unqualified.
 
 Checked and fine as it is:
 - **`query_params` returns a multi-value object** that JSON can't encode.
@@ -201,11 +200,10 @@ Checked and fine as it is:
   this is parity.
 - **WebSocket `accept` against SSE `start`,** which follows the protocols.
 - **Strict handler returns,** where returning a hashref is an error.
-- **Malformed JSON over a WebSocket** is parity, with one shared weakness.
-  PAGI's `each_json` closes the connection with 1011 (internal error);
-  Starlette's `receive_json` raises `JSONDecodeError` out of the handler (both
-  checked). RFC 6455's 1007 (invalid payload data) is the precise code for a
-  client's bad message, and `each_json` is the natural place to send it.
+- **Malformed JSON over a WebSocket.** `each_json` now closes with 1007
+  (invalid payload data) and ends the loop; an `on_invalid_json` option, or a
+  `handle_invalid_json` method in a subclass, replaces that. Starlette's
+  `receive_json` raises `JSONDecodeError` out of the handler.
 - **Running a legacy app beside new routes** is parity: Tools has
   `PAGI::App::WrapPSGI` (see `examples/psgi-bridge`), and Starlette 1.7 still
   ships `WSGIMiddleware`.
