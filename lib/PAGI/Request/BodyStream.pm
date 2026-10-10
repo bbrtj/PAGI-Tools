@@ -75,7 +75,7 @@ of data. The stream handles:
 =back
 
 B<Important>: Streaming is mutually exclusive with buffered body methods like
-C<body()>, C<json()>, C<form()> in L<PAGI::Request>. Once you start streaming,
+C<body()>, C<json()>, C<form_params()> in L<PAGI::Request>. Once you start streaming,
 you cannot use those methods.
 
 =head1 CONSTRUCTOR

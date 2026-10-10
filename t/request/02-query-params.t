@@ -69,4 +69,8 @@ subtest 'empty and missing query string' => sub {
     is($req1->query_param('foo'), undef, 'missing key returns undef');
 };
 
+subtest 'the deprecated aliases are gone' => sub {
+    ok(!PAGI::Request->can($_), "PAGI::Request has no $_") for qw(query raw_query form raw_form);
+};
+
 done_testing;

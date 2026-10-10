@@ -9,7 +9,7 @@ use Encode qw(decode FB_CROAK FB_DEFAULT LEAVE_SRC);
 use Cookie::Baker qw(crush_cookie);
 use Future::AsyncAwait;
 use JSON::MaybeXS qw(decode_json);
-use Carp qw(croak carp);
+use Carp qw(croak);
 use Scalar::Util qw(blessed);
 use PAGI::Request::MultiPartHandler;
 use PAGI::Request::Upload;
@@ -158,24 +158,10 @@ sub query_param {
     return $self->query_params(%opts)->get($name);
 }
 
-# DEPRECATED: Alias with warning
-sub query {
-    my $self = shift;
-    carp "query() is deprecated; use query_param() instead";
-    return $self->query_param(@_);
-}
-
 # Raw single query param
 sub raw_query_param {
     my ($self, $name) = @_;
     return $self->query_param($name, raw => 1);
-}
-
-# DEPRECATED: Alias with warning
-sub raw_query {
-    my $self = shift;
-    carp "raw_query() is deprecated; use raw_query_param() instead";
-    return $self->raw_query_param(@_);
 }
 
 # All cookies as hashref (cached in scope)
@@ -502,13 +488,6 @@ async sub form_params {
     return $self->{scope}{$cache_key};
 }
 
-# DEPRECATED: Alias with warning
-async sub form {
-    my $self = shift;
-    carp "form() is deprecated; use form_params() instead";
-    return await $self->form_params(@_);
-}
-
 # Singular accessor for form params
 async sub form_param {
     my ($self, $name, %opts) = @_;
@@ -520,13 +499,6 @@ async sub form_param {
 async sub raw_form_params {
     my ($self, %opts) = @_;
     return await $self->form_params(%opts, raw => 1);
-}
-
-# DEPRECATED: Alias with warning
-async sub raw_form {
-    my $self = shift;
-    carp "raw_form() is deprecated; use raw_form_params() instead";
-    return await $self->raw_form_params(@_);
 }
 
 # Raw singular accessor
@@ -836,6 +808,12 @@ C<strict> and C<raw> options as C<query_params>.
 
 Shortcut for C<< $req->query_param($name, raw => 1) >>. Returns the raw bytes
 without UTF-8 decoding.
+
+=head2 raw_query_params
+
+    my $params = $req->raw_query_params;
+
+Shortcut for C<< $req->query_params(raw => 1) >>.
 
 =head1 PATH PARAMETERS
 

@@ -190,6 +190,12 @@
   - Middleware scope keys move under pagi.*, which PAGI::Spec::Www reserves
     for extensions: pagi.csrf_token, pagi.original_client,
     pagi.original_method, pagi.original_path, pagi.request_id.
+  - PAGI::WebSocket's query and raw_query are now query_param and
+    raw_query_param, the names PAGI::Request and PAGI::SSE use; all three
+    have query_param, query_params, raw_query_param and raw_query_params.
+    PAGI::Request's deprecated query, raw_query, form and raw_form are
+    removed: use query_param, raw_query_param, form_params and
+    raw_form_params.
 
   [Fixed]
   - PAGI::Test::Client drives the event loop while a request waits on real

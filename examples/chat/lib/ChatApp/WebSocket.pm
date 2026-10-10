@@ -25,9 +25,9 @@ async sub chat {
 
     # A reconnecting browser sends its session id and the last message it
     # saw, so it can be caught up.
-    my $session_id  = $ws->query('session') // '';
-    my $raw_name    = $ws->query('name')    // '';
-    my $last_msg_id = int($ws->query('lastMsgId') // 0);
+    my $session_id  = $ws->query_param('session') // '';
+    my $raw_name    = $ws->query_param('name')    // '';
+    my $last_msg_id = int($ws->query_param('lastMsgId') // 0);
 
     my $session;
     # This connection's delivery callback; it also identifies the connection
@@ -488,7 +488,7 @@ ChatApp::WebSocket - the chat's WebSocket handler
 
 `chat($ws)` receives one PAGI::WebSocket from the Router:
 
-- `$ws->query` reads the session id, name and last message id from the URL.
+- `$ws->query_param` reads the session id, name and last message id from the URL.
 - `$ws->on_close` runs cleanup on any disconnect, before or after accept.
 - `$ws->send_json` and `$ws->each_json` handle JSON both ways.
 - `$ws->keepalive` asks the server for protocol pings; no timer in app code.

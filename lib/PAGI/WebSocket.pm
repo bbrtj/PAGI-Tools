@@ -192,15 +192,15 @@ sub raw_query_params {
 }
 
 # Shortcut for single query param
-sub query {
+sub query_param {
     my ($self, $name, %opts) = @_;
     return $self->query_params(%opts)->get($name);
 }
 
 # Raw single query param
-sub raw_query {
+sub raw_query_param {
     my ($self, $name) = @_;
-    return $self->query($name, raw => 1);
+    return $self->query_param($name, raw => 1);
 }
 
 # Single header lookup (case-insensitive, returns last value)
@@ -844,7 +844,7 @@ PAGI::WebSocket - Convenience wrapper for PAGI WebSocket connections
         # accept, so it runs however the connection ends.
         websocket('/json' => async sub {
             my ($ws) = @_;
-            my $user = $ws->query('user') // 'anonymous';
+            my $user = $ws->query_param('user') // 'anonymous';
             $online{$user} = $ws;
             $ws->on_close(sub {
                 my ($code, $reason) = @_;    # the peer's, when it sent a Close
@@ -1070,14 +1070,15 @@ Default: false.
 
 =back
 
-=head2 query
+=head2 query_param
 
-    my $value = $ws->query('user');
-    my $value = $ws->query('page', strict => 1);
-    my $value = $ws->query('id', raw => 1);
+    my $value = $ws->query_param('user');
+    my $value = $ws->query_param('page', strict => 1);
+    my $value = $ws->query_param('id', raw => 1);
 
 Shortcut for C<< $ws->query_params(%opts)->get($name) >>. Accepts the same
-C<strict> and C<raw> options as C<query_params>.
+C<strict> and C<raw> options as C<query_params>. L<PAGI::Request> and
+L<PAGI::SSE> have the same four query accessors.
 
 =head2 raw_query_params
 
@@ -1086,12 +1087,12 @@ C<strict> and C<raw> options as C<query_params>.
 Returns query params without UTF-8 decoding. Equivalent to
 C<< $ws->query_params(raw => 1) >>.
 
-=head2 raw_query
+=head2 raw_query_param
 
-    my $value = $ws->raw_query('user');
+    my $value = $ws->raw_query_param('user');
 
 Returns a single query param without UTF-8 decoding. Equivalent to
-C<< $ws->query($name, raw => 1) >>.
+C<< $ws->query_param($name, raw => 1) >>.
 
 =head1 LIFECYCLE METHODS
 

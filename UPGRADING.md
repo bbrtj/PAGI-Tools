@@ -44,6 +44,7 @@ in [UPGRADING-REFERENCE.md](UPGRADING-REFERENCE.md).
 | Builder `enable '^My::Middleware'` | `enable '+My::Middleware'` ([details](UPGRADING-REFERENCE.md#breaking-use-explicit-middleware-descriptions-at-core-boundaries)) |
 | Directory `show_hidden` | `allow_hidden` ([details](UPGRADING-REFERENCE.md#rooted-file-serving-security-contract)) |
 | `WebSocket::RateLimit`, `SSE::Pubsub`, `WebSocket::Broadcast`/`Chat` | removed; Cookbook recipes ([details](UPGRADING-REFERENCE.md#other-breaking-changes)) |
+| WebSocket `query`, `raw_query`; Request `query`, `raw_query`, `form`, `raw_form` | `query_param`, `raw_query_param`, `form_params`, `raw_form_params`: one set of names on Request, WebSocket and SSE |
 
 Behaviour that changes without a code change: stock refusals and error
 responses are plain text, each replaceable by one option ([details](UPGRADING-REFERENCE.md#audit-changed-first-party-defaults));

@@ -50,7 +50,7 @@ compose(
   a `PAGI::Request` and return `response('JSON', ...)`, or a negotiated
   `not_found(detail => ...)` from `PAGI::Pages`, which is HTML for a browser
   and a problem document for an API client.
-- **`ChatApp::WebSocket::chat($ws)`** reads the session from `$ws->query`,
+- **`ChatApp::WebSocket::chat($ws)`** reads the session from `$ws->query_param`,
   registers cleanup with `$ws->on_close`, then `accept`s, talks JSON with
   `send_json`/`each_json`, and asks the server for protocol pings with
   `$ws->keepalive(25)`.
