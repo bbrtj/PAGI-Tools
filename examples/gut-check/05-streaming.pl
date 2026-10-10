@@ -14,7 +14,8 @@
 # PAGI-Tools hands the producer a Writer instead of pulling from a generator:
 # each awaited write is a backpressure point, and the producer can see a
 # disconnect and stop. A format is a Stream subclass with format_item, so the
-# producer writes items, not bytes.
+# producer writes items, not bytes. PAGI::Test::Client drives the producer's
+# sleeps, so this app is tested in-process like the others.
 #
 # Run:  pagi-server --app examples/gut-check/05-streaming.pl --port 5000
 # Try:  curl -N localhost:5000/ticks
@@ -41,9 +42,7 @@ package Report::TSV {
 
 package main;
 
-use PAGI::Compose qw(compose);
-use PAGI::Response qw(response);
-use PAGI::Routing qw(route);
+use PAGI::Tools qw(compose response route);
 
 async sub ticks ($request)
 {

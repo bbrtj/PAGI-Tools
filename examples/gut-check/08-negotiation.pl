@@ -20,10 +20,7 @@
 
 use v5.40;
 use Future::AsyncAwait;
-
-use PAGI::Compose qw(compose);
-use PAGI::Response qw(response);
-use PAGI::Routing qw(route);
+use PAGI::Tools qw(compose response route);
 
 my $note = { id => 1, text => 'buy milk' };
 

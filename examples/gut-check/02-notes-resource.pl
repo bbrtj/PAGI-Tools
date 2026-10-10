@@ -39,8 +39,8 @@ package NoteStore {
     sub add ($self, $data) { my $id = $self->{next}++; $self->{notes}{$id} = { id => $id, text => $data->{text} } }
     sub remove ($self, $id) { delete $self->{notes}{$id} }
 
-    # Lifespan state is written as a hash at startup, but read through an
-    # object here: $request->state->get('notes').
+    # Startup stores the store once; requests read it through a read-only
+    # view of the lifespan state, so no request can replace it.
     sub for_request ($class, $request) { $request->state->get('notes') }
 }
 
@@ -48,8 +48,7 @@ package Notes {
     use v5.40;
     use parent 'PAGI::Endpoint::HTTP';
     use Future::AsyncAwait;
-    use PAGI::Response qw(response);
-    use PAGI::Routing::URL qw(path_for);
+    use PAGI::Tools qw(path_for response);
 
     async sub get ($self, $request)
     {
@@ -70,7 +69,7 @@ package Note {
     use v5.40;
     use parent 'PAGI::Endpoint::HTTP';
     use Future::AsyncAwait;
-    use PAGI::Response qw(response);
+    use PAGI::Tools qw(response);
 
     async sub get ($self, $request)
     {
@@ -89,14 +88,13 @@ package Note {
 
 package main;
 
-use PAGI::Compose qw(compose);
-use PAGI::Routing qw(route);
+use PAGI::Tools qw(compose route);
 use Types::Standard qw(Int);
 
 compose(
     routes => [
         route('/notes' => Notes->new, name => 'notes'),
-        route('/notes/{id:&Int}' => Note->new, name => 'note'),
+        route('/notes/{id}' => Note->new, name => 'note', constraints => { id => Int }),
     ],
     lifespan => {
         startup => sub ($state, $scope) { $state->{notes} = NoteStore->new; return },

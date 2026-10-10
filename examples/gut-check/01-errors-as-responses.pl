@@ -15,10 +15,11 @@
 #
 #     app = Starlette(routes=[...], exception_handlers={HTTPException: http_exception})
 #
-# PAGI-Tools has no HTTPException class, and none is needed: a response is a
-# value, so a handler can throw the response itself. One ErrorHandler handler
-# turns "an error that is a response" into the answer; everything else gets
-# the stock error page.
+# PAGI-Tools: throw a PAGI::Exception::HTTP (what went wrong), and let one
+# ErrorHandler handler decide how errors look. Without the handler, the stock
+# page answers with the right status and the message. A thrown response
+# (die response('JSON', ..., status => 404)) also works with no handler at
+# all: it answers itself.
 #
 # Run:  pagi-server --app examples/gut-check/01-errors-as-responses.pl --port 5000
 # Try:  curl -i localhost:5000/notes/1
@@ -27,21 +28,15 @@
 
 use v5.40;
 use Future::AsyncAwait;
-
-use PAGI::Compose qw(compose);
-use PAGI::ErrorContext qw(error_context);
-use PAGI::Response qw(response);
-use PAGI::Routing qw(route middleware);
+use PAGI::Exception::HTTP;
+use PAGI::Tools qw(compose error_context middleware response route);
 
 my %NOTES = (1 => { id => 1, text => 'buy milk' });
 
-# Deep in the "model": throw the answer, not a code.
+# Deep in the "model": say what went wrong, not how it looks.
 sub find_note ($id)
 {
-    return $NOTES{$id} // die response('JSON',
-        { error => "no such note: $id" },
-        status => 404,
-    );
+    return $NOTES{$id} // PAGI::Exception::HTTP->throw(404, "no such note: $id");
 }
 
 async sub show ($request)
@@ -54,13 +49,13 @@ async sub boom ($request)
     die "an ordinary bug\n";
 }
 
-# The whole "exception handler" table: a thrown response answers itself.
-sub answer_thrown_responses ($request)
+# The exception handler: errors the app expects become JSON; bugs keep the
+# stock 500. A response with no status of its own takes the error's.
+sub json_errors ($request)
 {
     my $error = error_context($request);
-    my $thrown = $error->exception;
-    return $thrown if builtin::blessed($thrown) && $thrown->can('to_app');
-    return $error->default;
+    return $error->default if $error->is_server_error;
+    return response('JSON', { error => $error->message });
 }
 
 compose(
@@ -68,5 +63,5 @@ compose(
         route('/notes/{id}' => \&show),
         route('/boom' => \&boom),
     ],
-    middleware => [middleware('ErrorHandler', handler => \&answer_thrown_responses)],
+    middleware => [middleware('ErrorHandler', handler => \&json_errors)],
 );

@@ -3,7 +3,7 @@
 # One hub, three doors: WebSocket clients chat, SSE clients watch, and a plain
 # HTTP POST announces to everyone. Starlette users reach for the separate
 # `broadcaster` package for this; here it is a few lines of plain Perl,
-# because every connection helper exposes the same best-effort sends.
+# because every connection helper has the same best-effort try_send_* family.
 #
 # Starlette (with the encode/broadcaster package):
 #
@@ -18,11 +18,8 @@
 
 use v5.40;
 use Future::AsyncAwait;
-
-use PAGI::Compose qw(compose);
-use PAGI::Response qw(response);
-use PAGI::Routing qw(route websocket sse);
 use Scalar::Util qw(refaddr);
+use PAGI::Tools qw(compose response route sse websocket);
 
 # The hub keys listeners by refaddr: never by "$object" inside an async sub
 # that suspends (see the PAGI::SSE SYNOPSIS).
@@ -55,6 +52,8 @@ async sub watch ($sse)
     $sse->on_close(sub { stop_listening($id) });
 
     await $sse->start;
+    # Not a send guard: a watcher that already left must not be registered,
+    # or its listener would never be removed.
     return if $sse->is_closed;
     listen_to($id, sub ($line) { $sse->try_send_event(event => 'line', data => $line) });
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env perl
 #
 # Two everyday middlewares, written as plain functions (app in, app out).
+# 04b-bundled-middleware.pl does the same jobs with middleware Tools ships.
 #
 # Starlette's BaseHTTPMiddleware gives you a request and a call_next:
 #
@@ -29,11 +30,7 @@
 use v5.40;
 use Future::AsyncAwait;
 use Time::HiRes qw(time);
-
-use PAGI::Compose qw(compose);
-use PAGI::Response qw(response);
-use PAGI::Routing qw(route middleware);
-use PAGI::Utils::Middleware qw(wrap_response_headers);
+use PAGI::Tools qw(compose middleware response route wrap_response_headers);
 
 # Server-Timing: how long the application took to start its response.
 sub timing ($app)

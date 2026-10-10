@@ -15,8 +15,9 @@
 # - Starlette's default session lives in a signed cookie (works across
 #   workers); PAGI's default lives in this process's memory, and the cookie
 #   store is a separate distribution (PAGI-Middleware-Session-Store-Cookie).
-# - PAGI's get is strict: $session->get('name') dies when 'name' was never
-#   set, to catch typos. Pass a default for optional keys.
+# - PAGI's get is strict, like State and Stash: $session->get('name') dies
+#   when 'name' was never set, to catch typos. Pass a default for optional
+#   keys.
 #
 # Run:  pagi-server --app examples/gut-check/06-sessions.pl --port 5000
 # Try:  curl -c jar -b jar localhost:5000/visits   (repeat)
@@ -24,11 +25,7 @@
 
 use v5.40;
 use Future::AsyncAwait;
-
-use PAGI::Compose qw(compose);
-use PAGI::Response qw(response);
-use PAGI::Routing qw(route middleware);
-use PAGI::Session qw(session);
+use PAGI::Tools qw(compose middleware response route session);
 
 async sub visits ($request)
 {
