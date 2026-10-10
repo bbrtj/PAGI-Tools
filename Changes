@@ -45,6 +45,10 @@
   - Text and HTML responses declare the UTF-8 they always send: a custom
     content type without a charset gets "; charset=utf-8" (JSON types
     excepted), whether given to the constructor or set later.
+  - PAGI::Exception::HTTP: throw an HTTP error with a status from 400 to
+    599 and an optional client message --
+    PAGI::Exception::HTTP->throw(404, 'no such note') -- and ErrorHandler
+    answers with that status and message.
 
   [Changed]
   - raw_path is the full requested path at every mount level; AccessLog

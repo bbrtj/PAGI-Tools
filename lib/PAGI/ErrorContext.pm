@@ -39,6 +39,12 @@ my %REASON = (
 
 sub error_context { return __PACKAGE__->new(@_) }
 
+# The reason phrase for a 400-599 status; PAGI::Exception::HTTP shares it.
+sub _reason_phrase {
+    my ($status) = @_;
+    return $REASON{$status} // ($status < 500 ? 'Client Error' : 'Server Error');
+}
+
 sub new {
     my ($class, @args) = @_;
     my $scope = PAGI::Utils::Scope::scope_from_source($class, @args);
@@ -53,11 +59,7 @@ sub status          { $_[0]{error}{status} }
 sub is_client_error { my $s = $_[0]->status; $s >= 400 && $s < 500 ? 1 : 0 }
 sub is_server_error { $_[0]->status >= 500 ? 1 : 0 }
 
-sub reason {
-    my ($self) = @_;
-    my $status = $self->status;
-    return $REASON{$status} // ($status < 500 ? 'Client Error' : 'Server Error');
-}
+sub reason { return _reason_phrase($_[0]->status) }
 
 # Only a method that promises client-safe text is shown, and only for the
 # client's errors: Perl exceptions commonly carry an internal `message`.

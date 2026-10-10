@@ -8,6 +8,7 @@ my @load_modules = qw(
     PAGI::Compose
     PAGI::Compose::Compiler
     PAGI::Exception::IncompleteResponse
+    PAGI::Exception::HTTP
     PAGI::Authority
     PAGI::Auth
     PAGI::Auth::Credentials

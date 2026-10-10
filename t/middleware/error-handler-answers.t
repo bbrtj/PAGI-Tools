@@ -8,6 +8,7 @@ use lib 'lib';
 use PAGI::Middleware::ErrorHandler;
 use PAGI::ErrorContext qw(error_context);
 use PAGI::Request::BodyError;
+use PAGI::Exception::HTTP;
 use PAGI::Response qw(response);
 use PAGI::Utils qw(as_app_object invoke_app);
 use PAGI::Pages ();
@@ -182,6 +183,32 @@ subtest 'an author ErrorHandler inside Compose answers once' => sub {
     local $SIG{__WARN__} = sub { push @warnings, @_ };
     my $res = PAGI::Test::Client->new(app => $app)->get('/boom');
     is [$res->status, $res->json], [500, { error => 'Internal Server Error' }], 'one response, the author\'s';
+};
+
+subtest 'PAGI::Exception::HTTP is a fact with a client message' => sub {
+    my $reported = 0;
+    my ($status, undef, $body, $failure) = run(
+        error => PAGI::Exception::HTTP->new(409, 'x'),
+        options => { on_error => sub { $reported++ } },
+    );
+    is [$status, $body, $failure, $reported], [409, 'x', undef, 1];
+};
+
+subtest 'PAGI::Exception::HTTP accepts only 400-599' => sub {
+    like dies { PAGI::Exception::HTTP->new(200) },
+        qr/PAGI::Exception::HTTP status must be an integer from 400 to 599/;
+};
+
+subtest 'a 5xx PAGI::Exception::HTTP shows its reason phrase, not its client message' => sub {
+    my $error = PAGI::Exception::HTTP->new(503, 'back in five minutes');
+    my ($status, undef, $body, $failure) = run(error => $error);
+    is [$status, $body], [503, 'Service Unavailable'];
+    is $failure, exact_ref($error), 're-raised for the server to log';
+};
+
+subtest 'PAGI::Exception::HTTP stringifies as status and text' => sub {
+    is '' . PAGI::Exception::HTTP->new(409, 'x'), '409 x';
+    is '' . PAGI::Exception::HTTP->new(404), '404 Not Found', 'the reason phrase without a message';
 };
 
 done_testing;
