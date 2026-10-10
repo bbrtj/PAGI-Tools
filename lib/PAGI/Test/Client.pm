@@ -1381,7 +1381,7 @@ ends.
 
 An application may await real I/O (L<Future::IO>) before it accepts or
 refuses: C<websocket> drives the event loop for up to 5 seconds while it
-waits.
+waits, then dies with C<WebSocket handshake did not complete within 5 seconds>.
 
 An application that fails after accepting the socket fails the test, as an
 HTTP application's failure does: the test client stands in for the server,
@@ -1441,7 +1441,8 @@ See L<PAGI::Test::SSE> for the SSE connection API and its send strictness
 (L<PAGI::Test::SSE/SEND STRICTNESS>).
 
 An application may await real I/O before it starts or refuses the stream:
-C<sse> drives the event loop for up to 5 seconds while it waits.
+C<sse> drives the event loop for up to 5 seconds while it waits, then dies
+with C<SSE stream did not start within 5 seconds>.
 
 An application that fails after starting the stream fails the test, raised
 once in the same places as for L</websocket>: as C<sse> returns (in either

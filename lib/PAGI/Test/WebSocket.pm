@@ -159,6 +159,13 @@ sub _start {
         return;
     });
 
+    unless ($self->{accepted} || $self->{refused} || $self->{app_future}->is_ready) {
+        # Abandoned: cancel the handler so it cannot resume later, in some
+        # other test, with nobody holding its Future.
+        $self->{app_future}->cancel;
+        croak "WebSocket handshake did not complete within $PAGI::Test::_Drive::TIMEOUT seconds";
+    }
+
     unless ($self->{accepted} || $self->{refused}) {
         # Surface an application/send failure instead of replacing it with a
         # generic handshake error.

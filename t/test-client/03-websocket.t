@@ -274,4 +274,22 @@ subtest 'an app Close that arrives during a receive ends the wait' => sub {
     $ws->complete_close;
 };
 
+subtest 'a handshake that times out is abandoned' => sub {
+    require Future::IO;
+    local $PAGI::Test::_Drive::TIMEOUT = 0.2;
+    my $resumed = 0;
+    my $app = async sub {
+        my ($scope, $receive, $send) = @_;
+        my $event = await $receive->();
+        return unless $event->{type} eq 'websocket.connect';
+        await Future::IO->sleep(0.4);
+        $resumed = 1;
+        await $send->({ type => 'websocket.accept' });
+    };
+    like(dies { PAGI::Test::Client->new(app => $app)->websocket('/ws') },
+        qr/WebSocket handshake did not complete within 0\.2 seconds/, 'it says it timed out');
+    Future::IO->sleep(0.4)->get;    # drive the loop past the handler's wake-up
+    is($resumed, 0, 'and the handler does not resume later');
+};
+
 done_testing;

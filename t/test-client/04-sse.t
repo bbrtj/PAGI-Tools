@@ -113,4 +113,20 @@ subtest 'a handler that awaits real I/O before start connects' => sub {
     $sse->close;
 };
 
+subtest 'a stream start that times out is abandoned' => sub {
+    require Future::IO;
+    local $PAGI::Test::_Drive::TIMEOUT = 0.2;
+    my $resumed = 0;
+    my $app = async sub {
+        my ($scope, $receive, $send) = @_;
+        await Future::IO->sleep(0.4);
+        $resumed = 1;
+        await $send->({ type => 'sse.start', status => 200, headers => [] });
+    };
+    like(dies { PAGI::Test::Client->new(app => $app)->sse('/events') },
+        qr/SSE stream did not start within 0\.2 seconds/, 'it says it timed out');
+    Future::IO->sleep(0.4)->get;    # drive the loop past the handler's wake-up
+    is($resumed, 0, 'and the handler does not resume later');
+};
+
 done_testing;

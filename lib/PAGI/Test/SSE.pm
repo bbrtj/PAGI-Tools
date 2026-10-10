@@ -147,6 +147,13 @@ sub _start {
         return;
     });
 
+    unless ($self->{started} || $self->{refused} || $self->{app_future}->is_ready) {
+        # Abandoned: cancel the handler so it cannot resume later, in some
+        # other test, with nobody holding its Future.
+        $self->{app_future}->cancel;
+        croak "SSE stream did not start within $PAGI::Test::_Drive::TIMEOUT seconds";
+    }
+
     unless ($self->{started} || $self->{refused}) {
         $self->{app_future}->get if $self->{app_future}->is_ready;
         croak "SSE connection not started";
