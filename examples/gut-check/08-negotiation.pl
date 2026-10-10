@@ -24,14 +24,19 @@ use PAGI::Tools qw(compose response route);
 
 my $note = { id => 1, text => 'buy milk' };
 
+# Every answer from this URL depends on Accept, the 406 and the no-Accept
+# default included, so each one says so: a shared cache then keeps the HTML
+# and the JSON apart.
+my @vary = (Vary => 'Accept');
+
 async sub show ($request)
 {
     my $type = $request->preferred_type('html', 'json')
-        // return response('Text', 'Not Acceptable', status => 406);
+        // return response('Text', 'Not Acceptable', status => 406, headers => [@vary]);
 
     return $type eq 'json'
-        ? response('JSON', $note)
-        : response('HTML', "<h1>$note->{text}</h1>");
+        ? response('JSON', $note, headers => [@vary])
+        : response('HTML', "<h1>$note->{text}</h1>", headers => [@vary]);
 }
 
 compose(routes => [route('/note' => \&show)]);

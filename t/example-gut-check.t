@@ -182,6 +182,11 @@ subtest '08: negotiation' => sub {
 
     is($client->get('/note', headers => { Accept => 'image/png' })->status, 406,
         'neither is a 406');
+
+    for my $accept ('application/json', 'text/html', 'image/png', undef) {
+        my $res = $client->get('/note', defined $accept ? (headers => { Accept => $accept }) : ());
+        is($res->header('vary'), 'Accept', 'Vary: Accept for ' . ($accept // 'no Accept'));
+    }
 };
 
 done_testing;
