@@ -3,6 +3,7 @@ use strict;
 use warnings;
 use Test2::V0;
 use Future::AsyncAwait;
+use Time::HiRes ();
 
 use lib 'lib';
 use PAGI::Test::Client;
@@ -70,6 +71,28 @@ subtest 'sse explicit style' => sub {
     my $sse = $client->sse('/events');
     my $event = $sse->receive_event;
     is $event->{event}, 'connected', 'explicit style works';
+    $sse->close;
+};
+
+subtest 'receive_event waits for an event sent after real I/O' => sub {
+    require Future::IO;
+    my $app = async sub {
+        my ($scope, $receive, $send) = @_;
+        await $send->({ type => 'sse.start', status => 200, headers => [] });
+        await Future::IO->sleep(0.2);
+        await $send->({ type => 'sse.send', data => 'after sleep' });
+        while (1) {    # until the client closes
+            my $event = await $receive->();
+            last if ($event->{type} // '') eq 'sse.disconnect';
+        }
+    };
+    my $sse = PAGI::Test::Client->new(app => $app)->sse('/events');
+    is($sse->receive_event(timeout => 2)->{data}, 'after sleep', 'the event arrives');
+
+    my $started = Time::HiRes::time();
+    like(dies { $sse->receive_event(timeout => 0.5) }, qr/Timeout waiting for SSE event/,
+        'a later receive still times out');
+    ok(Time::HiRes::time() - $started >= 0.4, 'after its timeout, not at once');
     $sse->close;
 };
 
