@@ -8,6 +8,7 @@ use Carp qw(croak);
 
 use PAGI::Utils::_SendValidation;
 use PAGI::Test::Response;
+use PAGI::Test::_Drive;
 
 
 sub new {
@@ -95,7 +96,10 @@ sub _start {
             # own websocket.close, which sv already rejected above -- a real
             # server just drops writes to a dead socket: tolerated no-op,
             # nothing reaches the client's readable stream.
-            push @{$self->{recv_queue}}, $event unless $self->{closed} || $self->{_peer_close};
+            unless ($self->{closed} || $self->{_peer_close}) {
+                push @{$self->{recv_queue}}, $event;
+                PAGI::Test::_Drive::signal_arrival($self);
+            }
         }
         elsif ($type eq 'websocket.close') {
             $self->{_app_close} = 1;
@@ -191,6 +195,8 @@ sub _end_event_ready {
 
 sub _wake_pending_receives {
     my ($self) = @_;
+    # Whatever ended or advanced the scope may be what a receive awaits.
+    PAGI::Test::_Drive::signal_arrival($self);
     return unless $self->_end_event_ready;
 
     while (my $future = shift @{$self->{_pending_receives}}) {
@@ -247,44 +253,36 @@ sub send_json {
 
 sub receive_text {
     my ($self, $timeout) = @_;
-    $self->pump;
-    $timeout //= 5;
-
-    # Check if we have a text message already waiting
-    for my $i (0 .. $#{$self->{recv_queue}}) {
-        my $event = $self->{recv_queue}[$i];
-        if ($event->{type} eq 'websocket.send' && exists $event->{text}) {
-            splice @{$self->{recv_queue}}, $i, 1;
-            return $event->{text};
-        }
-    }
-
-    # Check if connection closed
-    return undef if $self->{closed};
-
-    # No message available yet
-    croak "Timeout waiting for WebSocket text message";
+    return $self->_receive_message('text', 'WebSocket text message', $timeout);
 }
 
 sub receive_bytes {
     my ($self, $timeout) = @_;
-    $self->pump;
+    return $self->_receive_message('bytes', 'WebSocket bytes message', $timeout);
+}
+
+# Waits up to $timeout seconds (default 5) for the next message of $kind,
+# driving the event loop while the application waits on real I/O. Returns
+# undef once the connection has closed. Once either side has sent Close, no
+# more data can arrive, so it does not wait. In the attempt, `return undef`
+# answers (closed) and a bare `return` keeps waiting.
+sub _receive_message {
+    my ($self, $kind, $what, $timeout) = @_;
     $timeout //= 5;
-
-    # Check if we have a bytes message waiting
-    for my $i (0 .. $#{$self->{recv_queue}}) {
-        my $event = $self->{recv_queue}[$i];
-        if ($event->{type} eq 'websocket.send' && exists $event->{bytes}) {
+    $timeout = 0 if $self->{_app_close} || $self->{_peer_close};
+    my @got = PAGI::Test::_Drive::wait_for($self, $timeout, sub {
+        $self->pump;
+        for my $i (0 .. $#{$self->{recv_queue}}) {
+            my $event = $self->{recv_queue}[$i];
+            next unless $event->{type} eq 'websocket.send' && exists $event->{$kind};
             splice @{$self->{recv_queue}}, $i, 1;
-            return $event->{bytes};
+            return $event->{$kind};
         }
-    }
-
-    # Check if connection closed
-    return undef if $self->{closed};
-
-    # No message available yet
-    croak "Timeout waiting for WebSocket bytes message";
+        return undef if $self->{closed};
+        return;
+    });
+    croak "Timeout waiting for $what" unless @got;
+    return $got[0];
 }
 
 sub receive_json {
@@ -525,12 +523,11 @@ Encodes a Perl data structure as JSON and sends it as a text message.
     my $text = $ws->receive_text;
     my $text = $ws->receive_text($timeout);  # custom timeout in seconds
 
-Waits for and returns the next text message from the server. Returns undef
-if the connection is closed.
-
-B<Current limitation:> this method does not actually block or wait for the
-timeout duration. If no queued text message is immediately available, it
-throws an exception right away.
+Waits up to C<$timeout> seconds (default 5) for the next text message from
+the server, driving the event loop while the application waits on real I/O
+(L<Future::IO>), and returns it. Returns undef if the connection is closed.
+Throws C<Timeout waiting for WebSocket text message> if none arrives in time,
+or at once if either side has already sent Close.
 
 Only returns text messages; binary messages are skipped.
 
@@ -539,12 +536,11 @@ Only returns text messages; binary messages are skipped.
     my $bytes = $ws->receive_bytes;
     my $bytes = $ws->receive_bytes($timeout);
 
-Waits for and returns the next binary message from the server. Returns undef
-if the connection is closed.
-
-B<Current limitation:> this method does not actually block or wait for the
-timeout duration. If no queued binary message is immediately available, it
-throws an exception right away.
+Waits up to C<$timeout> seconds (default 5) for the next binary message from
+the server, driving the event loop while the application waits on real I/O
+(L<Future::IO>), and returns it. Returns undef if the connection is closed.
+Throws C<Timeout waiting for WebSocket bytes message> if none arrives in time,
+or at once if either side has already sent Close.
 
 Only returns binary messages; text messages are skipped.
 
@@ -554,7 +550,8 @@ Only returns binary messages; text messages are skipped.
     my $data = $ws->receive_json($timeout);
 
 Waits for a text message, decodes it as JSON, and returns the resulting
-Perl data structure. Dies if the message is not valid JSON.
+Perl data structure. Dies if the message is not valid JSON. The timeout is
+as for C<receive_text>.
 
 =head1 LIMITATIONS
 
@@ -564,11 +561,6 @@ Perl data structure. Dies if the message is not valid JSON.
 
 This helper does not simulate real WebSocket framing, network buffering,
 backpressure, or wire-level timing behavior.
-
-=item *
-
-The receive timeout arguments are advisory only at present; receive methods
-check the current queue immediately rather than waiting asynchronously.
 
 =item *
 
@@ -635,7 +627,7 @@ Drains pending receives and deferred terminal notifications. Public client
 operations and application Future completion do this automatically. If a test
 resolves an external Future and the app then parks again after a terminal
 send, call C<pump> to deliver its queued notifications. Terminal facts are
-already readable before pumping. This in-process client has no event loop.
+already readable before pumping. Receives drive the event loop themselves while they wait.
 
 =head2 close_code
 

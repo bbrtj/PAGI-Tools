@@ -197,6 +197,9 @@
     in-process instead of failing with a 500 (it previously worked only by
     accident, for handlers whose first wait was the I/O itself). A request
     still pending after 5 seconds dies with a timeout message.
+  - PAGI::Test::WebSocket's receive_text, receive_bytes and receive_json
+    wait up to their timeout, driving the event loop, for a message the
+    application sends after real I/O. They used to throw at once.
   - PAGI::Middleware::XSendfile removes Content-Length when it hands a
     file to the proxy, since the body it sends is empty (#19).
   - PAGI::Utils::Random's secure_random_bytes croaks unless its length is
