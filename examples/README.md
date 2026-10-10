@@ -52,7 +52,7 @@ HTTP:
 - `process-streaming` - streams an external command's output through `response('Stream', ...)`/`pipe_from` with a four-line loop-agnostic `Future::IO` source, real pipe backpressure, and `on_close` cleanup that stops the child when the client disconnects
 - `psgi-bridge` - a legacy PSGI application on a catch-all route beside native routes (via `PAGI::App::WrapPSGI`)
 - `starlette-apples` - Perl 5.40 single-file apples CRUD application for direct comparison with the original Starlette version, using `Types::Standard` path constraints, Router-owned routing outcomes, and a PAGI-only NDJSON export
-- `gut-check` - Perl 5.40 side-by-side sketches against Starlette (thrown responses, a CRUD resource, a WebSocket/SSE/HTTP broadcast hub, everyday middleware, streaming formats) with notes on where the API shape felt rough
+- `gut-check` - Perl 5.40 applications each paired with a runnable Starlette version (thrown responses, a CRUD resource, a WebSocket/SSE/HTTP broadcast hub, everyday and bundled middleware, streaming formats, sessions), with measured behaviour, line counts, and notes on where the API shape felt rough
 
 WebSocket and SSE:
 
