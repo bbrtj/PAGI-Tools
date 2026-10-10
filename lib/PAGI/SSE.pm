@@ -1358,6 +1358,12 @@ Returns true on success, false on failure. Does not throw.
 Useful for broadcasting to multiple clients. Before C<start>, a C<try_send*>
 starts the stream, as C<send> does.
 
+A true return is not a delivery receipt. Per the spec, a send to a client
+that has disconnected is a silent no-op, so if the client has gone but the
+server has not yet noticed, the send no-ops and this still returns true.
+"Sent" means "the send call did not fail", not "the client received it".
+Clean up in C<on_close>, which runs however the client leaves.
+
 You may make one and drop the returned Future -- the usual shape of a
 broadcast loop. The send keeps itself alive until it settles, so it still goes
 out even when it must wait behind a send already in flight.

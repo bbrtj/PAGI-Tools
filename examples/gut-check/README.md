@@ -51,7 +51,9 @@ Run a Starlette one with `pip install starlette uvicorn itsdangerous`, then
 
 **On the right track.**
 - **Behaviour:** every pair behaves the same as its Starlette twin, status
-  codes and headers included (04b's timing header has another name).
+  codes and headers included, except where the table says otherwise: 07's
+  relay and transform, which Starlette cannot do, and 08's q-value case. 04b
+  has no twin, and its timing header has another name.
 - **Where PAGI did better, measured:**
   - **Testing realtime code.** `PAGI::Test::Client` drives a WebSocket, an
     open SSE stream and an HTTP request together in one test (03). Starlette's
@@ -118,7 +120,8 @@ Most important first, as found; each now says what PAGI-Tools 0.003000 does.
 2. **A thrown response was a 500 by default.** Changed: ErrorHandler reads one
    small protocol from what is thrown. An object with `status_code` is an HTTP
    error (`PAGI::Exception::HTTP` is the one Tools ships); a response, or
-   anything else with `to_app`, answers itself, a redirect included. 01 now
+   anything else with `to_app`, answers itself unless a handler renders it: a
+   page below 400, such as a redirect, always answers itself. 01 now
    throws `PAGI::Exception::HTTP` and keeps its handler only for the JSON house
    style.
 
