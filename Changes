@@ -158,6 +158,8 @@
     middleware('Name', ...), then shows PAGI::Middleware::Name->new(...)
     ->wrap($app); PAGI::Middleware::Builder is documented as the way to
     compose middleware without Compose.
+  - The Tutorial's middleware part leads with Compose's middleware list
+    and wrap; Builder is a short section for applications without Compose.
 
   [Breaking -- see UPGRADING.md]
   - PAGI::App::Router and PAGI::Endpoint::Router are removed; PAGI::Routing
