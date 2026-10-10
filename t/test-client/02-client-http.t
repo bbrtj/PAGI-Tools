@@ -4,6 +4,7 @@ use warnings;
 use Test2::V0;
 use Future::AsyncAwait;
 use File::Temp qw(tempfile);
+use Time::HiRes ();
 
 use lib 'lib';
 use PAGI::Test::Client;
@@ -468,6 +469,58 @@ subtest 'set_cookie manually' => sub {
     $client->set_cookie('theme', 'dark');
 
     like $client->get('/')->text, qr/theme=dark/, 'manual cookie sent';
+};
+
+subtest 'a streaming producer that awaits real I/O completes' => sub {
+    require Future::IO;
+    require PAGI::Compose;
+    require PAGI::Response;
+    require PAGI::Routing;
+
+    my $app = PAGI::Compose::compose(routes => [
+        PAGI::Routing::route('/stream' => async sub {
+            my ($request) = @_;
+            return PAGI::Response::response('Stream', async sub {
+                my ($writer) = @_;
+                for my $n (1 .. 3) {
+                    await $writer->write("tick $n\n");
+                    await Future::IO->sleep(0.05);
+                }
+            });
+        }),
+    ]);
+
+    my $res = PAGI::Test::Client->new(app => $app)->get('/stream');
+    is($res->status, 200, 'the stream completes');
+    is($res->content, "tick 1\ntick 2\ntick 3\n", 'with every chunk');
+};
+
+subtest 'a handler that awaits real I/O completes' => sub {
+    require Future::IO;
+    my $slow = async sub {
+        my ($scope, $receive, $send) = @_;
+        await Future::IO->sleep(0.05);
+        await $send->({
+            type    => 'http.response.start',
+            status  => 200,
+            headers => [['content-type', 'text/plain']],
+        });
+        await $send->({ type => 'http.response.body', body => 'slept', more => 0 });
+    };
+    is(PAGI::Test::Client->new(app => $slow)->get('/')->content, 'slept',
+        'the loop is driven');
+};
+
+subtest 'a request that never completes fails at the harness timeout' => sub {
+    require Future::IO;
+    local $PAGI::Test::_Drive::TIMEOUT = 0.3;
+    my $stuck = async sub { await Future::IO->sleep(3) };
+
+    my $started = Time::HiRes::time();
+    like(dies { PAGI::Test::Client->new(app => $stuck)->get('/') },
+        qr/PAGI request did not complete within 0\.3 seconds/,
+        'the client dies with the timeout');
+    ok(Time::HiRes::time() - $started < 2, 'at the timeout, not after the app\'s 3s');
 };
 
 done_testing;

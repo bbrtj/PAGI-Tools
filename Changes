@@ -192,6 +192,11 @@
     pagi.original_method, pagi.original_path, pagi.request_id.
 
   [Fixed]
+  - PAGI::Test::Client drives the event loop while a request waits on real
+    I/O: a streamed response whose producer awaits Future::IO now completes
+    in-process instead of failing with a 500 (it previously worked only by
+    accident, for handlers whose first wait was the I/O itself). A request
+    still pending after 5 seconds dies with a timeout message.
   - PAGI::Middleware::XSendfile removes Content-Length when it hands a
     file to the proxy, since the body it sends is empty (#19).
   - PAGI::Utils::Random's secure_random_bytes croaks unless its length is

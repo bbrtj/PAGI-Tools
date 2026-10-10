@@ -10,6 +10,7 @@ use Encode ();
 use PAGI::Utils::_SendValidation;
 use PAGI::Test::ConnectionState;
 use PAGI::Test::Response;
+use PAGI::Test::_Drive;
 use PAGI::Utils ();
 
 # Extension sets this mock genuinely implements, one per scope type. Each is
@@ -179,15 +180,25 @@ sub _request {
         $scope->{'pagi.connection'}->_mark_complete if $sv->complete;
     };
 
-    # Call app (with exception handling like real server)
+    # Call app (with exception handling like real server). The app may be
+    # waiting on real I/O, so its Future is driven, not just ->get'ed: ->get
+    # on a plain pending Future cannot block.
     my $exception;
+    my ($app_future, $timed_out);
     eval {
-        my $app_future = $self->{app}->($scope, $receive, $send);
+        $app_future = $self->{app}->($scope, $receive, $send);
         # Own the suspended application while delivering terminal signals,
         # outside its send call. It may be awaiting one of those signals.
         $scope->{'pagi.connection'}->_deliver_notifications;
-        $app_future->get;
+        $timed_out = !PAGI::Test::_Drive::drive($app_future, $PAGI::Test::_Drive::TIMEOUT);
+        $app_future->get unless $timed_out;
     };
+    if ($timed_out) {
+        # Cancel the abandoned application so its pending wait cannot resume
+        # later, in some other test, with nobody holding its Future.
+        $app_future->cancel;
+        croak "PAGI request did not complete within $PAGI::Test::_Drive::TIMEOUT seconds";
+    }
     my $app_error = $@;
     $scope->{'pagi.connection'}->_deliver_notifications;
     # An ended transport cannot acquire a backstop response on app return.
@@ -672,24 +683,12 @@ sub _await_lifespan_phase {
             . "lifespan.${phase_name}.complete or lifespan.${phase_name}.failed";
     }
 
-    # The hook suspended on real off-loop I/O. Drive the event loop until it
-    # signals, the same way _request drives a request with ->get, instead of
-    # busy-waiting a deadline that never advances the loop. Off-loop I/O is
-    # only possible when Future::IO is present, so require it lazily here
-    # (it is a recommended, not required, prereq).
-    require Future::IO;
-    my $timeout = 5;
-    my $drive = async sub {
-        await Future->wait_any(
-            $result_future,
-            Future::IO->sleep($timeout)->then(sub {
-                Future->fail(
-                    "PAGI lifespan $phase_name did not complete within ${timeout} seconds\n"
-                );
-            }),
-        );
-    };
-    $drive->()->get;
+    # The hook suspended on real off-loop I/O: drive the event loop until it
+    # signals, as a request is driven.
+    PAGI::Test::_Drive::drive($result_future, $PAGI::Test::_Drive::TIMEOUT)
+        or die "PAGI lifespan $phase_name did not complete within "
+            . "$PAGI::Test::_Drive::TIMEOUT seconds\n";
+    $result_future->get;
 }
 
 sub state { shift->{state} // {} }
@@ -1189,6 +1188,11 @@ query in C<query_string>. This applies to C<websocket> and C<sse> too.
 To test an application served under a prefix (behind a proxy, or a server
 root path), give the client C<root_path> and request the browser's URLs; see
 L</root_path>.
+
+Requests are driven like a server drives them: a handler, or a streamed
+response's producer, that awaits real off-loop I/O through L<Future::IO>
+completes in-process. A request still pending after 5 seconds dies with
+C<PAGI request did not complete within 5 seconds>.
 
 =head2 get
 
