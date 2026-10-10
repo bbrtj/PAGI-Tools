@@ -200,6 +200,10 @@ error including the key name if the key does not exist. With a default
 argument, returns the default when the key is missing (even if the
 default is C<undef>).
 
+For an optional key, pass the default explicitly, C<undef> included:
+C<< $session->get('name', undef) >>. L</exists> tells a key stored as
+C<undef> from a missing one.
+
 =cut
 
 sub get {

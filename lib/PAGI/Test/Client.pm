@@ -1095,9 +1095,9 @@ app object with a C<to_app> method:
     my $client = PAGI::Test::Client->new(app => MyApp::Main->new(%opts));
 
     # Terminal Response object (also an app object)
-    use PAGI::Response::Text ();
+    use PAGI::Tools qw(response);
     my $client = PAGI::Test::Client->new(
-        app => PAGI::Response::Text->new('ready'),
+        app => response('Text', 'ready'),
     );
 
 Package-name strings are rejected synchronously. Load and construct the
@@ -1144,6 +1144,21 @@ inventing a 500 in its place would misreport what happened.
     my $res = $client->get('/broken');
     is $res->status, 500;
     like $res->exception, qr/Can't call method/;
+
+An error your application answers itself -- ErrorHandler sends its 500 page
+and then re-raises the error so the server logs it -- reaches the client after
+the response is complete. The client returns that 500 and warns
+C<exception after response completed: ...>, as the server would log it. A
+test of a deliberate 500 captures and asserts the warning with
+L<Test2::V0>'s C<warning>, so the test output stays clean:
+
+    my $res;
+    like(
+        warning { $res = $client->get('/boom') },
+        qr/exception after response completed: an ordinary bug/,
+        'the bug is reported',
+    );
+    is $res->status, 500;
 
 When B<true>: Exceptions propagate to the test, useful for debugging:
 
