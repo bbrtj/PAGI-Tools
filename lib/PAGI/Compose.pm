@@ -452,8 +452,8 @@ state prevents both callbacks from running and sends:
 Without callbacks, ordinary startup and shutdown complete without requiring a
 C<state> key.
 
-Callback return values are ignored. Plain immediate completion and
-Future-backed completion are normalized. A synchronous exception or failed
+A callback's return value is ignored unless it is a Future, which is awaited:
+a callback may be a plain sub or an async sub. A synchronous exception or failed
 Future from startup produces C<lifespan.startup.failed>; shutdown failure
 produces C<lifespan.shutdown.failed>, using the exception text as C<message>.
 A failed startup does not invoke shutdown. A startup callback that allocates

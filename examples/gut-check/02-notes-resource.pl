@@ -97,6 +97,6 @@ compose(
         route('/notes/{id}' => Note->new, name => 'note', constraints => { id => Int }),
     ],
     lifespan => {
-        startup => sub ($state, $scope) { $state->{notes} = NoteStore->new; return },
+        startup => sub ($state, $scope) { $state->{notes} = NoteStore->new },
     },
 );
