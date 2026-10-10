@@ -35,6 +35,10 @@ subtest '01: errors as responses' => sub {
     is($res->status, 404, 'a missing note is a 404 thrown from the model');
     is($res->json, { error => 'no such note: 9' }, 'rendered as JSON by the handler');
 
+    $res = $client->get('/nope');
+    is($res->status, 404, 'a path no route matches is a 404');
+    is($res->json, { error => 'Not Found' }, 'in the same JSON shape');
+
     like(
         warning { $res = $client->get('/boom') },
         qr/exception after response completed: an ordinary bug/,

@@ -74,6 +74,12 @@ handler's failure is warned, and the original error is re-raised. Use C<on_error
 reporting of your own, such as an error tracker; see
 L<PAGI::Tools::Cookbook/Who reports an application error>.
 
+ErrorHandler sees only what is thrown. A path no route matches, or a method
+a matched path does not allow, is not an error: the router answers it with a
+plain-text 404 or 405, and the handler never runs. The Router's (or
+Compose's) C<http_default> sets the 404; a 405 is changed by a middleware
+that rewrites it (see L<PAGI::Routing>).
+
 =head1 CONFIGURATION
 
 An option not listed here dies at construction.

@@ -764,6 +764,19 @@ exception written for Plack -- gets the stock 500 instead of being run. A
 thrown page below 400, such as C<die response('Redirect', '/login')>, never
 reaches the handler: ErrorHandler sends it at once.
 
+Routing misses never reach the handler either: they are answers, not errors.
+The router answers a path nothing matches (404) and a method a matched path
+does not allow (405) itself, in plain text. Give the 404 the house style with
+C<http_default>, beside C<routes>:
+
+  http_default => sub {
+      my ($request) = @_;
+      return response('JSON', { error => 'Not Found' }, status => 404);
+  },
+
+A 405 is changed by a middleware that rewrites it (see L<PAGI::Routing>), and
+a mounted Router answers its own misses.
+
 =head2 Real Catch-All Routes
 
 A Router default means "nothing matched." A wildcard is a real route:

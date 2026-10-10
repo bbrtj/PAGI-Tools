@@ -310,6 +310,8 @@ subtest 'Streaming Response Formats recipe executes as published' => sub {
 subtest 'Thrown pages recipe executes as published' => sub {
     my $recipe = code_block_containing($cookbook,
         '=head3 Thrown pages and house-styled errors', "middleware('ErrorHandler'");
+    my $miss = code_block_containing($cookbook,
+        '=head3 Thrown pages and house-styled errors', 'http_default');
     perl_script_runs(
         'thrown pages recipe',
         "use PAGI::Compose qw(compose);\nuse PAGI::Routing qw(middleware route);\n"
@@ -321,7 +323,7 @@ subtest 'Thrown pages recipe executes as published' => sub {
             . "    route('/plack' => sub { die Local::PlackStyle->new }),\n"
             . "    route('/page' => sub { die response('Text', 'down', status => 503) }),\n"
             . "    route('/fact' => sub { die PAGI::Exception::HTTP->new(404, 'nope') }),\n"
-            . "]);\n"
+            . "],\n" . $miss . ");\n"
             . "local \$SIG{__WARN__} = sub {};\n"
             . "my \$client = PAGI::Test::Client->new(app => \$app);\n"
             . "my \$res = \$client->get('/plack');\n"
@@ -330,7 +332,9 @@ subtest 'Thrown pages recipe executes as published' => sub {
             . "\$res = \$client->get('/page');\n"
             . "die 'a 503 page answers as thrown' unless \$res->status == 503 && \$res->text eq 'down';\n"
             . "\$res = \$client->get('/fact');\n"
-            . "die 'a fact gets the house style' unless \$res->status == 404 && \$res->json->{error} eq 'nope';\n",
+            . "die 'a fact gets the house style' unless \$res->status == 404 && \$res->json->{error} eq 'nope';\n"
+            . "\$res = \$client->get('/nope');\n"
+            . "die 'a routing miss gets it from http_default' unless \$res->status == 404 && \$res->json->{error} eq 'Not Found';\n",
     );
 };
 

@@ -21,10 +21,15 @@
 # (die response('JSON', ..., status => 404)) also works with no handler at
 # all: it answers itself.
 #
+# A path no route matches is not an error: the router answers it, and the
+# handler never sees it. http_default sets that answer (a 405 is the router's
+# too; change it with a middleware). Starlette sends both through its handler.
+#
 # Run:  pagi-server --app examples/gut-check/01-errors-as-responses.pl --port 5000
 # Try:  curl -i localhost:5000/notes/1
 #       curl -i localhost:5000/notes/9      # 404, thrown from deep in the model
 #       curl -i localhost:5000/boom         # an ordinary bug: the stock 500
+#       curl -i localhost:5000/nope         # no route: the router's 404, same JSON shape
 
 use v5.40;
 use Future::AsyncAwait;
@@ -63,5 +68,6 @@ compose(
         route('/notes/{id}' => \&show),
         route('/boom' => \&boom),
     ],
+    http_default => sub ($request) { response('JSON', { error => 'Not Found' }, status => 404) },
     middleware => [middleware('ErrorHandler', handler => \&json_errors)],
 );

@@ -30,7 +30,7 @@ written against it; the Starlette versions are unchanged.
 
 | Pair | What it does | Behaviour | PAGI lines (imports) | Starlette lines (imports) |
 |---|---|---|---|---|
-| `01-errors-as-responses` | throw a 404 from the model, real bugs get a 500 | identical | 22 (4) | 19 (4) |
+| `01-errors-as-responses` | throw a 404 from the model, real bugs get a 500, unmatched paths get the same JSON | identical (PAGI styles the routing 404 with `http_default`; Starlette's router raises it to the handler) | 23 (4) | 19 (4) |
 | `02-notes-resource` | CRUD resource: class endpoints, lifespan store, named links, typed `{id}` | identical, incl. 204 and the typed-path 404 | 48 (17) | 44 (5) |
 | `03-broadcast-hub` | WebSocket chat + SSE watcher + HTTP announce on one fan-out | identical where Starlette can be tested (see below) | 32 (4) | 46 (5) |
 | `04-everyday-middleware` | `Server-Timing` and maintenance mode, hand-written | identical | 25 (4) | 26 (7) |
@@ -102,7 +102,7 @@ Run a Starlette one with `pip install starlette uvicorn itsdangerous`, then
     name, visits"; Starlette's `session["nmae"]` is a bare `KeyError`. It's the
     same contract with a better message.
 - **Length:** PAGI is now shorter in three of the eight pairs with a Starlette
-  version (03, 04 and 08) and longer in five (01, 02, 05, 06 and 07), by 3 to 9
+  version (03, 04 and 08) and longer in five (01, 02, 05, 06 and 07), by 4 to 9
   lines. One `use PAGI::Tools qw(...)` line replaced the per-module imports;
   02's 17 import lines are mostly the `package` and `use` lines each of its
   four packages repeats (Python's file has 5). Without imports, PAGI's logic is
