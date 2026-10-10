@@ -45,6 +45,7 @@ in [UPGRADING-REFERENCE.md](UPGRADING-REFERENCE.md).
 | Directory `show_hidden` | `allow_hidden` ([details](UPGRADING-REFERENCE.md#rooted-file-serving-security-contract)) |
 | `WebSocket::RateLimit`, `SSE::Pubsub`, `WebSocket::Broadcast`/`Chat` | removed; Cookbook recipes ([details](UPGRADING-REFERENCE.md#other-breaking-changes)) |
 | WebSocket `query`, `raw_query`; Request `query`, `raw_query`, `form`, `raw_form` | `query_param`, `raw_query_param`, `form_params`, `raw_form_params`: one set of names on Request, WebSocket and SSE |
+| WebSocket `send_text_if_connected`, `send_bytes_if_connected`, `send_json_if_connected` | `try_send_text`, `try_send_bytes`, `try_send_json`: they send nothing unless connected (before `accept` too) and return false |
 
 Behaviour that changes without a code change: stock refusals and error
 responses are plain text, each replaceable by one option ([details](UPGRADING-REFERENCE.md#audit-changed-first-party-defaults));

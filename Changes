@@ -196,6 +196,10 @@
     PAGI::Request's deprecated query, raw_query, form and raw_form are
     removed: use query_param, raw_query_param, form_params and
     raw_form_params.
+  - PAGI::WebSocket's send_text_if_connected, send_bytes_if_connected and
+    send_json_if_connected are removed. try_send_text, try_send_bytes and
+    try_send_json send only while the socket is connected: before accept,
+    too, they now return false and send nothing.
 
   [Fixed]
   - PAGI::Test::Client drives the event loop while a request waits on real

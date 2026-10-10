@@ -1355,7 +1355,8 @@ event.
     $_->try_send_event(event => 'news', data => $item) for @subscribers;
 
 Returns true on success, false on failure. Does not throw.
-Useful for broadcasting to multiple clients.
+Useful for broadcasting to multiple clients. Before C<start>, a C<try_send*>
+starts the stream, as C<send> does.
 
 You may make one and drop the returned Future -- the usual shape of a
 broadcast loop. The send keeps itself alive until it settles, so it still goes

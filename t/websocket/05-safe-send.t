@@ -130,64 +130,24 @@ subtest 'try_send_json returns false when already closed' => sub {
     is(scalar @$sent, 0, 'no message sent');
 };
 
-subtest 'send_text_if_connected is silent when closed' => sub {
+subtest 'try_send_text before accept returns false and sends nothing' => sub {
+    my @sent;
+    my $ws = PAGI::WebSocket->new(ws_scope(), sub { Future->done({ type => 'websocket.connect' }) },
+        sub { push @sent, $_[0]; Future->done });
+
+    is($ws->connection_state, 'connecting', 'not yet accepted');
+    is($ws->try_send_text('early')->get, 0, 'returns false');
+    is(scalar @sent, 0, 'no message sent');
+};
+
+subtest 'try_send_text while closing returns false and sends nothing' => sub {
     my ($ws, $sent) = create_ws();
     $ws->close->get;
     @$sent = ();
 
-    # Should not die, should not send
-    $ws->send_text_if_connected('Hello')->get;
-
+    is($ws->connection_state, 'closing', 'our Close is sent, the peer has not answered');
+    is($ws->try_send_text('late')->get, 0, 'returns false');
     is(scalar @$sent, 0, 'no message sent');
-};
-
-subtest 'send_text_if_connected sends when connected' => sub {
-    my ($ws, $sent) = create_ws();
-    @$sent = ();
-
-    $ws->send_text_if_connected('Hello')->get;
-
-    is(scalar @$sent, 1, 'message sent');
-    is($sent->[0]{text}, 'Hello', 'correct text sent');
-};
-
-subtest 'send_bytes_if_connected is silent when closed' => sub {
-    my ($ws, $sent) = create_ws();
-    $ws->close->get;
-    @$sent = ();
-
-    $ws->send_bytes_if_connected("\x00")->get;
-
-    is(scalar @$sent, 0, 'no message sent');
-};
-
-subtest 'send_bytes_if_connected sends when connected' => sub {
-    my ($ws, $sent) = create_ws();
-    @$sent = ();
-
-    $ws->send_bytes_if_connected("\x00\x01")->get;
-
-    is(scalar @$sent, 1, 'message sent');
-    is($sent->[0]{bytes}, "\x00\x01", 'correct bytes sent');
-};
-
-subtest 'send_json_if_connected is silent when closed' => sub {
-    my ($ws, $sent) = create_ws();
-    $ws->close->get;
-    @$sent = ();
-
-    $ws->send_json_if_connected({ test => 1 })->get;
-
-    is(scalar @$sent, 0, 'no message sent');
-};
-
-subtest 'send_json_if_connected sends when connected' => sub {
-    my ($ws, $sent) = create_ws();
-    @$sent = ();
-
-    $ws->send_json_if_connected({ test => 1 })->get;
-
-    is(scalar @$sent, 1, 'message sent');
 };
 
 done_testing;

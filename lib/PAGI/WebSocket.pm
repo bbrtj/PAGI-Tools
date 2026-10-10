@@ -559,7 +559,7 @@ sub try_send_text { my $self = shift; return $self->_keep($self->_try_send_text(
 
 async sub _try_send_text {
     my ($self, $text) = @_;
-    return 0 if $self->_response_claimed_before_start || $self->is_closed || $self->connection_state eq 'closing';
+    return 0 if $self->_response_claimed_before_start || !$self->is_connected;
 
     eval {
         await PAGI::Common::send_in_order($self, {
@@ -568,7 +568,7 @@ async sub _try_send_text {
         });
     };
     # A failed send is not a disconnect. A send after the app's OWN close is
-    # already turned away above via is_closed; a send after the PEER already
+    # already turned away above; a send after the PEER already
     # closed is a tolerated no-op per spec (dropped, not delivered, but does
     # not fail the Future), so neither case reaches here as an error. This
     # eval only catches a genuine send failure, which per the try_* contract
@@ -582,7 +582,7 @@ sub try_send_bytes { my $self = shift; return $self->_keep($self->_try_send_byte
 
 async sub _try_send_bytes {
     my ($self, $bytes) = @_;
-    return 0 if $self->_response_claimed_before_start || $self->is_closed || $self->connection_state eq 'closing';
+    return 0 if $self->_response_claimed_before_start || !$self->is_connected;
 
     eval {
         await PAGI::Common::send_in_order($self, {
@@ -591,7 +591,7 @@ async sub _try_send_bytes {
         });
     };
     # A failed send is not a disconnect. A send after the app's OWN close is
-    # already turned away above via is_closed; a send after the PEER already
+    # already turned away above; a send after the PEER already
     # closed is a tolerated no-op per spec (dropped, not delivered, but does
     # not fail the Future), so neither case reaches here as an error. This
     # eval only catches a genuine send failure, which per the try_* contract
@@ -605,7 +605,7 @@ sub try_send_json { my $self = shift; return $self->_keep($self->_try_send_json(
 
 async sub _try_send_json {
     my ($self, $data) = @_;
-    return 0 if $self->_response_claimed_before_start || $self->is_closed || $self->connection_state eq 'closing';
+    return 0 if $self->_response_claimed_before_start || !$self->is_connected;
 
     my $json = JSON::MaybeXS::encode_json($data);
     eval {
@@ -615,7 +615,7 @@ async sub _try_send_json {
         });
     };
     # A failed send is not a disconnect. A send after the app's OWN close is
-    # already turned away above via is_closed; a send after the PEER already
+    # already turned away above; a send after the PEER already
     # closed is a tolerated no-op per spec (dropped, not delivered, but does
     # not fail the Future), so neither case reaches here as an error. This
     # eval only catches a genuine send failure, which per the try_* contract
@@ -623,29 +623,6 @@ async sub _try_send_json {
     # connection state.
     return 0 if $@;
     return 1;
-}
-
-# Silent send methods - no-op when closed
-
-async sub send_text_if_connected {
-    my ($self, $text) = @_;
-    return unless $self->is_connected;
-    await $self->try_send_text($text);
-    return;
-}
-
-async sub send_bytes_if_connected {
-    my ($self, $bytes) = @_;
-    return unless $self->is_connected;
-    await $self->try_send_bytes($bytes);
-    return;
-}
-
-async sub send_json_if_connected {
-    my ($self, $data) = @_;
-    return unless $self->is_connected;
-    await $self->try_send_json($data);
-    return;
 }
 
 # Receive methods
@@ -893,7 +870,7 @@ protocol boilerplate and provides:
 
 =item * Cleanup and error callback registration (on_close, on_error)
 
-=item * Safe send methods for broadcast scenarios (try_send_*, send_*_if_connected)
+=item * Safe send methods for broadcast scenarios (try_send_*)
 
 =item * Message iteration helpers (each_text, each_json)
 
@@ -1313,10 +1290,12 @@ never cancelled. Code that calls the raw C<$send> itself still owns the rule.
 
     my $sent = await $ws->try_send_json($data);
 
-B<Best-effort send.> Attempts the send and B<never throws>, returning a boolean.
-Intended for broadcast-style loops -- "send to many, skip the failures" -- where
-one bad recipient must not abort the loop or corrupt shared connection state (a
-failed send leaves C<is_closed>/C<close_code> untouched).
+B<Best-effort send.> Sends only while the socket is connected and B<never
+throws>, returning a boolean. Before C<accept>, while closing and after close
+it sends nothing and returns false. Intended for broadcast-style loops --
+"send to many, skip the failures" -- where one bad recipient must not abort
+the loop or corrupt shared connection state (a failed send leaves
+C<is_closed>/C<close_code> untouched).
 
 B<The boolean is a weak signal; do not treat it as a delivery receipt:>
 
@@ -1325,8 +1304,10 @@ B<The boolean is a weak signal; do not treat it as a delivery receipt:>
 =item *
 
 A B<false> return means the send definitely did not happen -- the socket is
-already known-closed, or the underlying send raised. It tells you I<that> it
-failed, not I<why>.
+not connected (not yet accepted, closing or closed), or the underlying send
+raised. It tells you I<that> it failed, not I<why>. A false before C<accept>
+is as quiet as any other, so while developing use C<send_*>: a send before
+C<accept> fails loudly there.
 
 =item *
 
@@ -1350,19 +1331,13 @@ this return value:
 =item * B<Why did it fail?> Use C<send_text>/C<send_bytes>/C<send_json>, which
 throw the underlying error.
 
-=item * B<Is the peer still there?> Use C<is_connected> (or the
-C<send_*_if_connected> variants) and react to the C<websocket.disconnect> event.
+=item * B<Is the peer still there?> Use C<is_connected> and react to the
+C<websocket.disconnect> event.
 
 =item * B<Is the connection backpressured?> Use C<is_writable> /
 C<buffered_amount> and the watermark / C<on_drain> controls.
 
 =back
-
-=head2 send_text_if_connected, send_bytes_if_connected, send_json_if_connected
-
-    await $ws->send_json_if_connected($data);
-
-Silent no-op if connection is closed. Useful for fire-and-forget.
 
 =head1 RECEIVE METHODS
 
