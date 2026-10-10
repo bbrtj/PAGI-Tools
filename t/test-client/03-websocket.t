@@ -251,4 +251,27 @@ subtest 'a handler that awaits real I/O before accept connects' => sub {
     $ws->close;
 };
 
+subtest 'an app Close that arrives during a receive ends the wait' => sub {
+    require Future::IO;
+    my $app = async sub {
+        my ($scope, $receive, $send) = @_;
+        my $event = await $receive->();
+        return unless $event->{type} eq 'websocket.connect';
+        await $send->({ type => 'websocket.accept' });
+        await Future::IO->sleep(0.2);
+        await $send->({ type => 'websocket.close', code => 1000 });
+        while (1) {
+            my $msg = await $receive->();
+            last if $msg->{type} eq 'websocket.disconnect';
+        }
+    };
+    my $ws = PAGI::Test::Client->new(app => $app)->websocket('/ws', close_mode => 'manual');
+    my $started = Time::HiRes::time();
+    like dies { $ws->receive_text(1.5) }, qr/Timeout waiting for WebSocket text message/,
+        'no more data can arrive after the app\'s Close';
+    ok(Time::HiRes::time() - $started < 1, 'so the wait ends when the Close arrives');
+    $ws->close;
+    $ws->complete_close;
+};
+
 done_testing;

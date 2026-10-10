@@ -104,6 +104,8 @@ sub _start {
         }
         elsif ($type eq 'websocket.close') {
             $self->{_app_close} = 1;
+            # A receive waiting for data learns that none can follow.
+            PAGI::Test::_Drive::signal_arrival($self);
             # The first app Close may race a peer Close already handled by
             # the test transport. Validation still records the terminal send.
             if ($conn->is_connected && !$self->{_peer_close}) {
@@ -270,13 +272,13 @@ sub receive_bytes {
 # Waits up to $timeout seconds (default 5) for the next message of $kind,
 # driving the event loop while the application waits on real I/O. Returns
 # undef once the connection has closed. Once either side has sent Close, no
-# more data can arrive, so it does not wait. In the attempt, `return undef`
-# answers (closed) and a bare `return` keeps waiting.
+# more data can arrive, so it stops waiting at once, before or during the
+# wait. In the attempt, `return undef` answers and a bare `return` keeps
+# waiting.
 sub _receive_message {
     my ($self, $kind, $what, $timeout) = @_;
-    $timeout //= 5;
-    $timeout = 0 if $self->{_app_close} || $self->{_peer_close};
-    my @got = PAGI::Test::_Drive::wait_for($self, $timeout, sub {
+    my $no_more_data;
+    my @got = PAGI::Test::_Drive::wait_for($self, $timeout // 5, sub {
         $self->pump;
         for my $i (0 .. $#{$self->{recv_queue}}) {
             my $event = $self->{recv_queue}[$i];
@@ -285,9 +287,13 @@ sub _receive_message {
             return $event->{$kind};
         }
         return undef if $self->{closed};
+        if ($self->{_app_close} || $self->{_peer_close}) {
+            $no_more_data = 1;
+            return undef;
+        }
         return;
     });
-    croak "Timeout waiting for $what" unless @got;
+    croak "Timeout waiting for $what" if $no_more_data || !@got;
     return $got[0];
 }
 
