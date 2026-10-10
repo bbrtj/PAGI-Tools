@@ -33,6 +33,14 @@ my $loop = IO::Async::Loop->new;
     sub to_app { die "a fact's to_app was called\n" }
 }
 
+# A redirect page whose rendering fails.
+{
+    package Local::BrokenRedirect;
+    sub new { bless {}, $_[0] }
+    sub status { 302 }
+    sub to_app { sub { die "redirect broke\n" } }
+}
+
 # A page whose status method dies.
 {
     package Local::BrokenPage;
@@ -284,6 +292,19 @@ subtest 'a page whose status method dies is a 500, and the page is re-raised' =>
     is [$status, $body], [500, 'Internal Server Error'];
     is $failure, exact_ref($page);
     like $warnings->[0], qr/rejected a thrown page's status/, 'diagnosed (P-4)';
+};
+
+subtest 'a thrown redirect that fails to render goes through the error pipeline' => sub {
+    my (@reported, $handled);
+    my ($status, undef, $body) = run(
+        error => Local::BrokenRedirect->new,
+        options => {
+            on_error => sub { push @reported, $_[0] },
+            handler  => sub { $handled++; response('Text', 'handled') },
+        },
+    );
+    is [$status, $body, $handled, \@reported], [500, 'handled', 1, ["redirect broke\n"]],
+        'on_error and the handler see the render failure';
 };
 
 done_testing;

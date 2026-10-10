@@ -185,11 +185,16 @@ sub wrap {
 
         # A thrown page with a status below 400 (a redirect, say) is an
         # answer, not an error: it is sent as it is and nothing is reported.
+        # If sending it fails, that failure is the error from here on.
         if (!$started && PAGI::ErrorContext::_is_page($error)) {
             my $page_status = PAGI::ErrorContext::_page_status($error);
             if (defined($page_status) && $page_status < 400) {
-                await PAGI::Utils::invoke_app($error, $scope, $receive, $wrapped_send);
-                return;
+                my $answered = eval {
+                    await PAGI::Utils::invoke_app($error, $scope, $receive, $wrapped_send);
+                    1;
+                };
+                return if $answered;
+                $error = $@;
             }
         }
 
@@ -469,7 +474,8 @@ L<PAGI::Exception::HTTP> is the class PAGI-Tools ships:
 =item * B<A value with no C<status_code> but a C<to_app> is a page>, such as a
 thrown L<PAGI::Response>. Its own C<status> decides. Below 400 the page is
 sent as it is, with no C<on_error>, no handler and nothing re-raised: a
-thrown redirect. From 400 to 599 it is an error like any other: C<on_error>
+thrown redirect. If sending it fails, that failure is handled like any other
+error. From 400 to 599 it is an error like any other: C<on_error>
 is called, the handler sees it, and C<< $error->default >> is the page
 itself, so without a handler the page is the answer. A page whose C<status>
 is missing, dies, or is not 100-599 is answered with the built-in 500. A
