@@ -1258,6 +1258,13 @@ Returns the best matching content type from the provided list based on the
 client's Accept header and quality values. Returns undef if none are acceptable.
 Supports shortcuts (json, html, xml, etc).
 
+A response chosen this way depends on the request's Accept header, so every
+answer the handler gives from it -- the 406 and the no-Accept default
+included -- should carry C<Vary: Accept>, and the handler writes it. To have
+it written for you, along with the 406, put
+L<PAGI::Middleware::ContentNegotiation> on the route and answer with
+L<PAGI::ContentNegotiation/respond_to>.
+
 =head1 CONNECTION STATE METHODS
 
 These methods provide non-destructive connection lookup without reading from

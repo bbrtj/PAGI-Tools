@@ -1852,6 +1852,50 @@ a value the response already has. To hear back from layers further in, seed a
 shared reference before calling inward -- L<PAGI::Stash>, or the spec
 Cookbook's "Reporting back to an outer layer" recipe.
 
+=head2 Vary on a request header you branch on
+
+When a handler answers differently by a request header, the response says so
+in C<Vary>, or a shared cache serves one client's answer to another. For
+Accept, L<PAGI::Middleware::ContentNegotiation> writes C<Vary: Accept> for
+you. For any other header, the handler or a small route middleware writes
+it.
+
+htmx asks for a fragment by sending C<HX-Request: true>; the full page and
+the fragment are both HTML:
+
+  async sub notes {
+      my ($request) = @_;
+      my $notes = load_notes();
+      my $html = $request->header('HX-Request') ? render_fragment($notes)
+                                                : render_page($notes);
+      return response('HTML', $html, headers => [Vary => 'HX-Request']);
+  }
+
+The same, for every answer of a route, as route middleware:
+
+  use PAGI::Utils::Middleware qw(wrap_response_headers);
+
+  sub vary_on_hx {
+      my ($app) = @_;
+      return async sub {
+          my ($scope, $receive, $send) = @_;
+          await $app->($scope, $receive, wrap_response_headers($send, sub {
+              $_[0]->add_vary('HX-Request');
+          }));
+      };
+  }
+
+  route('/notes' => \&notes, middleware => [middleware(\&vary_on_hx)])
+
+htmx's documentation also asks you to turn off
+C<htmx.config.historyRestoreAsHxRequest> when the server answers fragments
+by C<HX-Request>, so a history restore is not cached as a fragment.
+
+A response thrown with C<die response(...)> is sent by Compose's error
+handler, outside your route's middleware, so it gets no C<Vary> from there.
+Return an answer that depends on a request header; throw only answers that
+do not.
+
 =head2 Compare conditional entity tags
 
 For an existing representation selected by a successful GET or HEAD, read all
