@@ -16,7 +16,7 @@ Router object; servers accept anything with `to_app`.
 ## Requirements
 
 - Perl 5.18+ with `Future::AsyncAwait` for the distribution and most examples;
-  `large-application`, `starlette-apples`, `gut-check`, `process-streaming`,
+  `large-application`, `starlette-apples`, `gut-check`, `content-negotiation`, `process-streaming`,
   `auth-cookie-login`, `auth-extensions`, `auth-notes`, and `auth-jwt-sandbox`
   require Perl 5.40+
 - A PAGI server to run examples against:
@@ -47,6 +47,7 @@ Start here:
 HTTP:
 
 - `contact-form` - a POST handler parsing form fields and file uploads
+- `content-negotiation` - one notes resource for browsers and API clients: the ContentNegotiation middleware picks HTML or JSON from Accept, answers 406 and sends Vary; `respond_to` names each representation, and a POST reads a form or JSON by Content-Type (415 otherwise)
 - `static-files` - static file serving with `PAGI::App::File`
 - `pages` - Compose-rooted `PAGI::Pages` demo covering class/configured/export factories, direct application Routes and Mount, a request-derived application return, negotiation, and lifespan
 - `process-streaming` - streams an external command's output through `response('Stream', ...)`/`pipe_from` with a four-line loop-agnostic `Future::IO` source, real pipe backpressure, and `on_close` cleanup that stops the child when the client disconnects

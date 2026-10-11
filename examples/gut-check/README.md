@@ -38,7 +38,7 @@ written against it; the Starlette versions are unchanged.
 | `05-streaming` | slow NDJSON feed and a custom tab-separated format | identical | 32 (10) | 23 (5) |
 | `06-sessions` | visit counter, a name, and a typo'd key | identical | 23 (3) | 17 (5) |
 | `07-upload-relay` | relay an upload back, shout it back as text chunk by chunk, checksum it | checksum identical; Starlette's relay and transform fail (see below), and PAGI's transform decodes by the declared charset where Python's `bytes.upper()` knows only ASCII | 26 (5) | 22 (4) |
-| `08-negotiation` | one URL, HTML or JSON by `Accept` (q-values), else 406 | same for plain `Accept`s; with `text/html;q=0.9, application/json;q=0.5` PAGI serves HTML, the usual hand-written Starlette check serves JSON; PAGI also sends `Vary: Accept` | 12 (3) | 12 (3) |
+| `08-negotiation` | one URL, HTML or JSON by `Accept` (q-values), else 406 | same for plain `Accept`s; with `text/html;q=0.9, application/json;q=0.5` PAGI serves HTML, the usual hand-written Starlette check serves JSON; PAGI also sends `Vary: Accept` | 11 (3) | 12 (3) |
 
 The first pass measured the PAGI side at 28, 50, 35, 28, 19, 34, 26, 27 and 13
 lines (6, 19, 6, 7, 5, 12, 6, 6 and 5 of them imports).
@@ -72,10 +72,11 @@ Run a Starlette one with `pip install starlette uvicorn itsdangerous`, then
     watcher reads `receive()` and takes the body (`starlette/responses.py`). The
     checksum route, which reads the body before responding, matches on both
     sides.
-  - **Content negotiation built in (08).** `$request->preferred_type('html',
-    'json')` honours quality values and returns the name you asked for.
-    Starlette ships no helper, and the usual hand-written header check picks
-    JSON for `text/html;q=0.9, application/json;q=0.5`.
+  - **Content negotiation built in (08).** The ContentNegotiation middleware
+    honours quality values, answers 406 and sends `Vary: Accept` on every
+    answer; `respond_to` calls the branch for the chosen type. Starlette
+    ships no helper, and the usual hand-written header check picks JSON for
+    `text/html;q=0.9, application/json;q=0.5`.
   - **Negotiated error pages, one line away.** Compose's default 404 is plain
     text, exactly like Starlette's (checked with HTML, JSON and problem+json
     `Accept`s). `http_default => not_found()` from `PAGI::Pages` serves an HTML
@@ -101,13 +102,13 @@ Run a Starlette one with `pip install starlette uvicorn itsdangerous`, then
   - **Strict session keys (06).** `get('nmae')` dies with "Available keys:
     name, visits"; Starlette's `session["nmae"]` is a bare `KeyError`. It's the
     same contract with a better message.
-- **Length:** PAGI is now shorter in two of the eight pairs with a Starlette
-  version (03 and 04), the same in one (08, which also sends `Vary: Accept`)
-  and longer in five (01, 02, 05, 06 and 07), by 4 to 9 lines. One `use PAGI::Tools qw(...)` line replaced the per-module imports;
+- **Length:** PAGI is now shorter in three of the eight pairs with a
+  Starlette version (03, 04 and 08, which also sends `Vary: Accept`) and
+  longer in five (01, 02, 05, 06 and 07), by 4 to 9 lines. One `use PAGI::Tools qw(...)` line replaced the per-module imports;
   02's 17 import lines are mostly the `package` and `use` lines each of its
   four packages repeats (Python's file has 5). Without imports, PAGI's logic is
-  shorter for 02 (31 against 39 lines) and 03 (28 against 41), the same for 08
-  (9 each), and 2 to 8 lines longer for the rest.
+  shorter for 02 (31 against 39 lines), 03 (28 against 41) and 08 (8 against
+  9), and 2 to 8 lines longer for the rest.
 
 None of the rough edges below was architectural.
 
