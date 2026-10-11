@@ -7,6 +7,10 @@
   UPGRADING-REFERENCE.md has the details. Needs PAGI::Server 0.003000.
 
   [New]
+  - PAGI::ContentNegotiation's handler side: respond_to, negotiated_type
+    and content_negotiation (also from PAGI::Tools) read the
+    ContentNegotiation middleware's choice; respond_to calls the branch for
+    the chosen type.
   - PAGI::Routing (route, websocket, sse, mount, router, path_for,
     url_for) and PAGI::Compose (application root with lifespan, error
     handling and a response guard).

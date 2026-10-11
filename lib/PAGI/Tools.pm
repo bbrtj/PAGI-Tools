@@ -4,6 +4,7 @@ use strict;
 use warnings;
 use Exporter 'import';
 use PAGI::Compose ();
+use PAGI::ContentNegotiation ();
 use PAGI::ErrorContext ();
 use PAGI::Response ();
 use PAGI::Routing ();
@@ -27,6 +28,7 @@ my @SOURCES = (
     'PAGI::State'             => [qw(app_state)],
     'PAGI::Stash'             => [qw(stash)],
     'PAGI::Session'           => [qw(session)],
+    'PAGI::ContentNegotiation' => [qw(content_negotiation negotiated_type respond_to)],
     'PAGI::Utils::Middleware' => [qw(clone_scope wrap_send wrap_receive wrap_response_headers)],
 );
 
@@ -197,6 +199,8 @@ package that imported them from C<PAGI::Tools>.
     app_state                                     PAGI::State
     stash                                         PAGI::Stash
     session                                       PAGI::Session
+    content_negotiation negotiated_type
+      respond_to                                  PAGI::ContentNegotiation
     clone_scope wrap_send wrap_receive
       wrap_response_headers                       PAGI::Utils::Middleware
 
