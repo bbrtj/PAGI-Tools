@@ -11,7 +11,7 @@ sub new {
     my ($class, @args) = @_;
     my $declaration_package = caller;
     my $opts = _parse_options(
-        [qw(path endpoint name desc middleware methods constraints)],
+        [qw(path endpoint name desc middleware methods constraints declaration_package)],
         @args,
     );
     croak 'route requires a path' unless exists $opts->{path};
@@ -30,7 +30,7 @@ sub _new_from {
     croak 'route requires an endpoint' unless @args;
     my $endpoint = shift @args;
     my $opts = _parse_options(
-        [qw(name desc middleware methods constraints)],
+        [qw(name desc middleware methods constraints declaration_package)],
         @args,
     );
     return $class->_build(
@@ -105,7 +105,9 @@ sub _build {
         path => $path,
         mode => 'route',
         constraints => $constraints,
-        declaration_package => $declaration_package,
+        declaration_package => exists $opts->{declaration_package}
+            ? $opts->{declaration_package}
+            : $declaration_package,
     );
 
     return bless {
@@ -282,6 +284,9 @@ directly called C<route>, C<websocket>, C<sse>, or C<new>. Re-exporting a
 constructor preserves the consuming package as that caller; wrapping it in
 another sub makes the wrapper package the declaration package. A constructor
 called from a role method likewise resolves providers in the role package.
+The C<declaration_package> option names the package instead: a wrapper passes
+C<< declaration_package => scalar caller >> so providers resolve in the
+application that called it. It names one package; lookup never falls back.
 
 =head1 ACCESSORS
 

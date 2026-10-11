@@ -365,7 +365,9 @@ sub _compile_inline_provider {
                 . '(load the defining module before constructing routes)';
         }
         croak "inline constraint provider '$source' for parameter '$name' "
-            . "is not defined in package '$resolution_package'";
+            . "is not defined in package '$resolution_package' "
+            . '(the declaration package; a wrapper around route() or mount() '
+            . 'passes declaration_package => scalar caller)';
     }
 
     my $provider;
@@ -375,7 +377,9 @@ sub _compile_inline_provider {
         $provider = *{$symbol}{CODE};
     }
     croak "inline constraint provider '$source' for parameter '$name' "
-        . "is not defined in package '$resolution_package'"
+        . "is not defined in package '$resolution_package' "
+        . '(the declaration package; a wrapper around route() or mount() '
+        . 'passes declaration_package => scalar caller)'
         unless $provider;
 
     my $value;

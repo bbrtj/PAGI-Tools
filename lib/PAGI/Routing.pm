@@ -288,7 +288,7 @@ have no C<&{}> overload; call C<to_app> explicitly.
 Inline constraint providers are resolved in the package that directly calls
 the constructor. A re-exported constructor therefore uses the consuming
 package, while a wrapper sub or role method uses the package in which that
-wrapper or method was defined.
+wrapper or method was defined, unless it passes C<declaration_package>.
 
 =head1 CONSTRUCTORS
 
@@ -325,7 +325,8 @@ root.
     sse('/path' => $handler, %options)
     sse('/path' => as_app_object($native), %options)
 
-All leaves accept C<name>, C<desc>, C<middleware>, and C<constraints>.
+All leaves accept C<name>, C<desc>, C<middleware>, C<constraints>, and
+C<declaration_package>.
 C<methods> is HTTP-only: one token, an arrayref, or the explicit string C<*>.
 For an app object, an explicit finite method set still consults
 C<allowed_methods> once during immutable Route construction and must be a
@@ -342,6 +343,11 @@ therefore participate in Router FULL/PARTIAL selection. Router owns an
 unsupported-method 405 and its first-seen C<Allow> union at that boundary;
 OPTIONS reaches the Endpoint's automatic or overridden handling.
 
+C<declaration_package> names the package an unqualified inline provider
+(C<{id:&Int}>) is looked up in; it defaults to the constructor's direct
+caller. A framework that wraps the constructor passes C<< scalar caller >>
+(see L</Inline constraint providers>).
+
 =head2 mount
 
     mount('/prefix', app => $app, %options)
@@ -354,7 +360,8 @@ The two mutually exclusive forms are:
     '/x', app => $app       retained exactly             optional local segment
     '/x', routes => [...]   new child Router application  optional local segment
 
-All accept C<desc>, C<constraints>, and C<middleware>. C<app> accepts a native
+All accept C<desc>, C<constraints>, C<middleware>, and C<declaration_package>
+(as for L</route, websocket, sse>). C<app> accepts a native
 application coderef or app object. C<routes> creates a
 real L<PAGI::Routing::Router> application and stores it as the Mount's C<app>.
 Names are nonempty scalar logical segments: they may not contain C</> or
@@ -603,6 +610,19 @@ wrapper sub and a role-defined method make their own defining package the
 declaration boundary; invoking such code through a subclass does not rebind
 it. Use a fully qualified spelling when reusable declarations must name an
 external provider exactly.
+
+A framework that wraps C<route>, C<websocket>, C<sse> or C<mount> in its own
+sugar is that wrapper package, so an application's C<{id:&Int}> would be
+looked up in the framework. The wrapper names the application instead:
+
+    sub get {
+        my ($path, $handler, @options) = @_;
+        return route($path => $handler, @options,
+            declaration_package => scalar caller);
+    }
+
+C<declaration_package> names one package; lookup still never falls back to
+another.
 
 Qualified packages must already be loaded. Lookup never searches C<@ISA>,
 dispatches methods, invokes C<AUTOLOAD>, loads a module, consults

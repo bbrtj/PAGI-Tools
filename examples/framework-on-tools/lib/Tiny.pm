@@ -76,10 +76,12 @@ our @EXPORT = qw(get post put del raw before around on_error service plugin open
 
 my %APP;    # calling package => Tiny instance under construction
 
-sub _current { return $APP{ scalar caller(1) } //= Tiny->new }
+sub _current { my $package = caller(1); return $APP{$package} //= Tiny->new($package) }
 
-sub new ($class) {
+# $package is the application's: where its routes' {id:&Int} providers live.
+sub new ($class, $package = scalar caller) {
     return bless {
+        package  => $package,
         routes   => [],
         before   => [],
         around   => [],
@@ -120,9 +122,9 @@ sub add_route ($self, $method, $path, @rest) {
     my %opt  = @rest;
     push @{ $self->{routes} }, route($path => $self->_endpoint($code),
         methods => [$method],
-        # Seam: the compact `{id:&Int}` form resolves its provider in the
-        # package that called route(), which here is Tiny, not the
-        # application. A framework passes constraints explicitly.
+        # Seam: route() looks up a compact `{id:&Int}` provider in its
+        # caller, which is Tiny; declaration_package names the application.
+        declaration_package => $self->{package},
         (exists $opt{constraints} ? (constraints => $opt{constraints}) : ()),
         (exists $opt{name} ? (name => $opt{name}) : ()),
         (exists $opt{desc} ? (desc => $opt{desc}) : ()),

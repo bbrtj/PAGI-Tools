@@ -137,4 +137,25 @@ subtest 'around middleware branches' => sub {
     ], 'the inner handler never ran for the short circuit, and $next resolved before each body');
 };
 
+# The compact {id:&Int} form: route() looks the provider up in its caller,
+# which is Tiny; Tiny names the application's package instead.
+subtest 'compact typed path parameters' => sub {
+    package CompactProbe;
+    use Test2::V0;
+    use feature 'signatures';
+    no warnings 'experimental::signatures';
+    use lib "$FindBin::Bin/../examples/framework-on-tools/lib";
+    use Tiny;
+    use Types::Standard qw(Int);
+
+    my $built = eval { get '/n/{id:&Int}' => sub ($req) { 'n' . $req->param('id') }; 1 } || $@;
+    is($built, 1, 'the route builds with the provider from the application');
+    SKIP: {
+        skip 'the route did not build', 2 unless $built eq '1';
+        my $probe = PAGI::Test::Client->new(app => tiny());
+        is($probe->get('/n/7')->text, 'n7', 'an integer id matches');
+        is($probe->get('/n/x')->status, 404, 'anything else is a miss');
+    }
+};
+
 done_testing;

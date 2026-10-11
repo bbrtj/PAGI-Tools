@@ -57,7 +57,7 @@ tiny;
 | `before` hooks | the same wrapper | 4 lines |
 | `around` with Starlette's `call_next` | a native middleware wrapping `$send`: `$next` starts the inner app and resolves on `http.response.start`; the start event is held until the hook returns | 38 lines of raw-protocol code, the only such code in Tiny, and the delicate part: replacing the response has to fail the held send to unwind the handler |
 | services built at startup | Compose `lifespan => { startup }`, read with `$request->state` | none |
-| typed path parameters | `constraints => { id => Int }` | the compact `{id:&Int}` cannot be used: it resolves the provider in the package that called `route()`, which is the framework |
+| typed path parameters | `constraints => { id => Int }`, or the compact `{id:&Int}` | `route()` looks a compact provider up in its caller, which is Tiny, so Tiny passes `declaration_package` (the application's package). The app keeps the explicit form because the OpenAPI document reads `Route->constraints`, which holds only explicit constraints |
 | `on_error` class-to-response mapping | one `ErrorHandler` handler reading `error_context($req)->exception` | none; the handler sees a plain `PAGI::Request`, not Tiny's |
 | plugins | a package with `register($app)` using the same hooks | none |
 | the raw escape hatch | `route($path => as_app_object($code), methods => '*')` | none |
