@@ -40,29 +40,31 @@ subtest 'reading the choice' => sub {
     is negotiated_type(scope_with()), 'json', 'negotiated_type';
 };
 
-subtest 'respond dispatches to the chosen branch only' => sub {
+subtest 'respond_to dispatches to the chosen branch only' => sub {
     my %called;
     my $result = respond_to(scope_with(),
         html => sub { $called{html}++; 'HTML' },
         json => sub { $called{json}++; 'JSON' },
     );
     is [$result, \%called], ['JSON', { json => 1 }], 'one branch, its result';
+    is content_negotiation(scope_with())->respond_to(html => sub { 'HTML' }, json => sub { 'JSON' }), 'JSON',
+        'the method of the same name';
 };
 
-subtest 'respond checks its branches before any runs' => sub {
+subtest 'respond_to checks its branches before any runs' => sub {
     my $ran = 0;
     my $count = sub { $ran++; 'X' };
     my @cases = (
         [[html => $count, json => $count, htlm => $count],
             qr/\Q'htlm' is not one of the declared types (html, json)\E/, 'an undeclared key'],
         [[json => $count],
-            qr/\Qrespond needs a branch for every declared type; missing: html\E/, 'a missing branch'],
+            qr/\Qrespond_to needs a branch for every declared type; missing: html\E/, 'a missing branch'],
         [[html => $count, json => 'JSON'],
             qr/\Qthe 'json' branch must be a code reference\E/, 'a non-code value'],
         [[html => $count, json => $count, none => $count],
             qr/\Qa none branch is never called while the middleware refuses unacceptable requests\E/, 'none while refusing'],
         [[html => $count, 'json'],
-            qr/\Qrespond takes name => code pairs\E/, 'an odd count'],
+            qr/\Qrespond_to takes name => code pairs\E/, 'an odd count'],
     );
     for my $case (@cases) {
         my ($branches, $error, $label) = @$case;
@@ -71,18 +73,18 @@ subtest 'respond checks its branches before any runs' => sub {
     is $ran, 0, 'no branch ran';
 };
 
-subtest 'respond and nothing acceptable' => sub {
+subtest 'respond_to and nothing acceptable' => sub {
     my $declined = scope_with(type => undef, refusing => 0);
     like dies { respond_to($declined, html => sub {}, json => sub {}) },
-        qr/\Qrespond needs a none branch when the middleware has refuse => 0\E/, 'none is required with refuse => 0';
+        qr/\Qrespond_to needs a none branch when the middleware has refuse => 0\E/, 'none is required with refuse => 0';
     is respond_to($declined, html => sub { 'H' }, json => sub { 'J' }, none => sub { 'N' }), 'N',
         'and called when nothing was acceptable';
     like dies { respond_to(scope_with(type => undef), html => sub {}, json => sub {}) },
-        qr/\Qnothing was acceptable, so respond has no branch to call; a refuse answer returns its response directly\E/,
+        qr/\Qnothing was acceptable, so respond_to has no branch to call; a refuse answer returns its response directly\E/,
         'inside a refuse answer';
 };
 
-subtest 'respond branches are synchronous' => sub {
+subtest 'respond_to branches are synchronous' => sub {
     like dies { respond_to(scope_with(), html => sub {}, json => sub { Future->done('J') }) },
         qr/\Qthe 'json' branch returned a Future; do async work before respond_to and return a response from the branch\E/,
         'a Future is refused';

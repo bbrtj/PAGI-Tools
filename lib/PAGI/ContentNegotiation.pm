@@ -380,7 +380,7 @@ C<< content_negotiation($request)->type >>.
     );
 
 Calls the branch for the chosen type and returns its result. The same as
-C<< content_negotiation($request)->respond(...) >>; see L</respond>.
+the L</respond_to> method, C<< content_negotiation($request)->respond_to(...) >>.
 
 =cut
 
@@ -388,10 +388,6 @@ sub content_negotiation { return __PACKAGE__->new(@_) }
 
 sub negotiated_type { return __PACKAGE__->new(@_)->type }
 
-sub respond_to {
-    my ($source, @branches) = @_;
-    return __PACKAGE__->new($source)->respond(@branches);
-}
 
 =head1 CONSTRUCTOR
 
@@ -455,9 +451,9 @@ True when C<$name> was chosen. Names are compared exactly as declared. A
 name that was not declared dies, so a typo fails at once instead of quietly
 never matching.
 
-=head2 respond
+=head2 respond_to
 
-    return $cn->respond(
+    return $cn->respond_to(
         html => sub { response('HTML', $page) },
         json => sub { response('JSON', $data) },
     );
@@ -480,9 +476,9 @@ middleware has C<refuse =E<gt> 0> and only then.
 Branches are synchronous: a branch that returns a Future dies. Do the
 asynchronous work first and build the response in the branch, or read
 L</type> and branch yourself. (An C<async> handler that returned a Future
-from C<respond> would resolve to that Future rather than a response.)
+from C<respond_to> would resolve to that Future rather than a response.)
 
-The middleware owns C<Vary: Accept> and the 406; C<respond> writes no
+The middleware owns C<Vary: Accept> and the 406; C<respond_to> writes no
 headers. A response thrown with C<die> skips the middleware's C<Vary>, so a
 handler returns, rather than throws, an error it picked by the negotiated
 type.
@@ -506,9 +502,12 @@ sub is {
     return defined($type) && $type eq $name ? 1 : 0;
 }
 
-sub respond {
-    my ($self, @pairs) = @_;
-    croak 'PAGI::ContentNegotiation: respond takes name => code pairs' if @pairs % 2;
+sub respond_to {
+    my ($source, @pairs) = @_;
+    my $self = blessed($source) && $source->isa(__PACKAGE__)
+        ? $source
+        : __PACKAGE__->new($source);
+    croak 'PAGI::ContentNegotiation: respond_to takes name => code pairs' if @pairs % 2;
     my %branch;
     while (my ($name, $code) = splice @pairs, 0, 2) {
         $self->_require_declared($name) unless $name eq 'none';
@@ -517,15 +516,15 @@ sub respond {
         $branch{$name} = $code;
     }
     my @missing = grep { !$branch{$_} } $self->supported;
-    croak 'PAGI::ContentNegotiation: respond needs a branch for every declared type; missing: '
+    croak 'PAGI::ContentNegotiation: respond_to needs a branch for every declared type; missing: '
         . join(', ', @missing) if @missing;
     my $refusing = $self->{_record}{refusing};
-    croak 'PAGI::ContentNegotiation: respond needs a none branch when the middleware has refuse => 0'
+    croak 'PAGI::ContentNegotiation: respond_to needs a none branch when the middleware has refuse => 0'
         if !$refusing && !$branch{none};
     croak 'PAGI::ContentNegotiation: a none branch is never called while the middleware refuses unacceptable requests'
         if $refusing && $branch{none};
     my $type = $self->type;
-    croak 'PAGI::ContentNegotiation: nothing was acceptable, so respond has no branch to call; a refuse answer returns its response directly'
+    croak 'PAGI::ContentNegotiation: nothing was acceptable, so respond_to has no branch to call; a refuse answer returns its response directly'
         if !defined($type) && $refusing;
     my $name = defined $type ? $type : 'none';
     my $result = $branch{$name}->();
