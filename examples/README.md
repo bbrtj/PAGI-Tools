@@ -17,7 +17,7 @@ Router object; servers accept anything with `to_app`.
 
 - Perl 5.18+ with `Future::AsyncAwait` for the distribution and most examples;
   `large-application`, `starlette-apples`, `gut-check`, `content-negotiation`, `upload-streaming`, `process-streaming`,
-  `webhook-receiver`, `auth-cookie-login`, `auth-extensions`, `auth-notes`, and `auth-jwt-sandbox`
+  `webhook-receiver`, `framework-on-tools`, `auth-cookie-login`, `auth-extensions`, `auth-notes`, and `auth-jwt-sandbox`
   require Perl 5.40+
 - A PAGI server to run examples against:
   ```
@@ -71,6 +71,7 @@ Structuring applications:
 - `declarative-routing` - immutable `PAGI::Routing` tree with package handlers, a configured child Router mount, route middleware, boundary-specific HTTP defaults, and reverse URLs
 - `endpoint-demo` - HTTP, WebSocket, and SSE endpoint classes as route leaves, with per-route middleware
 - `endpoint-class-demo` - ordinary modular objects returning immutable Router subtrees, with configured exact-leaf endpoint classes
+- `framework-on-tools` - Perl 5.40 small Sinatra/FastAPI-shaped framework (`lib/Tiny.pm`) built on Tools, and a notes app on it: a Request subclass, plain-value returns, `before` and `around` (call_next) hooks, startup services, typed path parameters, exception mapping, a plugin, a raw escape hatch and an OpenAPI document from the Router; the README lists each seam and its cost
 - `large-application` - Perl 5.40+ Compose-rooted modular HTML application with named Person/Blogs Router application mounts, cross-component links, boundary-specific Router defaults, an opaque static-file mount, lifespan data, and a deferred-work ledger
 
 Lifespan and background work:
