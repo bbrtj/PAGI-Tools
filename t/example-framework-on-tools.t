@@ -8,6 +8,11 @@ use PAGI::Test::Client;
 # Tiny, the small framework in examples/framework-on-tools/lib, built on
 # PAGI-Tools: each test pins one seam the framework stands on.
 
+if ($] < 5.040) {
+    plan skip_all => 'examples/framework-on-tools requires Perl 5.40';
+    exit 0;
+}
+
 my $app = do "$Bin/../examples/framework-on-tools/app.pl";
 is($@, '', 'the example loads');
 isa_ok($app, 'PAGI::Compose');
@@ -77,5 +82,59 @@ is($doc->{paths}{'/notes/{id}'}{get}{parameters},
     'and the typed path parameter from its constraint');
 is($doc->{paths}{'/notes'}{get}{summary}, 'List the notes', 'and the route desc as summary');
 is($doc->{paths}{'/notes'}{get}{operationId}, 'notes', 'and the route name as operationId');
+
+# The around middleware's other branches, on a second Tiny application: a
+# hook that answers without calling $next, one that replaces the response
+# after $next, a status edit, a streamed response passing through, and a
+# handler that dies under the hook.
+subtest 'around middleware branches' => sub {
+    package AroundProbe;
+    use Test2::V0;
+    use feature 'signatures';
+    no warnings 'experimental::signatures';
+    use Future::AsyncAwait;
+    use lib "$FindBin::Bin/../examples/framework-on-tools/lib";
+    use Tiny;
+
+    my @log;
+    around async sub ($req, $next) {
+        return { blocked => 1 } if $req->path eq '/block';
+        my $sent = await $next->();
+        push @log, "saw $sent->{status}";
+        return response('Text', 'replaced', status => 418) if $req->path eq '/replace';
+        $sent->status(202) if $req->path eq '/restatus';
+        return $sent;
+    };
+    get '/ok'       => sub ($req) { push @log, 'ok';       { ok => 1 } };
+    get '/block'    => sub ($req) { push @log, 'block';    { ok => 1 } };
+    get '/replace'  => sub ($req) { push @log, 'replace';  { ok => 1 } };
+    get '/restatus' => sub ($req) { push @log, 'restatus'; { ok => 1 } };
+    get '/boom'     => sub ($req) { die "handler bug\n" };
+    get '/stream'   => sub ($req) {
+        response('Stream', async sub ($w) { await $w->write('a'); await $w->write('b'); push @log, 'stream done' });
+    };
+    my $probe = PAGI::Test::Client->new(app => tiny);
+
+    my $res = $probe->get('/ok');
+    is($res->json, { ok => 1 }, 'a response passes through the hook');
+    $res = $probe->get('/block');
+    is([$res->status, $res->json], [200, { blocked => 1 }], 'a hook that never calls $next answers itself');
+    $res = $probe->get('/replace');
+    is([$res->status, $res->text], [418, 'replaced'], 'a hook can replace the response after $next');
+    $res = $probe->get('/restatus');
+    is([$res->status, $res->json], [202, { ok => 1 }], 'or edit its status');
+    $res = $probe->get('/stream');
+    is($res->text, 'ab', 'a streamed response flows through after the start event');
+    my $warning = warning { $res = $probe->get('/boom') };
+    is($res->status, 500, 'a handler that dies under the hook is a 500');
+    like($warning, qr/handler bug/, 'reported as the server would');
+    is(\@log, [
+        'ok', 'saw 200',
+        'replace', 'saw 200',
+        'restatus', 'saw 200',
+        'saw 200', 'stream done',
+        'saw 500',
+    ], 'the inner handler never ran for the short circuit, and $next resolved before each body');
+};
 
 done_testing;
