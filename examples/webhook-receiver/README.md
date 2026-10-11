@@ -6,7 +6,7 @@ view of the log. The kind of thing you write in one sitting because a
 service needs somewhere to post to this afternoon.
 
 It was written cold against the PAGI-Tools docs with a clock running, as
-part of the whipupitude gap analysis, and kept as written (one bug fixed:
+part of the whipupitude gap analysis, and kept as written apart from the house brace style (one bug fixed:
 `use v5.40` turns on the `bitwise` feature, so string xor is `^.`). The
 same program in Flask and in Go's `net/http` is in `compare/`, driven with
 the same curl sequence.

@@ -27,16 +27,14 @@ my $JSON   = JSON::PP->new->canonical;
 # The signature is over the bytes GitHub sent, so compare it against
 # $request->body, not the parsed data. A constant-time compare keeps the
 # secret from leaking by timing.
-sub signature_ok ($request, $bytes)
-{
+sub signature_ok ($request, $bytes) {
     my $given = $request->header('x-hub-signature-256') // return 0;
     my $want  = 'sha256=' . hmac_sha256_hex($bytes, $SECRET);
     return length($given) == length($want)
         && !(unpack('%32C*', $given ^. $want));
 }
 
-async sub receive ($request)
-{
+async sub receive ($request) {
     my $bytes = await $request->body;
     return response('JSON', { error => 'bad signature' }, status => 401)
         unless signature_ok($request, $bytes);
@@ -55,14 +53,12 @@ async sub receive ($request)
     return response('JSON', { ok => 1, id => $delivery->{id} }, status => 202);
 }
 
-sub deliveries ()
-{
+sub deliveries () {
     open my $fh, '<', $LOG or return [];
     return [ map { $JSON->decode($_) } <$fh> ];
 }
 
-async sub status_page ($request)
-{
+async sub status_page ($request) {
     my @recent = reverse @{ deliveries() }[-10 .. -1];
     my $rows = join '', map {
         sprintf '<li><code>%s</code> %s <small>%s</small></li>',
@@ -76,8 +72,7 @@ async sub status_page ($request)
         HTML
 }
 
-async sub deliveries_json ($request)
-{
+async sub deliveries_json ($request) {
     my $n = $request->query_param('n') // 50;
     my $all = deliveries();
     return response('JSON', [ @{$all}[ -($n < @$all ? $n : @$all) .. -1 ] ]);
