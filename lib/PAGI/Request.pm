@@ -413,8 +413,13 @@ async sub body {
     croak "Body streaming already started; buffered helpers unavailable"
         if $self->{scope}{'pagi.request.body.stream.created'};
 
-    # Return cached body if already read
-    return $self->{scope}{'pagi.request.body'} if $self->{scope}{'pagi.request.body.read'};
+    # Return cached body if already read. A multipart parse streams the body
+    # to its parts and keeps no copy of it.
+    if ($self->{scope}{'pagi.request.body.read'}) {
+        croak 'The raw body of a multipart request is not kept; read it with form_params and uploads'
+            unless exists $self->{scope}{'pagi.request.body'};
+        return $self->{scope}{'pagi.request.body'};
+    }
 
     # A prior call already hit a mid-body disconnect: fail identically instead
     # of re-awaiting a receive that will never resolve normally again.
@@ -1104,8 +1109,9 @@ See L<PAGI::Request::MultipartStream> for full documentation.
 Read raw body bytes. Cached after first read, and C<text>, C<json> and a
 URL-encoded C<form_params> all read through it, so the exact bytes are still
 here after they have parsed the body -- what a webhook signature check needs.
-A multipart C<form_params> streams its parts to disk instead and keeps no raw
-copy.
+A multipart C<form_params> (or C<uploads>) streams its parts to disk instead
+and keeps no raw copy; C<body> after it dies with C<The raw body of a
+multipart request is not kept; read it with form_params and uploads>.
 
 B<Important:> Cannot be used after C<body_stream()> has been called.
 
