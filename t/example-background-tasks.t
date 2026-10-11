@@ -23,11 +23,18 @@ my $app = do $file;
 is($@, '', 'the example loads');
 isa_ok($app, 'PAGI::Compose');
 
+like($source, qr/\$state->\{background\} = PAGI::FutureOwner->new/,
+    'the owner is built at lifespan startup');
+unlike($source, qr/^my \$background/m, 'not as a file-scoped global');
+
 my ($stderr, %res) = ('');
 {
     local *STDERR;
     open STDERR, '>', \$stderr or die $!;
-    my $client = PAGI::Test::Client->new(app => $app);
+    # The owner lives in lifespan state, so the client runs the lifespan;
+    # stop waits for the work the handlers started.
+    my $client = PAGI::Test::Client->new(app => $app, lifespan => 1);
+    $client->start;
     $res{index}  = $client->get('/');
     $res{async}  = $client->get('/async');
     $res{signup} = $client->post('/signup', json => { email => 'ada@example.com' });
@@ -37,7 +44,11 @@ my ($stderr, %res) = ('');
         $ws->send_text('hello');
         is($ws->receive_text, 'Got: hello', 'and answers each message');
     });
+    $client->stop;
 }
+
+like($stderr, qr/\[async\] Analytics logged!/, 'shutdown waited for the analytics the handlers started');
+like($stderr, qr/\[async\] Email sent to ada\@example\.com!/, 'and for the email started after the response');
 
 is($res{index}->status, 200, 'the index is served');
 like($res{index}->text, qr/Background Tasks Demo/, 'with its demonstration page');

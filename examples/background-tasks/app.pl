@@ -9,6 +9,19 @@
 #                       once the response has been delivered.
 #   3. Quick sync     - tiny bookkeeping done inline before returning.
 #
+# The owner is built at lifespan startup and lives in the application state,
+# like any other long-lived thing a handler reaches for; shutdown waits for
+# the work it still holds. An owner is not a queue: the work starts the
+# moment the async sub is called, and adopt only holds its Future until it
+# settles, reports a failure, and lets shutdown wait.
+#
+# What this is not: durable. This is best-effort, in-process work, per
+# worker. A crash, restart or deploy loses it; shutdown waits only as long
+# as the server's shutdown timeout allows; there is no concurrency cap and
+# no retry. Work that must happen belongs in a durable job queue (Minion in
+# Perl; Celery, RQ or Sidekiq elsewhere; Starlette's BackgroundTasks has the
+# same limits as this file), and the handler only enqueues it.
+#
 # Blocking or CPU-heavy work belongs in another process; see
 # examples/process-streaming for a subprocess driven through Future::IO.
 #
@@ -26,12 +39,6 @@ use Future::IO;    # pagi-server binds the implementation
 
 use PAGI::FutureOwner;
 use PAGI::Tools qw(compose response route websocket);
-
-# Work the client does not wait for belongs to $background, which reports
-# failures and lets shutdown wait for it.
-my $background = PAGI::FutureOwner->new(
-    on_failure => sub { warn "Background task failed: $_[0]" },
-);
 
 # Simulated async email API (would use an async HTTP client in practice)
 async sub send_welcome_email {
@@ -59,6 +66,7 @@ sub quick_sync_task {
 # PATTERN 1: start now. The work runs alongside the response.
 sub async_tasks {
     my ($request) = @_;
+    my $background = $request->state->get('background');
 
     $background->adopt(log_to_analytics('page_view', { path => '/' }));
     quick_sync_task("Logging request");
@@ -75,6 +83,7 @@ sub async_tasks {
 # returning, after anything that could fail.
 async sub signup {
     my ($request) = @_;
+    my $background = $request->state->get('background');
 
     my $data = await $request->json;
     my $email = $data->{email} // 'unknown@example.com';
@@ -94,6 +103,7 @@ async sub signup {
 # WebSocket with background processing
 async sub messages {
     my ($ws) = @_;
+    my $background = $ws->state->get('background');
 
     await $ws->accept;
     await $ws->send_text('Connected! Send a message.');
@@ -155,6 +165,17 @@ route('/async'  => \&async_tasks),
 route('/signup' => \&signup, methods => ['POST']),
 websocket('/ws' => \&messages),
 ], lifespan => {
+    # Work the client does not wait for belongs to this owner, which
+    # reports failures and lets shutdown wait for it.
+    startup => sub {
+        my ($state) = @_;
+        $state->{background} = PAGI::FutureOwner->new(
+            on_failure => sub { warn "Background task failed: $_[0]" },
+        );
+    },
     # Work still running finishes before the process exits.
-    shutdown => async sub { await $background->settled },
+    shutdown => async sub {
+        my ($state) = @_;
+        await $state->{background}->settled;
+    },
 });
