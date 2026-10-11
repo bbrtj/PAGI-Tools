@@ -2638,42 +2638,37 @@ Work a handler starts and does not await -- an email, an analytics call --
 still needs an owner: something that keeps it alive, hears when it fails,
 and lets shutdown wait for it. L<PAGI::FutureOwner> is that owner:
 
-  use strict;
-  use warnings;
+  use v5.40;
   use Future::AsyncAwait;
-  use Future::IO;
-  use PAGI::Compose qw(compose);
+  use Future::IO;    # pagi-server binds the implementation
   use PAGI::FutureOwner;
-  use PAGI::Response qw(response);
-  use PAGI::Routing qw(route);
+  use PAGI::Tools qw(compose response route);
 
-  # Each failure is reported as it happens.
-  my $background = PAGI::FutureOwner->new(
-      on_failure => sub { warn "Background task failed: $_[0]" },
-  );
-
-  # Simulated async email service
-  async sub send_welcome_email {
-      my ($email) = @_;
-      # In reality: await $http_client->post_async($email_api, ...);
-      await Future::IO->sleep(2);
+  async sub send_welcome_email ($email) {
+      await Future::IO->sleep(2);    # in reality, an async HTTP call
       warn "Email sent to $email\n";
   }
 
+  sub signup ($request) {
+      # Started now; the client does not wait for it.
+      $request->state->get('background')->adopt(send_welcome_email('user@example.com'));
+      return response('JSON', { status => 'created' }, status => 201);
+  }
+
   my $app = compose(
-      routes => [
-          route('/signup' => sub {
-              my ($request) = @_;
-              # Started now; the client does not wait for it.
-              $background->adopt(send_welcome_email('user@example.com'));
-              return response('JSON', { status => 'created' }, status => 201);
-          }, methods => ['POST']),
-      ],
+      routes   => [route('/signup' => \&signup, methods => ['POST'])],
       lifespan => {
-          # Emails still being sent finish before the process exits.
-          shutdown => async sub { await $background->settled },
+          # The owner lives as long as the application, like any other
+          # long-lived thing a handler reaches for.
+          startup => sub ($state, $scope) {
+              $state->{background} = PAGI::FutureOwner->new(
+                  on_failure => sub ($error) { warn "Background task failed: $error" },
+              );
+          },
+          # Work still running finishes before the process exits.
+          shutdown => async sub ($state, $scope) { await $state->{background}->settled },
       },
-  )->to_app;
+  );
 
 Do not drop such a Future, and do not C<< ->retain >> it: a retained Future
 belongs to nobody, so nothing can wait for it and its failure is lost.
@@ -2695,10 +2690,6 @@ same lifespan-owned L<PAGI::FutureOwner>:
   use PAGI::FutureOwner;
   use PAGI::Tools qw(compose response route);
 
-  my $background = PAGI::FutureOwner->new(
-      on_failure => sub ($error) { warn "Background task failed: $error" },
-  );
-
   async sub send_welcome_email ($email) {
       await Future::IO->sleep(2);    # in reality, an async HTTP call
       warn "Email sent to $email\n";
@@ -2707,6 +2698,7 @@ same lifespan-owned L<PAGI::FutureOwner>:
   async sub signup ($request) {
       my $email = (await $request->json)->{email};
       # ... create the account: everything that can fail comes first ...
+      my $background = $request->state->get('background');
       $request->connection->on_complete(sub {
           $background->adopt(send_welcome_email($email));
       });
@@ -2716,8 +2708,13 @@ same lifespan-owned L<PAGI::FutureOwner>:
   my $app = compose(
       routes   => [route('/signup' => \&signup, methods => ['POST'])],
       lifespan => {
+          startup => sub ($state, $scope) {
+              $state->{background} = PAGI::FutureOwner->new(
+                  on_failure => sub ($error) { warn "Background task failed: $error" },
+              );
+          },
           # Emails still being sent finish before the process exits.
-          shutdown => async sub { await $background->settled },
+          shutdown => async sub ($state, $scope) { await $state->{background}->settled },
       },
   );
 
