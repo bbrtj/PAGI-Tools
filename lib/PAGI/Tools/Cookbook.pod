@@ -2892,6 +2892,20 @@ without naming an event loop.
 
 See C<examples/10-forms-and-uploads/> for complete examples.
 
+=head2 A huge upload in a legacy encoding
+
+C<body_stream(decode =E<gt> ...)> decodes as the body arrives. For the
+heaviest legacy-encoded uploads, spool the bytes to disk first and read the
+file through PerlIO's own decoder, line by line:
+
+  my $path = "$dir/import.csv";
+  await $request->body_stream->stream_to_file($path);
+  open my $fh, '<:encoding(cp1252)', $path or die "$path: $!";
+  while (my $line = <$fh>) { ... }
+
+C<:encoding> also reads the encodings a stream cannot (ISO-2022-JP,
+UTF-7), because it reads by lines.
+
 =head2 Bad request bodies
 
 A body the client got wrong -- not JSON, not valid in its charset under

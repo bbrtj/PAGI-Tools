@@ -85,6 +85,7 @@
     t/example-gut-check.t.
 
   [Changed]
+  - Encode 3.00 or later is required (perl 5.30 and later ship it).
   - ContentNegotiation sends Vary: Accept on every answer, its 406 and
     refusals included, merged into any Vary the response has.
   - raw_path is the full requested path at every mount level; AccessLog
