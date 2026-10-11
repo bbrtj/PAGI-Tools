@@ -182,8 +182,8 @@ Most important first, as found; each now says what PAGI-Tools 0.003000 does.
     sends stay for messages that must arrive, and stay loud.
     `examples/sse-dashboard` now reads that way (see "HANDLERS AND
     DISCONNECTS" in `PAGI::SSE`). 03 needs no `is_closed` check: each handler
-    registers its listener after the handshake, then its cleanup with the
-    connection's `on_end`, which runs at once if the client has already left.
+    registers its listener after the handshake, then its `on_close` cleanup,
+    which runs at once if the client has already left.
 
 11. **There was no "after the response" task.** A correction: the connection's
     `on_complete` already runs work once the response has been delivered, in

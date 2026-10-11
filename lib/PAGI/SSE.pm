@@ -933,9 +933,9 @@ PAGI::SSE - Convenience wrapper for PAGI Server-Sent Events connections
             my $id = refaddr $sse;
             $subscribers{$id} = $sse;
 
-            # Unsubscribe however the stream ends: the connection runs this
-            # at once if the client has already gone.
-            $sse->connection->on_end(sub { delete $subscribers{$id} });
+            # Unsubscribe however the stream ends, at once if the client has
+            # already gone.
+            $sse->on_close(sub { delete $subscribers{$id} });
             await Future->needs_all(@replay);
 
             await $sse->run;    # until the client disconnects
@@ -1731,8 +1731,8 @@ Returns C<$self> for chaining.
 
         # Unsubscribe however the stream ends, at once if the client has
         # already gone.
-        $sse->connection->on_end(sub {
-            my ($reason) = @_;
+        $sse->on_close(sub {
+            my ($sse, $reason) = @_;
             unsubscribe_metrics($sub_id);
             # Log abnormal disconnects for debugging
             warn "SSE client disconnected: $reason"
