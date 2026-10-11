@@ -32,6 +32,7 @@ in [UPGRADING-REFERENCE.md](UPGRADING-REFERENCE.md).
 | scope keys `csrf_token`, `original_client`, `original_method`, `original_path`, `request_id` | the same names under `pagi.` ([details](UPGRADING-REFERENCE.md#breaking-middleware-scope-keys-move-under-pagi)) |
 | Maintenance `body`, `content_type` | `response => response('HTML', $page, status => 503)`; the default is now plain text; both options now die ([details](UPGRADING-REFERENCE.md#breaking-maintenance-body-and-content_type-are-replaced-by-response)) |
 | ContentNegotiation `strict`, `default_type` | refusing is the default; `refuse => 0` lets the application decide; both options now die ([details](UPGRADING-REFERENCE.md#breaking-contentnegotiation-refuses-by-default-strict-and-default_type-are-removed)) |
+| `PAGI::Request::Negotiate` | `PAGI::ContentNegotiation`: the same class methods |
 | `Auth::Basic`, `Auth::Bearer` | `Authentication` with a backend, plus `requires` ([details](UPGRADING-REFERENCE.md#breaking-authbasic-and-authbearer-are-replaced-by-authentication)) |
 | `FormBody`, `JSONBody` middleware | `$request->form_params`, `$request->json` ([details](UPGRADING-REFERENCE.md#breaking-pagimiddlewareformbody-and-pagimiddlewarejsonbody-are-removed)) |
 | `PAGI::App::Loader` | `pagi-server --app`, or `do $file` ([details](UPGRADING-REFERENCE.md#breaking-pagiapploader-is-removed)) |

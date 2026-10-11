@@ -13,7 +13,7 @@ use Carp qw(croak);
 use Scalar::Util qw(blessed);
 use PAGI::Request::MultiPartHandler;
 use PAGI::Request::Upload;
-use PAGI::Request::Negotiate;
+use PAGI::ContentNegotiation;
 use PAGI::Request::BodyError;
 use PAGI::Request::BodyStream;
 use PAGI::Request::_BodyInput ();
@@ -262,7 +262,7 @@ sub accepts {
     my ($self, $mime_type) = @_;
     my @accept_values = $self->header_all('accept');
     my $accept = join(', ', @accept_values);
-    return PAGI::Request::Negotiate->accepts_type($accept, $mime_type);
+    return PAGI::ContentNegotiation->accepts_type($accept, $mime_type);
 }
 
 # Find best matching content type from supported list
@@ -271,7 +271,7 @@ sub preferred_type {
     my ($self, @types) = @_;
     my @accept_values = $self->header_all('accept');
     my $accept = join(', ', @accept_values);
-    return PAGI::Request::Negotiate->best_match(\@types, $accept);
+    return PAGI::ContentNegotiation->best_match(\@types, $accept);
 }
 
 # Extract Bearer token from Authorization header

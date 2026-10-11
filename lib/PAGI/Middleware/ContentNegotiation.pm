@@ -6,7 +6,7 @@ use parent 'PAGI::Middleware';
 use Future;
 use Future::AsyncAwait;
 use PAGI::Response::Text ();
-use PAGI::Request::Negotiate;
+use PAGI::ContentNegotiation;
 use PAGI::Utils ();
 use PAGI::Utils::Middleware ();
 
@@ -60,7 +60,7 @@ Plack::Builder does.
 
 PAGI::Middleware::ContentNegotiation picks the best of C<supported_types>
 for the request's C<Accept> header, using the shared
-L<PAGI::Request::Negotiate> rules, and puts it in the scope for the wrapped
+L<PAGI::ContentNegotiation> rules, and puts it in the scope for the wrapped
 application. A request without C<Accept> accepts anything and gets the first
 supported type, so the order of C<supported_types> is the default.
 
@@ -157,7 +157,7 @@ sub wrap {
 
         # Parse Accept header
         my $accept = $self->_get_header($scope, 'accept') // '*/*';
-        my $preferred = PAGI::Request::Negotiate->best_match(
+        my $preferred = PAGI::ContentNegotiation->best_match(
             $self->{supported_types}, $accept,
         );
 
@@ -184,7 +184,7 @@ sub _parse_accept {
 
     return map {
         +{ type => $_->[0], q => $_->[1] }
-    } PAGI::Request::Negotiate->parse_accept($accept);
+    } PAGI::ContentNegotiation->parse_accept($accept);
 }
 
 sub _get_header {
@@ -222,7 +222,7 @@ Array of parsed Accept header entries in the shared preference order.
 
 =head1 ACCEPT HEADER PARSING
 
-The Accept header is parsed by L<PAGI::Request::Negotiate>:
+The Accept header is parsed by L<PAGI::ContentNegotiation>:
 
     Accept: text/html, application/json;q=0.9, */*;q=0.1
 
@@ -234,6 +234,6 @@ preference. The default is q=1.0.
 
 L<PAGI::Middleware> - Base class for middleware
 
-L<PAGI::Request::Negotiate> - Shared Accept matching
+L<PAGI::ContentNegotiation> - Shared Accept matching
 
 =cut

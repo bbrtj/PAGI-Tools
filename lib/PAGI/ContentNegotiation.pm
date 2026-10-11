@@ -1,44 +1,44 @@
-package PAGI::Request::Negotiate;
+package PAGI::ContentNegotiation;
 use strict;
 use warnings;
 
 
 =head1 NAME
 
-PAGI::Request::Negotiate - Content negotiation utilities for PAGI
+PAGI::ContentNegotiation - HTTP content negotiation: Accept matching, and the negotiated choice for handlers
 
 =head1 SYNOPSIS
 
-    use PAGI::Request::Negotiate;
+    use PAGI::ContentNegotiation;
 
     # Parse Accept header
-    my @types = PAGI::Request::Negotiate->parse_accept(
+    my @types = PAGI::ContentNegotiation->parse_accept(
         'text/html, application/json;q=0.9, */*;q=0.1'
     );
     # Returns: (['text/html', 1], ['application/json', 0.9], ['*/*', 0.1])
 
     # Find best match
-    my $best = PAGI::Request::Negotiate->best_match(
+    my $best = PAGI::ContentNegotiation->best_match(
         ['application/json', 'text/html'],
         'text/html, application/json;q=0.9'
     );
     # Returns: 'text/html'
 
     # Check if type is acceptable
-    my $accepts = PAGI::Request::Negotiate->accepts_type(
+    my $accepts = PAGI::ContentNegotiation->accepts_type(
         'text/html, application/json',
         'json'
     );
 
     # Get quality value for type
-    my $quality = PAGI::Request::Negotiate->quality_for_type(
+    my $quality = PAGI::ContentNegotiation->quality_for_type(
         'application/json;q=0.9',
         'json'
     );
 
 =head1 DESCRIPTION
 
-PAGI::Request::Negotiate provides utilities for HTTP content negotiation,
+PAGI::ContentNegotiation provides utilities for HTTP content negotiation,
 including parsing Accept headers and finding the best matching content type.
 
 This module supports quality values, wildcards (*/*, type/*), and common
@@ -71,7 +71,7 @@ my %TYPE_SHORTCUTS = (
 
 =head2 parse_accept
 
-    my @types = PAGI::Request::Negotiate->parse_accept($header);
+    my @types = PAGI::ContentNegotiation->parse_accept($header);
 
 Parse an Accept header and return a list of arrayrefs containing
 C<[media_type, quality]> sorted by preference (quality descending,
@@ -144,7 +144,7 @@ sub _specificity {
 
 =head2 best_match
 
-    my $type = PAGI::Request::Negotiate->best_match(\@supported, $accept_header);
+    my $type = PAGI::ContentNegotiation->best_match(\@supported, $accept_header);
 
 Find the best matching content type from C<@supported> based on the
 Accept header. Returns the best match or undef if none acceptable.
@@ -173,7 +173,7 @@ sub best_match {
 
 =head2 type_matches
 
-    my $bool = PAGI::Request::Negotiate->type_matches($type, $pattern);
+    my $bool = PAGI::ContentNegotiation->type_matches($type, $pattern);
 
 Check if a media type matches a pattern. Patterns can include wildcards
 like C<*/*> or C<text/*>.
@@ -204,7 +204,7 @@ sub type_matches {
 
 =head2 normalize_type
 
-    my $mime = PAGI::Request::Negotiate->normalize_type($type);
+    my $mime = PAGI::ContentNegotiation->normalize_type($type);
 
 Convert a type shortcut to its full MIME type. Known shortcuts include:
 
@@ -238,9 +238,42 @@ sub normalize_type {
     return $TYPE_SHORTCUTS{lc($type)} // "application/$type";
 }
 
+=head2 is_known_type
+
+    PAGI::ContentNegotiation->is_known_type('json');            # 1
+    PAGI::ContentNegotiation->is_known_type('application/x-y'); # 1
+    PAGI::ContentNegotiation->is_known_type('htlm');            # 0
+
+True for a media type (anything containing C</>) or a shortcut in the table
+above, in any case. L<PAGI::Middleware::ContentNegotiation> refuses
+C<supported_types> entries for which it is false, because
+C<normalize_type> turns an unknown name into C<application/E<lt>nameE<gt>>
+and a typo would never match.
+
+=cut
+
+sub is_known_type {
+    my ($class, $type) = @_;
+    return 0 unless defined $type && length $type;
+    return 1 if $type =~ m{/};
+    return exists $TYPE_SHORTCUTS{lc $type} ? 1 : 0;
+}
+
+=head2 shortcuts
+
+    my @names = PAGI::ContentNegotiation->shortcuts;   # atom, css, form, ...
+
+The shortcut names C<normalize_type> knows, sorted.
+
+=cut
+
+sub shortcuts {
+    return sort keys %TYPE_SHORTCUTS;
+}
+
 =head2 accepts_type
 
-    my $bool = PAGI::Request::Negotiate->accepts_type($accept_header, $type);
+    my $bool = PAGI::ContentNegotiation->accepts_type($accept_header, $type);
 
 Check if a specific content type is acceptable based on the Accept header.
 
@@ -274,7 +307,7 @@ sub accepts_type {
 
 =head2 quality_for_type
 
-    my $q = PAGI::Request::Negotiate->quality_for_type($accept_header, $type);
+    my $q = PAGI::ContentNegotiation->quality_for_type($accept_header, $type);
 
 Get the quality value for a specific type. Returns 0 if not acceptable.
 
@@ -315,7 +348,7 @@ sub quality_for_type {
 =head2 Content Negotiation in a PAGI App
 
     use PAGI::Request;
-    use PAGI::Request::Negotiate;
+    use PAGI::ContentNegotiation;
 
     async sub app ($scope, $receive, $send) {
         # Scope headers are an arrayref of [name, value] pairs, not a hash.
@@ -323,7 +356,7 @@ sub quality_for_type {
         my $req    = PAGI::Request->new($scope, $receive);
         my $accept = $req->header('accept') // '*/*';
 
-        my $format = PAGI::Request::Negotiate->best_match(
+        my $format = PAGI::ContentNegotiation->best_match(
             ['json', 'html', 'xml'],
             $accept
         );

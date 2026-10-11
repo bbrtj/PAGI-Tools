@@ -42,7 +42,7 @@ my @load_modules = qw(
     PAGI::CSRF
     PAGI::Transport
     PAGI::Request::Upload
-    PAGI::Request::Negotiate
+    PAGI::ContentNegotiation
     PAGI::Response
     PAGI::Response::Text
     PAGI::Response::HTML

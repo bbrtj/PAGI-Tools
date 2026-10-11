@@ -1077,7 +1077,8 @@ App::File's 416 `Content-Range`.
 URLMap with no default, on a WebSocket or SSE scope, now croaks instead of
 sending `http.response.*` on another protocol.
 
-ContentNegotiation now uses `PAGI::Request::Negotiate`: an exact `q=0`
+ContentNegotiation shares its Accept matching with `$request->preferred_type`
+(both use `PAGI::ContentNegotiation`): an exact `q=0`
 exclusion beats a less specific wildcard. Unknown, missing or malformed scope
 types are never treated as HTTP.
 

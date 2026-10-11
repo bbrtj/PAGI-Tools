@@ -2,14 +2,14 @@ use strict;
 use warnings;
 use Test2::V0;
 
-use PAGI::Request::Negotiate;
+use PAGI::ContentNegotiation;
 use PAGI::Request;
 
 my $no_body = sub { die 'body unavailable' };
 
 # Test: parse_accept with quality values
 subtest 'parse_accept with quality values' => sub {
-    my @types = PAGI::Request::Negotiate->parse_accept(
+    my @types = PAGI::ContentNegotiation->parse_accept(
         'text/html, application/json;q=0.9, text/plain;q=0.5'
     );
 
@@ -27,7 +27,7 @@ subtest 'parse_accept with quality values' => sub {
 
 # Test: parse_accept with no header (defaults to */*)
 subtest 'parse_accept with no header defaults to */*' => sub {
-    my @types = PAGI::Request::Negotiate->parse_accept(undef);
+    my @types = PAGI::ContentNegotiation->parse_accept(undef);
 
     is(scalar(@types), 1, 'Returns single entry');
     is($types[0][0], '*/*', 'Type is */*');
@@ -36,7 +36,7 @@ subtest 'parse_accept with no header defaults to */*' => sub {
 
 # Test: parse_accept with empty header
 subtest 'parse_accept with empty header defaults to */*' => sub {
-    my @types = PAGI::Request::Negotiate->parse_accept('');
+    my @types = PAGI::ContentNegotiation->parse_accept('');
 
     is(scalar(@types), 1, 'Returns single entry');
     is($types[0][0], '*/*', 'Type is */*');
@@ -45,7 +45,7 @@ subtest 'parse_accept with empty header defaults to */*' => sub {
 
 # Test: parse_accept sorts by quality
 subtest 'parse_accept sorts by quality' => sub {
-    my @types = PAGI::Request::Negotiate->parse_accept(
+    my @types = PAGI::ContentNegotiation->parse_accept(
         'text/plain;q=0.5, application/json;q=0.9, text/html'
     );
 
@@ -56,7 +56,7 @@ subtest 'parse_accept sorts by quality' => sub {
 
 # Test: parse_accept sorts by specificity when quality equal
 subtest 'parse_accept sorts by specificity when quality equal' => sub {
-    my @types = PAGI::Request::Negotiate->parse_accept(
+    my @types = PAGI::ContentNegotiation->parse_accept(
         '*/*, text/*, text/html'
     );
 
@@ -67,7 +67,7 @@ subtest 'parse_accept sorts by specificity when quality equal' => sub {
 
 # Test: parse_accept handles complex Accept header
 subtest 'parse_accept handles complex Accept header' => sub {
-    my @types = PAGI::Request::Negotiate->parse_accept(
+    my @types = PAGI::ContentNegotiation->parse_accept(
         'text/html, application/xhtml+xml, application/xml;q=0.9, image/webp, */*;q=0.8'
     );
 
@@ -79,7 +79,7 @@ subtest 'parse_accept handles complex Accept header' => sub {
 
 # Test: parse_accept normalizes type to lowercase
 subtest 'parse_accept normalizes type to lowercase' => sub {
-    my @types = PAGI::Request::Negotiate->parse_accept('TEXT/HTML, Application/JSON;q=0.9');
+    my @types = PAGI::ContentNegotiation->parse_accept('TEXT/HTML, Application/JSON;q=0.9');
 
     is($types[0][0], 'text/html', 'Type normalized to lowercase');
     is($types[1][0], 'application/json', 'Type normalized to lowercase');
@@ -87,7 +87,7 @@ subtest 'parse_accept normalizes type to lowercase' => sub {
 
 # Test: best_match finds highest quality match
 subtest 'best_match finds highest quality match' => sub {
-    my $best = PAGI::Request::Negotiate->best_match(
+    my $best = PAGI::ContentNegotiation->best_match(
         ['application/json', 'text/html'],
         'text/html, application/json;q=0.9'
     );
@@ -97,7 +97,7 @@ subtest 'best_match finds highest quality match' => sub {
 
 # Test: best_match with shortcuts
 subtest 'best_match with shortcuts' => sub {
-    my $best = PAGI::Request::Negotiate->best_match(
+    my $best = PAGI::ContentNegotiation->best_match(
         ['json', 'html'],
         'text/html, application/json;q=0.9'
     );
@@ -107,7 +107,7 @@ subtest 'best_match with shortcuts' => sub {
 
 # Test: best_match with wildcards
 subtest 'best_match with wildcards' => sub {
-    my $best = PAGI::Request::Negotiate->best_match(
+    my $best = PAGI::ContentNegotiation->best_match(
         ['application/json'],
         'text/html, */*;q=0.1'
     );
@@ -117,7 +117,7 @@ subtest 'best_match with wildcards' => sub {
 
 # Test: best_match with type/* wildcard
 subtest 'best_match with type/* wildcard' => sub {
-    my $best = PAGI::Request::Negotiate->best_match(
+    my $best = PAGI::ContentNegotiation->best_match(
         ['image/png', 'text/html'],
         'image/*, text/html;q=0.5'
     );
@@ -127,7 +127,7 @@ subtest 'best_match with type/* wildcard' => sub {
 
 # Test: best_match returns undef when no match
 subtest 'best_match returns undef when no match' => sub {
-    my $best = PAGI::Request::Negotiate->best_match(
+    my $best = PAGI::ContentNegotiation->best_match(
         ['application/json'],
         'text/html, text/plain'
     );
@@ -137,7 +137,7 @@ subtest 'best_match returns undef when no match' => sub {
 
 # Test: best_match with empty supported list
 subtest 'best_match with empty supported list' => sub {
-    my $best = PAGI::Request::Negotiate->best_match(
+    my $best = PAGI::ContentNegotiation->best_match(
         [],
         'text/html'
     );
@@ -147,7 +147,7 @@ subtest 'best_match with empty supported list' => sub {
 
 # Test: best_match with quality=0 (explicitly rejected)
 subtest 'best_match with quality=0 (explicitly rejected)' => sub {
-    my $best = PAGI::Request::Negotiate->best_match(
+    my $best = PAGI::ContentNegotiation->best_match(
         ['application/json', 'text/html'],
         'application/json;q=0, text/html'
     );
@@ -165,79 +165,79 @@ subtest 'best_match uses effective quality for each supported type' => sub {
          'application/json;q=0.7, text/html;q=0.7', 'application/json'],
     );
     for my $case (@best_cases) {
-        is(PAGI::Request::Negotiate->best_match($case->[0], $case->[1]),
+        is(PAGI::ContentNegotiation->best_match($case->[0], $case->[1]),
             $case->[2], "effective match for $case->[1]");
     }
 };
 
 # Test: type_matches exact match
 subtest 'type_matches exact match' => sub {
-    my $matches = PAGI::Request::Negotiate->type_matches('text/html', 'text/html');
+    my $matches = PAGI::ContentNegotiation->type_matches('text/html', 'text/html');
     ok($matches, 'Exact match returns true');
 };
 
 # Test: type_matches with */*
 subtest 'type_matches with */*' => sub {
-    my $matches = PAGI::Request::Negotiate->type_matches('text/html', '*/*');
+    my $matches = PAGI::ContentNegotiation->type_matches('text/html', '*/*');
     ok($matches, 'Wildcard */* matches anything');
 };
 
 # Test: type_matches with type/*
 subtest 'type_matches with type/*' => sub {
-    my $matches = PAGI::Request::Negotiate->type_matches('text/html', 'text/*');
+    my $matches = PAGI::ContentNegotiation->type_matches('text/html', 'text/*');
     ok($matches, 'text/* matches text/html');
 
-    my $no_match = PAGI::Request::Negotiate->type_matches('application/json', 'text/*');
+    my $no_match = PAGI::ContentNegotiation->type_matches('application/json', 'text/*');
     ok(!$no_match, 'text/* does not match application/json');
 };
 
 # Test: type_matches case insensitive
 subtest 'type_matches case insensitive' => sub {
-    my $matches = PAGI::Request::Negotiate->type_matches('TEXT/HTML', 'text/html');
+    my $matches = PAGI::ContentNegotiation->type_matches('TEXT/HTML', 'text/html');
     ok($matches, 'Case insensitive match');
 };
 
 # Test: type_matches no match
 subtest 'type_matches no match' => sub {
-    my $matches = PAGI::Request::Negotiate->type_matches('text/html', 'application/json');
+    my $matches = PAGI::ContentNegotiation->type_matches('text/html', 'application/json');
     ok(!$matches, 'Different types do not match');
 };
 
 # Test: normalize_type with shortcuts
 subtest 'normalize_type with shortcuts' => sub {
-    is(PAGI::Request::Negotiate->normalize_type('html'), 'text/html', 'html shortcut');
-    is(PAGI::Request::Negotiate->normalize_type('json'), 'application/json', 'json shortcut');
-    is(PAGI::Request::Negotiate->normalize_type('xml'), 'application/xml', 'xml shortcut');
-    is(PAGI::Request::Negotiate->normalize_type('atom'), 'application/atom+xml', 'atom shortcut');
-    is(PAGI::Request::Negotiate->normalize_type('rss'), 'application/rss+xml', 'rss shortcut');
-    is(PAGI::Request::Negotiate->normalize_type('text'), 'text/plain', 'text shortcut');
-    is(PAGI::Request::Negotiate->normalize_type('txt'), 'text/plain', 'txt shortcut');
-    is(PAGI::Request::Negotiate->normalize_type('css'), 'text/css', 'css shortcut');
-    is(PAGI::Request::Negotiate->normalize_type('js'), 'application/javascript', 'js shortcut');
-    is(PAGI::Request::Negotiate->normalize_type('png'), 'image/png', 'png shortcut');
-    is(PAGI::Request::Negotiate->normalize_type('jpg'), 'image/jpeg', 'jpg shortcut');
-    is(PAGI::Request::Negotiate->normalize_type('jpeg'), 'image/jpeg', 'jpeg shortcut');
-    is(PAGI::Request::Negotiate->normalize_type('gif'), 'image/gif', 'gif shortcut');
-    is(PAGI::Request::Negotiate->normalize_type('svg'), 'image/svg+xml', 'svg shortcut');
-    is(PAGI::Request::Negotiate->normalize_type('pdf'), 'application/pdf', 'pdf shortcut');
-    is(PAGI::Request::Negotiate->normalize_type('zip'), 'application/zip', 'zip shortcut');
-    is(PAGI::Request::Negotiate->normalize_type('form'), 'application/x-www-form-urlencoded', 'form shortcut');
+    is(PAGI::ContentNegotiation->normalize_type('html'), 'text/html', 'html shortcut');
+    is(PAGI::ContentNegotiation->normalize_type('json'), 'application/json', 'json shortcut');
+    is(PAGI::ContentNegotiation->normalize_type('xml'), 'application/xml', 'xml shortcut');
+    is(PAGI::ContentNegotiation->normalize_type('atom'), 'application/atom+xml', 'atom shortcut');
+    is(PAGI::ContentNegotiation->normalize_type('rss'), 'application/rss+xml', 'rss shortcut');
+    is(PAGI::ContentNegotiation->normalize_type('text'), 'text/plain', 'text shortcut');
+    is(PAGI::ContentNegotiation->normalize_type('txt'), 'text/plain', 'txt shortcut');
+    is(PAGI::ContentNegotiation->normalize_type('css'), 'text/css', 'css shortcut');
+    is(PAGI::ContentNegotiation->normalize_type('js'), 'application/javascript', 'js shortcut');
+    is(PAGI::ContentNegotiation->normalize_type('png'), 'image/png', 'png shortcut');
+    is(PAGI::ContentNegotiation->normalize_type('jpg'), 'image/jpeg', 'jpg shortcut');
+    is(PAGI::ContentNegotiation->normalize_type('jpeg'), 'image/jpeg', 'jpeg shortcut');
+    is(PAGI::ContentNegotiation->normalize_type('gif'), 'image/gif', 'gif shortcut');
+    is(PAGI::ContentNegotiation->normalize_type('svg'), 'image/svg+xml', 'svg shortcut');
+    is(PAGI::ContentNegotiation->normalize_type('pdf'), 'application/pdf', 'pdf shortcut');
+    is(PAGI::ContentNegotiation->normalize_type('zip'), 'application/zip', 'zip shortcut');
+    is(PAGI::ContentNegotiation->normalize_type('form'), 'application/x-www-form-urlencoded', 'form shortcut');
 };
 
 # Test: normalize_type with full MIME type
 subtest 'normalize_type with full MIME type' => sub {
-    is(PAGI::Request::Negotiate->normalize_type('text/html'), 'text/html', 'Full type unchanged');
-    is(PAGI::Request::Negotiate->normalize_type('application/json'), 'application/json', 'Full type unchanged');
+    is(PAGI::ContentNegotiation->normalize_type('text/html'), 'text/html', 'Full type unchanged');
+    is(PAGI::ContentNegotiation->normalize_type('application/json'), 'application/json', 'Full type unchanged');
 };
 
 # Test: normalize_type with unknown shortcut
 subtest 'normalize_type with unknown shortcut' => sub {
-    is(PAGI::Request::Negotiate->normalize_type('unknown'), 'application/unknown', 'Unknown becomes application/unknown');
+    is(PAGI::ContentNegotiation->normalize_type('unknown'), 'application/unknown', 'Unknown becomes application/unknown');
 };
 
 # Test: accepts_type returns true
 subtest 'accepts_type returns true' => sub {
-    my $accepts = PAGI::Request::Negotiate->accepts_type(
+    my $accepts = PAGI::ContentNegotiation->accepts_type(
         'text/html, application/json',
         'json'
     );
@@ -246,7 +246,7 @@ subtest 'accepts_type returns true' => sub {
 
 # Test: accepts_type returns false
 subtest 'accepts_type returns false' => sub {
-    my $accepts = PAGI::Request::Negotiate->accepts_type(
+    my $accepts = PAGI::ContentNegotiation->accepts_type(
         'text/html, text/plain',
         'json'
     );
@@ -255,7 +255,7 @@ subtest 'accepts_type returns false' => sub {
 
 # Test: accepts_type with wildcard
 subtest 'accepts_type with wildcard' => sub {
-    my $accepts = PAGI::Request::Negotiate->accepts_type(
+    my $accepts = PAGI::ContentNegotiation->accepts_type(
         'text/html, */*;q=0.1',
         'application/json'
     );
@@ -265,21 +265,21 @@ subtest 'accepts_type with wildcard' => sub {
 # Test: accepts_type with wildcard in type parameter (bidirectional)
 subtest 'accepts_type with wildcard in type parameter' => sub {
     # Client accepts text/html, check if they accept text/*
-    my $accepts = PAGI::Request::Negotiate->accepts_type(
+    my $accepts = PAGI::ContentNegotiation->accepts_type(
         'text/html, application/json',
         'text/*'
     );
     ok($accepts, 'text/* matches when client accepts text/html');
 
     # Check */* matches anything
-    my $accepts_all = PAGI::Request::Negotiate->accepts_type(
+    my $accepts_all = PAGI::ContentNegotiation->accepts_type(
         'text/html',
         '*/*'
     );
     ok($accepts_all, '*/* matches any accepted type');
 
     # Check non-matching wildcard
-    my $no_match = PAGI::Request::Negotiate->accepts_type(
+    my $no_match = PAGI::ContentNegotiation->accepts_type(
         'text/html',
         'image/*'
     );
@@ -288,7 +288,7 @@ subtest 'accepts_type with wildcard in type parameter' => sub {
 
 # Test: accepts_type with quality=0
 subtest 'accepts_type with quality=0' => sub {
-    my $accepts = PAGI::Request::Negotiate->accepts_type(
+    my $accepts = PAGI::ContentNegotiation->accepts_type(
         'text/html, application/json;q=0',
         'json'
     );
@@ -303,14 +303,14 @@ subtest 'accepts_type uses effective quality for concrete and wildcard queries' 
         ['text/*;q=0, text/html',   'text/*',   1],
     );
     for my $case (@accept_cases) {
-        is(!!PAGI::Request::Negotiate->accepts_type($case->[0], $case->[1]),
+        is(!!PAGI::ContentNegotiation->accepts_type($case->[0], $case->[1]),
             !!$case->[2], "wildcard query for $case->[0]");
     }
 };
 
 # Test: quality_for_type gets quality value
 subtest 'quality_for_type gets quality value' => sub {
-    my $q = PAGI::Request::Negotiate->quality_for_type(
+    my $q = PAGI::ContentNegotiation->quality_for_type(
         'text/html, application/json;q=0.9',
         'json'
     );
@@ -319,7 +319,7 @@ subtest 'quality_for_type gets quality value' => sub {
 
 # Test: quality_for_type returns 0 for non-acceptable
 subtest 'quality_for_type returns 0 for non-acceptable' => sub {
-    my $q = PAGI::Request::Negotiate->quality_for_type(
+    my $q = PAGI::ContentNegotiation->quality_for_type(
         'text/html, text/plain',
         'json'
     );
@@ -328,7 +328,7 @@ subtest 'quality_for_type returns 0 for non-acceptable' => sub {
 
 # Test: quality_for_type with wildcards
 subtest 'quality_for_type with wildcards' => sub {
-    my $q = PAGI::Request::Negotiate->quality_for_type(
+    my $q = PAGI::ContentNegotiation->quality_for_type(
         'text/html, */*;q=0.5',
         'application/json'
     );
@@ -337,7 +337,7 @@ subtest 'quality_for_type with wildcards' => sub {
 
 # Test: quality_for_type prefers more specific match
 subtest 'quality_for_type prefers more specific match' => sub {
-    my $q = PAGI::Request::Negotiate->quality_for_type(
+    my $q = PAGI::ContentNegotiation->quality_for_type(
         'text/*, text/html;q=0.9, */*;q=0.1',
         'text/html'
     );
@@ -346,7 +346,7 @@ subtest 'quality_for_type prefers more specific match' => sub {
 
 # Test: parse_accept handles whitespace
 subtest 'parse_accept handles whitespace' => sub {
-    my @types = PAGI::Request::Negotiate->parse_accept(
+    my @types = PAGI::ContentNegotiation->parse_accept(
         '  text/html  ,  application/json ; q=0.9  '
     );
 
@@ -356,10 +356,10 @@ subtest 'parse_accept handles whitespace' => sub {
 
 # Test: parse_accept handles q values out of range
 subtest 'parse_accept handles q values out of range' => sub {
-    my @types1 = PAGI::Request::Negotiate->parse_accept('text/html;q=1.5');
+    my @types1 = PAGI::ContentNegotiation->parse_accept('text/html;q=1.5');
     is($types1[0][1], 1, 'q > 1 clamped to 1');
 
-    my @types2 = PAGI::Request::Negotiate->parse_accept('text/html;q=-0.1');
+    my @types2 = PAGI::ContentNegotiation->parse_accept('text/html;q=-0.1');
     is($types2[0][1], 0, 'q < 0 clamped to 0');
 };
 
@@ -407,6 +407,20 @@ subtest 'PAGI::Request accepts with multiple headers' => sub {
     ok $req->accepts('application/json'), 'accepts second header value';
     ok !$req->accepts('text/xml'), 'does not accept missing type';
     is $req->preferred_type('json', 'html'), 'json', 'preferred_type retains supported order on a tie';
+};
+
+subtest 'is_known_type: a media type or a shortcut' => sub {
+    ok(PAGI::ContentNegotiation->is_known_type('application/vnd.x+json'), 'anything with a slash');
+    ok(PAGI::ContentNegotiation->is_known_type('json'), 'a shortcut');
+    ok(PAGI::ContentNegotiation->is_known_type('JSON'), 'in any case, as normalize_type accepts');
+    ok(!PAGI::ContentNegotiation->is_known_type('htlm'), 'not a typo');
+    ok(!PAGI::ContentNegotiation->is_known_type(''), 'not empty');
+};
+
+subtest 'shortcuts: the table, sorted' => sub {
+    is([PAGI::ContentNegotiation->shortcuts],
+        [qw(atom css form gif html jpeg jpg js json pdf png rss svg text txt xml zip)],
+        'every shortcut name');
 };
 
 done_testing;
