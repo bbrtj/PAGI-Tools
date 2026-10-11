@@ -37,8 +37,11 @@
     streamed body by (body_stream(decode => $req->charset // 'UTF-8')).
   - body_stream with strict: bytes invalid in the encoding are a
     BodyError 400 (they were a 500), a valid character split across chunks
-    is no longer rejected, and an unknown encoding croaks when the stream
-    is made.
+    is no longer rejected, an encoding it cannot decode in chunks (unknown,
+    ISO-2022-*, UTF-7) is a BodyError 415 when the stream is made; decoding
+    no longer holds back the rest of the body after a bad byte; UTF-16 and
+    UTF-32 decode correctly across chunks, strict included; and a strict
+    error is reported on the chunk that carries it.
   - Request text decodes with the declared charset, UTF-8 when none is
     declared; a charset Perl does not know is a BodyError 415
     (unsupported_charset).
@@ -202,6 +205,9 @@
     gone. The sse-dashboard example drops its is_closed checks.
 
   [Breaking -- see UPGRADING.md]
+  - body_stream with decode: a client disconnect no longer flushes a
+    partial character as U+FFFD or throws under strict; truncated reports
+    it.
   - ContentNegotiation writes one scope record, pagi.content_negotiation,
     in place of pagi.preferred_content_type and pagi.accepted_types; an
     unknown or empty supported_types dies; the stock 406 lists media types.

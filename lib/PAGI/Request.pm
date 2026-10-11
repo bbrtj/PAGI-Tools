@@ -984,24 +984,34 @@ B<Options:>
 
 =item * C<decode> - The encoding to decode chunks from, such as C<'UTF-8'>.
 Without it, chunks are the bytes the client sent. A character split across
-two chunks is held back until it is complete.
+chunks is held back until it is complete; an encoding the stream cannot
+decode is a 415 when it is made.
 
 =item * C<strict> - If true, bytes invalid in the C<decode> encoding throw a
 L<PAGI::Request::BodyError> (400). Default: false (they become U+FFFD).
 
 =back
 
-B<Bytes or text.> A request body is bytes (a zip upload, an image, text in
-any encoding), so the stream never decodes on its own. Decode only when the
-route treats its body as text, using the client's declared charset and
-UTF-8 when it declares none:
+B<Bytes or text.> Without C<decode>, C<body_stream> gives you the bytes
+exactly as sent: use that for files, archives, images, anything binary.
+With C<decode>, it gives you text, decoded by the client's declared charset
+and UTF-8 when it declares none:
 
     my $stream = $req->body_stream(decode => $req->charset // 'UTF-8');
 
-A route that decodes mangles a binary upload (invalid sequences become
-U+FFFD, or with C<strict> the client gets a 400), so leave C<decode> off for
-any route that may receive one. An encoding Perl does not know croaks when the
-stream is made.
+B<strict>: off (the default) replaces bytes that are not valid in the
+encoding with U+FFFD -- use it where a garbled character is acceptable,
+such as a display or a transformation. On rejects them with a 400 -- use it
+where you store or act on the text, and wherever a client might send
+something that is not text at all: a binary file posted to a text route
+fails at once instead of turning into garbage.
+
+A charset the stream cannot decode is a 415 when the stream is made, as for
+C<text>; catch the L<PAGI::Request::BodyError> at the call to choose
+another path. A client that disconnects partway through a character ends
+the text early and C<truncated> is true. A UTF-8 BOM arrives as U+FEFF
+(C<s/\A\x{FEFF}//> on the first chunk removes it); a UTF-16 or UTF-32 BOM
+is consumed by the decoder.
 
 B<Important:> Body streaming is mutually exclusive with buffered body methods
 (C<body>, C<text>, C<json>, C<form_params>). Once you start streaming, you cannot use

@@ -260,12 +260,14 @@ subtest 'strict mode accepts a valid character split across chunks' => sub {
     is(join('', @chunks), "caf\x{E9}!", 'the held-back byte completes with the next chunk');
 };
 
-subtest 'an encoding Encode does not know is refused when the stream is made' => sub {
-    like(
-        dies { PAGI::Request::BodyStream->new(receive => mock_receive(), decode => 'UFT-8') },
-        qr/\APAGI::Request::BodyStream: unknown encoding 'UFT-8'/,
-        'a typo surfaces at once, not on the first chunk',
-    );
+subtest 'an encoding the stream cannot decode is the client\'s 415, when the stream is made' => sub {
+    for my $name ('UFT-8', 'ISO-2022-JP') {
+        my $error = dies { PAGI::Request::BodyStream->new(receive => mock_receive(), decode => $name) };
+        isa_ok($error, 'PAGI::Request::BodyError');
+        is([$error->status_code, $error->reason, $error->message],
+            [415, 'unsupported_charset', "The request body's charset is not supported."], "$name: a 415");
+        like($error->cause, qr/\APAGI::Utils::TextDecoder: /, "$name: the decoder's reason is the cause");
+    }
 };
 
 subtest 'no receive callback throws' => sub {
@@ -342,6 +344,48 @@ subtest 'body_stream mutual exclusivity' => sub {
     my $req2 = PAGI::Request->new($scope2, $receive2);
     $req2->body->get;
     like dies { $req2->body_stream }, qr/consumed|read/, 'stream after body fails';
+};
+
+sub stream_text {
+    my ($decode, $strict, @events) = @_;
+    my $stream = PAGI::Request::BodyStream->new(
+        receive => mock_receive(@events), decode => $decode, strict => $strict);
+    my @out;
+    my $ok = eval { while (defined(my $chunk = $stream->next_chunk->get)) { push @out, $chunk } 1 };
+    return (\@out, $ok ? undef : $@, $stream);
+}
+sub body_events {
+    my @chunks = @_;
+    return map { { type => 'http.request', body => $chunks[$_], more => ($_ < $#chunks ? 1 : 0) } } 0 .. $#chunks;
+}
+
+subtest 'decoding streams on after a bad byte, and keeps a UTF-16 byte order' => sub {
+    my ($out) = stream_text('UTF-8', 0, body_events("x\xFF" . ('a' x 1000), ('a' x 1000) x 4));
+    is [map { length } @$out], [1002, 1000, 1000, 1000, 1000], 'no chunk waits for the end';
+    ($out) = stream_text('UTF-16', 0, body_events("\xFF\xFEh\0i\0", "!\0"));
+    is join('', @$out), 'hi!', 'the second chunk keeps the BOM\'s byte order';
+    ($out) = stream_text('UTF-16', 1, body_events("\xFF\xFEh\0i\0", "!\0"));
+    is join('', @$out), 'hi!', 'strict too';
+};
+
+subtest 'a body that ends inside a character' => sub {
+    my ($out, $error) = stream_text('UTF-8', 0, body_events("ok\xE2\x82"));
+    is join('', @$out), "ok\x{FFFD}", 'not strict: U+FFFD';
+    ($out, $error) = stream_text('UTF-8', 1, body_events("ok\xE2\x82"));
+    isa_ok($error, 'PAGI::Request::BodyError');
+    is $error->status_code, 400, 'strict: the client\'s 400';
+};
+
+subtest 'a disconnect inside a character ends the text; truncated says why' => sub {
+    for my $case (['UTF-8', "ok\xE2\x82", 'ok'], ['UTF-16', "\xFF\xFEo\0k\0\x3D\xD8", 'ok']) {
+        my ($name, $bytes, $text) = @$case;
+        for my $strict (0, 1) {
+            my ($out, $error, $stream) = stream_text($name, $strict,
+                { type => 'http.request', body => $bytes, more => 1 }, { type => 'http.disconnect' });
+            is [join('', @$out), $error, $stream->truncated ? 1 : 0], [$text, undef, 1],
+                "$name strict=$strict: the whole characters, no exception, truncated";
+        }
+    }
 };
 
 done_testing;

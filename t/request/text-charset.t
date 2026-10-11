@@ -40,4 +40,18 @@ is([$error->status_code, $error->reason, $error->message],
     [400, 'invalid_encoding', 'The request body is not valid US-ASCII.'],
     'strict rejects what is invalid in it, naming the charset');
 
+# The same, with the body arriving as two events: text reads it whole, so a
+# strict UTF-16 body split mid-character is fine.
+sub text_of_events {
+    my ($content_type, @bodies) = @_;
+    my @events = map { { type => 'http.request', body => $bodies[$_], more => ($_ < $#bodies ? 1 : 0) } } 0 .. $#bodies;
+    my $receive = sub { Future->done(shift(@events) // { type => 'http.disconnect' }) };
+    my $request = PAGI::Request->new({
+        type => 'http', method => 'POST', headers => [['content-type', $content_type]],
+    }, $receive);
+    return (async sub { await $request->text(strict => 1) })->()->get;
+}
+is(text_of_events('text/plain; charset=UTF-16', "\xFF\xFEh\0i", "\0!\0"), 'hi!',
+    'strict UTF-16 across two events');
+
 done_testing;

@@ -5,7 +5,7 @@ use warnings;
 
 use Future;
 use Future::AsyncAwait;
-use Encode qw(decode find_encoding FB_CROAK FB_DEFAULT LEAVE_SRC);
+use PAGI::Utils::TextDecoder;
 use Carp qw(croak);
 use PAGI::Request::BodyError;
 use PAGI::Request::_BodyInput ();
@@ -67,7 +67,7 @@ of data. The stream handles:
 
 =item * Size limits with customizable error messages
 
-=item * UTF-8 decoding with proper handling of incomplete sequences at chunk boundaries
+=item * Text decoding as chunks arrive (C<decode>), with characters split across chunks held until complete
 
 =item * Client disconnect detection
 
@@ -101,13 +101,16 @@ Creates a new body stream.
 
 =item * C<decode> - Optional. The encoding to decode chunks from, such as
 C<'UTF-8'> (or C<< $request->charset // 'UTF-8' >>). Without it, chunks are
-bytes.
+the bytes exactly as sent. An encoding this stream cannot decode (one Encode
+does not know, or ISO-2022-*/UTF-7, which Encode decodes only line by line)
+is a L<PAGI::Request::BodyError> 415 (C<unsupported_charset>) when the
+stream is made: the client's charset error, as for C<< $request->text >>,
+which can read ISO-2022 and UTF-7 bodies whole. Built on
+L<PAGI::Utils::TextDecoder>.
 
 =item * C<strict> - Optional. If true, bytes invalid in the C<decode> encoding
 throw a L<PAGI::Request::BodyError> (400, C<invalid_encoding>), the client's
 error. If false (default), they become U+FFFD.
-
-An encoding L<Encode> does not know croaks here, when the stream is made.
 
 =item * C<limit_name> - Optional. Name to use in error message when max_bytes
 is exceeded (default: 'max_bytes').
@@ -119,22 +122,33 @@ is exceeded (default: 'max_bytes').
 sub new {
     my ($class, %args) = @_;
     my $receive = $args{receive} // croak("receive is required");
-    croak("PAGI::Request::BodyStream: unknown encoding '$args{decode}'")
-        if defined $args{decode} && !find_encoding($args{decode});
 
     my $self = bless {
         receive       => $receive,
         max_bytes     => $args{max_bytes},
         decode        => $args{decode},
-        strict        => $args{strict} // 0,
         limit_name    => $args{limit_name} // 'max_bytes',
         _scope_type   => $args{_scope_type} // 'http',
         _bytes_read   => 0,
         _done         => 0,
         _error        => undef,
         _truncated    => 0,
-        _buffer       => '',  # For incomplete UTF-8 sequences
     }, $class;
+
+    # The encoding name usually comes from the client's Content-Type, so one
+    # this stream cannot decode is the client's 415, as for $request->text.
+    if (defined $args{decode}) {
+        my $decoder = eval {
+            PAGI::Utils::TextDecoder->new($args{decode}, strict => $args{strict});
+        };
+        PAGI::Request::BodyError->throw(
+            status_code => 415,
+            reason      => 'unsupported_charset',
+            message     => "The request body's charset is not supported.",
+            cause       => $@,
+        ) unless $decoder;
+        $self->{_decoder} = $decoder;
+    }
 
     return $self;
 }
@@ -153,6 +167,10 @@ encoding. A character split across chunks is held back until it is complete.
 With C<strict>, bytes invalid in the encoding throw a
 L<PAGI::Request::BodyError> (400). A route that has already started its own
 response by then cannot send that 400: the response is cut short instead.
+
+A client that disconnects partway through a character ends the text at the
+last whole character (in strict UTF-16, one code unit earlier), and
+C<truncated> is true; nothing is reported as invalid.
 
 Throws an exception if C<max_bytes> is exceeded.
 
@@ -173,11 +191,8 @@ async sub next_chunk {
         $self->{_done} = 1;
         # No bytes ever arrived -- an empty stream, not a truncated one.
         $self->{_truncated} = 1 if $self->{_bytes_read} > 0;
-        # Flush any remaining buffered data from incomplete UTF-8 sequences
-        if ($self->{decode} && length($self->{_buffer})) {
-            my $final = $self->_decode_chunk('', 1);  # flush=1
-            return $final if length($final);
-        }
+        # A character the client never finished is dropped: the bytes
+        # stopped, they were not wrong. truncated says so.
         return undef;
     }
 
@@ -344,7 +359,8 @@ async sub stream_to_file {
 Streams the entire request body to a custom sink callback. The callback
 receives each chunk and can be async (return a Future).
 
-Returns a Future that resolves to the number of bytes processed.
+Returns a Future that resolves to the number of bytes processed, or of
+characters when C<decode> is set (C<bytes_read> is always the byte count).
 
 =cut
 
@@ -374,62 +390,29 @@ async sub stream_to {
 
 =head2 _decode_chunk
 
-Internal method to decode a chunk with proper handling of incomplete UTF-8
-sequences at boundaries.
+Internal: hands a chunk to the stream's L<PAGI::Utils::TextDecoder>,
+finishing it on the last chunk.
 
 =cut
 
 sub _decode_chunk {
-    my ($self, $chunk, $flush) = @_;
-    $flush //= 0;
-    my $encoding = $self->{decode};
-    return $chunk unless $encoding;
-
-    # Combine with buffered incomplete sequence from previous chunk
-    my $data = $self->{_buffer} . $chunk;
-
-    # Use Encode::FB_QUIET for incremental decoding - the standard approach
-    # recommended by Encode documentation for handling partial multi-byte sequences
-    my $decoded = eval {
-        if ($flush || !length($data)) {
-            # Final chunk or empty - decode everything
-            $self->{_buffer} = '';
-            my $flag = $self->{strict} ? (Encode::FB_CROAK | Encode::LEAVE_SRC) : (Encode::FB_DEFAULT | Encode::LEAVE_SRC);
-            return decode($encoding, $data, $flag);
-        } else {
-            # Incremental decoding with FB_QUIET
-            # FB_QUIET modifies $data in place, removing the decoded portion
-            # and leaving incomplete sequences in $data for next time
-            my $result = decode($encoding, $data, Encode::FB_QUIET);
-
-            # Whatever remains in $data is incomplete - buffer it
-            $self->{_buffer} = $data;
-
-            # In strict mode, a held-back tail too long to be the start of one
-            # character (incomplete prefixes are at most 3 bytes in UTF-8,
-            # UTF-16, UTF-32 and GB18030) is invalid now; a shorter one waits
-            # for the next chunk or the final, strict decode.
-            if ($self->{strict} && length($self->{_buffer}) >= 4) {
-                my $test = $self->{_buffer};
-                decode($encoding, $test, Encode::FB_CROAK | Encode::LEAVE_SRC);
-            }
-
-            return $result;
-        }
+    my ($self, $chunk, $last) = @_;
+    my $text = eval {
+        my $decoded = $self->{_decoder}->decode($chunk);
+        $decoded .= $self->{_decoder}->finish if $last;
+        $decoded;
     };
+    return $text unless $@;
 
     # Bytes invalid in the encoding are the client's error, as for text.
-    if ($@) {
-        $self->{_error} = "Failed to decode chunk: $@";
-        $self->{_done} = 1;
-        PAGI::Request::BodyError->throw(
-            reason => 'invalid_encoding',
-            message => "The request body is not valid $encoding.",
-            cause => $@,
-        );
-    }
-
-    return $decoded;
+    my $cause = $@;
+    $self->{_error} = $cause;
+    $self->{_done} = 1;
+    PAGI::Request::BodyError->throw(
+        reason  => 'invalid_encoding',
+        message => "The request body is not valid $self->{decode}.",
+        cause   => $cause,
+    );
 }
 
 1;
