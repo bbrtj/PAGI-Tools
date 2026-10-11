@@ -40,9 +40,9 @@ pagi-server --app examples/upload-streaming/app.pl --port 5000
 - **A safe file name.** `{name:[\w-]+(?:\.[\w-]+)*}` allows letters,
   digits, `-`, `_` and single dots between them: no `/`, no `.` or `..`, no
   leading or trailing dot. Anything else is a 404.
-- **The size cap.** `max_bytes` stops an upload at 50 MB. Going over it is a
-  500 today (a plain error, not yet a 413); the example removes the partial
-  file before rethrowing.
+- **The size cap.** `max_bytes` stops an upload at 50 MB. Going over it is
+  the client's 413 (`PAGI::Request::BodyError`, `too_large`); the example
+  removes the partial file before rethrowing it, and Compose answers.
 
 ## Try
 

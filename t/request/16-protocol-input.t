@@ -141,8 +141,9 @@ subtest 'HTTP and SSE body streams keep native events and existing limits' => su
         my ($limited) = request_for($protocol, [
             { type => event_type($protocol, 'request'), body => '123456', more => 0 },
         ]);
-        like dies { $limited->body_stream(max_bytes => 5)->next_chunk->get },
-            qr/max_bytes exceeded/, "$protocol stream enforces size limit";
+        my $error = dies { $limited->body_stream(max_bytes => 5)->next_chunk->get };
+        is([$error->status_code, $error->cause], [413, 'Request body max_bytes exceeded'],
+            "$protocol stream enforces size limit");
 
         my $other = $protocol eq 'http' ? 'sse' : 'http';
         my ($wrong) = request_for($protocol, [

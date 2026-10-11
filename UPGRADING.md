@@ -51,6 +51,7 @@ in [UPGRADING-REFERENCE.md](UPGRADING-REFERENCE.md).
 | WebSocket `send_text_if_connected`, `send_bytes_if_connected`, `send_json_if_connected` | `try_send_text`, `try_send_bytes`, `try_send_json`: they send nothing unless connected (before `accept` too) and return false |
 | `body_stream(strict => 1)` died with "Failed to decode chunk" (a 500) on invalid bytes | a `PAGI::Request::BodyError` 400; an encoding it cannot decode in chunks (unknown, ISO-2022-*, UTF-7) is a `BodyError` 415 when the stream is made |
 | a client disconnect mid-character flushed U+FFFD from `body_stream(decode)`, or threw under strict | the text ends at the last whole character; check `$stream->truncated` |
+| `body_stream` over `max_bytes` died with "Request body max_bytes exceeded" (a 500) | a `PAGI::Request::BodyError` 413 `too_large` (400 `invalid_body` past the Content-Length); the limit's name is in `->cause`, not the message |
 | `$request->text` decoded every body as UTF-8 | it decodes with the Content-Type charset, UTF-8 when none is declared; an unknown charset is a 415 |
 | `each_json` died (a 1011 server error) on a message that is not JSON | it closes 1007 and returns; pass `on_invalid_json`, or override `handle_invalid_json`, to answer otherwise |
 

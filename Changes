@@ -206,6 +206,10 @@
     gone. The sse-dashboard example drops its is_closed checks.
 
   [Breaking -- see UPGRADING.md]
+  - body_stream over max_bytes is a BodyError 413 too_large (it was a plain
+    die, so a 500), or 400 invalid_body past the request's own
+    Content-Length; the message no longer names the limit, which moves to
+    the error's cause.
   - body_stream with decode: a client disconnect no longer flushes a
     partial character as U+FFFD or throws under strict; truncated reports
     it.

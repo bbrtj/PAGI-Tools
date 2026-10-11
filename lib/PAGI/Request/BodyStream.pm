@@ -97,7 +97,10 @@ Creates a new body stream.
 
 =item * C<receive> - Required. The PAGI receive callback.
 
-=item * C<max_bytes> - Optional. Maximum bytes to read. Throws error if exceeded.
+=item * C<max_bytes> - Optional. Maximum bytes to read. More is a
+L<PAGI::Request::BodyError>: 413 (C<too_large>), or 400 (C<invalid_body>) when
+the limit is the request's own Content-Length, which the body may not
+exceed.
 
 =item * C<decode> - Optional. The encoding to decode chunks from, such as
 C<'UTF-8'> (or C<< $request->charset // 'UTF-8' >>). Without it, chunks are
@@ -113,7 +116,9 @@ throw a L<PAGI::Request::BodyError> (400, C<invalid_encoding>), the client's
 error. If false (default), they become U+FFFD.
 
 =item * C<limit_name> - Optional. Name to use in error message when max_bytes
-is exceeded (default: 'max_bytes').
+is exceeded (default: 'max_bytes'). It appears in the error's C<cause>, for the
+log; the client sees only the message. C<content-length> marks the limit as
+the request's own Content-Length (the 400 above).
 
 =back
 
@@ -172,7 +177,8 @@ A client that disconnects partway through a character ends the text at the
 last whole character (in strict UTF-16, one code unit earlier), and
 C<truncated> is true; nothing is reported as invalid.
 
-Throws an exception if C<max_bytes> is exceeded.
+Throws a L<PAGI::Request::BodyError> (413, or 400 past the Content-Length) if
+C<max_bytes> is exceeded.
 
 =cut
 
@@ -206,7 +212,20 @@ async sub next_chunk {
         if ($new_total > $self->{max_bytes}) {
             $self->{_error} = "Request body $self->{limit_name} exceeded";
             $self->{_done} = 1;
-            croak($self->{_error});
+            # More than the request's own Content-Length is a malformed
+            # request; more than a limit the route set is too large.
+            PAGI::Request::BodyError->throw(
+                status_code => 400,
+                reason      => 'invalid_body',
+                message     => 'The request body is longer than its Content-Length.',
+                cause       => $self->{_error},
+            ) if $self->{limit_name} eq 'content-length';
+            PAGI::Request::BodyError->throw(
+                status_code => 413,
+                reason      => 'too_large',
+                message     => 'The request body is larger than this route accepts.',
+                cause       => $self->{_error},
+            );
         }
     }
 
@@ -501,9 +520,12 @@ The stream throws exceptions in these cases:
 
 =over 4
 
-=item * C<max_bytes> exceeded - Request body too large
+=item * C<max_bytes> exceeded - a L<PAGI::Request::BodyError> 413, or 400
+past the request's own Content-Length
 
-=item * UTF-8 decoding errors (when C<< strict => 1 >>)
+=item * Bytes invalid in the C<decode> encoding (with C<strict>) - a
+L<PAGI::Request::BodyError> 400; an encoding it cannot decode is a 415 when
+the stream is made
 
 =item * File I/O errors during C<stream_to_file>
 

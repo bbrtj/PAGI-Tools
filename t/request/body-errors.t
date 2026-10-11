@@ -107,6 +107,12 @@ subtest 'a Compose application answers 400 or 413, and logs nothing' => sub {
         route('/json' => async sub { my ($r) = @_; response('JSON', await $r->json) }, methods => ['POST']),
         route('/form' => async sub { my ($r) = @_; await $r->form_params(max_field_size => 10); response('JSON', {}) },
             methods => ['POST']),
+        route('/stream' => async sub {
+            my ($r) = @_;
+            my $body = $r->body_stream(max_bytes => 10);
+            1 while defined(await $body->next_chunk);
+            response('JSON', {});
+        }, methods => ['POST']),
     ]);
     my $client = PAGI::Test::Client->new(app => $app);
     my ($stderr, %res) = ('');
@@ -117,11 +123,13 @@ subtest 'a Compose application answers 400 or 413, and logs nothing' => sub {
             headers => { 'Content-Type' => 'application/json', Accept => 'application/json' });
         $res{form} = $client->post('/form', body => part('note', 'x' x 50) . "--$boundary--\r\n",
             headers => { 'Content-Type' => "multipart/form-data; boundary=$boundary", Accept => 'application/json' });
+        $res{stream} = $client->post('/stream', body => 'x' x 50);
     }
     is([$res{json}->status, $res{json}->header('content-type'), $res{json}->text],
         [400, 'text/plain; charset=utf-8', 'The request body is not valid JSON.'],
         'invalid JSON is a plain 400 carrying the client message');
     is($res{form}->status, 413, 'an oversized part is a 413');
+    is($res{stream}->status, 413, 'a streamed body over max_bytes is a 413');
     is($stderr, '', 'and neither is reported as a server error');
 };
 

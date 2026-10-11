@@ -45,7 +45,12 @@ subtest 'max_bytes limit' => sub {
         max_bytes => 5,
     );
 
-    like dies { $stream->next_chunk->get }, qr/max_bytes exceeded/, 'throws on limit exceeded';
+    my $error = dies { $stream->next_chunk->get };
+    isa_ok($error, 'PAGI::Request::BodyError');
+    is([$error->status_code, $error->reason, $error->message],
+        [413, 'too_large', 'The request body is larger than this route accepts.'],
+        "over the limit is the client's 413, in words a client can read");
+    like($error->cause, qr/max_bytes exceeded/, 'the cause names the limit');
 };
 
 subtest 'UTF-8 decoding' => sub {
@@ -203,7 +208,21 @@ subtest 'custom limit_name in error' => sub {
         limit_name => 'upload_size',
     );
 
-    like dies { $stream->next_chunk->get }, qr/upload_size exceeded/, 'custom limit name in error';
+    my $error = dies { $stream->next_chunk->get };
+    is($error->status_code, 413, 'a 413');
+    like($error->cause, qr/upload_size exceeded/, 'the cause names the custom limit');
+};
+
+subtest 'a body longer than its own Content-Length is a 400' => sub {
+    my $stream = PAGI::Request::BodyStream->new(
+        receive => mock_receive({ type => 'http.request', body => 'Too much data', more => 0 }),
+        max_bytes => 5,
+        limit_name => 'content-length',
+    );
+    my $error = dies { $stream->next_chunk->get };
+    is([$error->status_code, $error->reason, $error->message],
+        [400, 'invalid_body', 'The request body is longer than its Content-Length.'],
+        'a malformed request, not one that is too large');
 };
 
 subtest 'strict UTF-8 mode' => sub {

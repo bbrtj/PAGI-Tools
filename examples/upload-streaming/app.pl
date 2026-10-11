@@ -35,7 +35,7 @@ async sub store_file ($request)
     my $stored = eval { await $body->stream_to_file($path); 1 };
     if (!$stored || $body->truncated || !$body->bytes_read) {
         unlink $path;    # a partial or empty file is not kept
-        die $@ unless $stored;    # over max_bytes, or a write failure
+        die $@ unless $stored;    # over max_bytes (the client's 413), or a write failure
         return response('Text', 'The upload was empty or cut short.', status => 400);
     }
     my $sha = Digest::SHA->new(256)->addfile($path)->hexdigest;
