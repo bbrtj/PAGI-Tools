@@ -11,7 +11,8 @@ use PAGITest::LeavingClient qw(leaves_at_handshake);
 
 # The gut-check apps (examples/gut-check), each driven with the request
 # sequence its README describes. Each file compiles in a package of its own,
-# so their top-level subs cannot collide.
+# so their top-level subs cannot collide -- except in a file that switches
+# package itself: 02 and 05 return to package main, where 05's subs live.
 
 my $loaded = 0;
 
