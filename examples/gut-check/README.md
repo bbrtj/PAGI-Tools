@@ -1,8 +1,8 @@
 # Gut check: PAGI-Tools next to Starlette
 
 Everyday Starlette-shaped applications built with PAGI-Tools, each paired with
-a real Starlette version (`starlette/`), to check whether the API is on the
-right track. This is a record of how the shapes compare; it is not a bug hunt.
+a real Starlette version (shown in full under "The Starlette versions"), to
+check whether the API is on the right track. This is a record of how the shapes compare; it is not a bug hunt.
 
 The first pass (2026-10-09) found the rough edges listed under "What the gut
 check found". PAGI-Tools 0.003000 smooths them, and the applications here are
@@ -22,10 +22,13 @@ written against it; the Starlette versions are unchanged.
   Starlette version was also run under uvicorn.
 - **Line counts** below are code lines (not blank, not a comment, not a lone
   `{`, `}` or `};`), with the import lines (Perl's `use` and `package`,
-  Python's `import` and `from`) counted separately. From this directory:
+  Python's `import` and `from`) counted separately. The Starlette counts were
+  measured on the runnable versions during the gut check; those versions are
+  kept below, in full, and were retired as files afterwards. For the PAGI
+  side, from this directory:
 
   ```
-  perl -nE 'if ($ARGV ne $f) { printf "%-32s %d (%d)\n", $f, $c, $i if $f; ($f, $c, $i) = ($ARGV, 0, 0) } next if /^\s*(?:#|$)/ || /^\s*[{}];?\s*$/; $c++; $i++ if /^\s*(?:use|package|import|from)\s/; END { printf "%-32s %d (%d)\n", $f, $c, $i }' *.pl starlette/*.py
+  perl -nE 'if ($ARGV ne $f) { printf "%-32s %d (%d)\n", $f, $c, $i if $f; ($f, $c, $i) = ($ARGV, 0, 0) } next if /^\s*(?:#|$)/ || /^\s*[{}];?\s*$/; $c++; $i++ if /^\s*(?:use|package|import|from)\s/; END { printf "%-32s %d (%d)\n", $f, $c, $i }' *.pl
   ```
 
 | Pair | What it does | Behaviour | PAGI lines (imports) | Starlette lines (imports) |
@@ -44,8 +47,6 @@ The first pass measured the PAGI side at 28, 50, 35, 28, 19, 34, 26, 27 and 13
 lines (6, 19, 6, 7, 5, 12, 6, 6 and 5 of them imports).
 
 Run any PAGI one with `pagi-server --app examples/gut-check/<file> --port 5000`.
-Run a Starlette one with `pip install starlette uvicorn itsdangerous`, then
-`cd examples/gut-check/starlette && uvicorn s01_errors:app --port 8000`.
 
 ## Verdict
 
@@ -222,6 +223,364 @@ Checked and fine as it is:
 - **Running a legacy app beside new routes** is parity: Tools has
   `PAGI::App::WrapPSGI` (see `examples/psgi-bridge`), and Starlette 1.7 still
   ships `WSGIMiddleware`.
+
+## The Starlette versions
+
+Each pair's Starlette version, as measured and run during the gut check
+(Starlette 1.7.0).
+
+### 01-errors-as-responses
+
+Starlette sends a routing 404 through the same exception handler as a thrown one; PAGI's router answers its own misses (`http_default` styles them).
+
+```python
+from starlette.applications import Starlette
+from starlette.exceptions import HTTPException
+from starlette.responses import JSONResponse
+from starlette.routing import Route
+
+NOTES = {1: {"id": 1, "text": "buy milk"}}
+
+
+def find_note(note_id):
+    if note_id not in NOTES:
+        raise HTTPException(status_code=404, detail=f"no such note: {note_id}")
+    return NOTES[note_id]
+
+
+async def show(request):
+    return JSONResponse(find_note(int(request.path_params["id"])))
+
+
+async def boom(request):
+    raise RuntimeError("an ordinary bug")
+
+
+async def http_exception(request, exc):
+    return JSONResponse({"error": exc.detail}, status_code=exc.status_code)
+
+
+app = Starlette(
+    routes=[Route("/notes/{id}", show), Route("/boom", boom)],
+    exception_handlers={HTTPException: http_exception},
+)
+```
+
+### 02-notes-resource
+
+```python
+from contextlib import asynccontextmanager
+
+from starlette.applications import Starlette
+from starlette.endpoints import HTTPEndpoint
+from starlette.responses import JSONResponse, Response
+from starlette.routing import Route
+
+
+class NoteStore:
+    def __init__(self):
+        self.next, self.notes = 1, {}
+
+    def all(self):
+        return [self.notes[k] for k in sorted(self.notes)]
+
+    def find(self, note_id):
+        return self.notes.get(note_id)
+
+    def add(self, data):
+        note = {"id": self.next, "text": data["text"]}
+        self.notes[self.next] = note
+        self.next += 1
+        return note
+
+    def remove(self, note_id):
+        return self.notes.pop(note_id, None)
+
+
+class Notes(HTTPEndpoint):
+    async def get(self, request):
+        return JSONResponse(request.app.state.notes.all())
+
+    async def post(self, request):
+        note = request.app.state.notes.add(await request.json())
+        return JSONResponse(note, status_code=201,
+                            headers={"Location": request.url_for("note", id=note["id"]).path})
+
+
+class Note(HTTPEndpoint):
+    async def get(self, request):
+        note = request.app.state.notes.find(request.path_params["id"])
+        if note is None:
+            return JSONResponse({"error": "no such note"}, status_code=404)
+        return JSONResponse(note)
+
+    async def delete(self, request):
+        if request.app.state.notes.remove(request.path_params["id"]) is None:
+            return JSONResponse({"error": "no such note"}, status_code=404)
+        return Response(status_code=204)
+
+
+@asynccontextmanager
+async def lifespan(app):
+    app.state.notes = NoteStore()
+    yield
+
+
+app = Starlette(
+    routes=[Route("/notes", Notes, name="notes"), Route("/notes/{id:int}", Note, name="note")],
+    lifespan=lifespan,
+)
+```
+
+### 03-broadcast-hub
+
+No `broadcaster` package and no `sse-starlette`: the SSE side is a `StreamingResponse` fed by a per-client queue, and each WebSocket needs a queue and a sender task. With the `broadcaster` package the fan-out is shorter, but it adds its own startup and shutdown wiring and still needs a send and a receive loop per socket.
+
+```python
+import asyncio
+
+from starlette.applications import Starlette
+from starlette.responses import JSONResponse, StreamingResponse
+from starlette.routing import Route, WebSocketRoute
+from starlette.websockets import WebSocketDisconnect
+
+listeners = {}
+
+
+def publish(source, text):
+    for deliver in list(listeners.values()):
+        deliver(f"{source}: {text}")
+    return len(listeners)
+
+
+async def chat(websocket):
+    await websocket.accept()
+    queue = asyncio.Queue()
+    listeners[id(websocket)] = queue.put_nowait
+
+    async def pump():
+        while True:
+            await websocket.send_text(await queue.get())
+
+    sender = asyncio.create_task(pump())
+    try:
+        while True:
+            publish("chat", await websocket.receive_text())
+    except WebSocketDisconnect:
+        pass
+    finally:
+        sender.cancel()
+        listeners.pop(id(websocket), None)
+
+
+async def watch(request):
+    queue = asyncio.Queue()
+    key = object()
+    listeners[key] = queue.put_nowait
+
+    async def events():
+        try:
+            while True:
+                line = await queue.get()
+                yield f"event: line\ndata: {line}\n\n"
+        finally:
+            listeners.pop(key, None)
+
+    return StreamingResponse(events(), media_type="text/event-stream")
+
+
+async def announce(request):
+    count = publish("announce", (await request.body()).decode())
+    return JSONResponse({"delivered_to": count}, status_code=202)
+
+
+app = Starlette(routes=[
+    WebSocketRoute("/chat", chat),
+    Route("/watch", watch),
+    Route("/announce", announce, methods=["POST"]),
+])
+```
+
+### 04-everyday-middleware
+
+`BaseHTTPMiddleware` hands each middleware a request and a `call_next` that returns a response object; PAGI middleware sees protocol events instead.
+
+```python
+import os
+import time
+
+from starlette.applications import Starlette
+from starlette.middleware import Middleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import PlainTextResponse
+from starlette.routing import Route
+
+
+class Timing(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        started = time.perf_counter()
+        response = await call_next(request)
+        response.headers["Server-Timing"] = f"app;dur={1000 * (time.perf_counter() - started):.1f}"
+        return response
+
+
+class Maintenance(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        if os.environ.get("MAINTENANCE") and request.url.path != "/health":
+            return PlainTextResponse("back soon", status_code=503, headers={"Retry-After": "60"})
+        return await call_next(request)
+
+
+async def home(request):
+    return PlainTextResponse("hello")
+
+
+async def health(request):
+    return PlainTextResponse("ok")
+
+
+app = Starlette(
+    routes=[Route("/", home), Route("/health", health)],
+    middleware=[Middleware(Timing), Middleware(Maintenance)],
+)
+```
+
+### 05-streaming
+
+Starlette pulls from an async generator; PAGI hands the producer a Writer.
+
+```python
+import asyncio
+import json
+
+from starlette.applications import Starlette
+from starlette.responses import StreamingResponse
+from starlette.routing import Route
+
+
+async def ticks(request):
+    async def gen():
+        for n in range(5):
+            if await request.is_disconnected():
+                break
+            yield json.dumps({"tick": n}) + "\n"
+            await asyncio.sleep(0.2)
+
+    return StreamingResponse(gen(), media_type="application/x-ndjson")
+
+
+class TSVResponse(StreamingResponse):
+    media_type = "text/tab-separated-values; charset=utf-8"
+
+    def __init__(self, rows, **kwargs):
+        async def lines():
+            for row in rows:
+                yield "\t".join("" if f is None else str(f) for f in row) + "\n"
+
+        super().__init__(lines(), **kwargs)
+
+
+async def report(request):
+    return TSVResponse([["city", "population"], ["Lisbon", 545000], ["Kraków", 800000]])
+
+
+app = Starlette(routes=[Route("/ticks", ticks), Route("/report.tsv", report)])
+```
+
+### 06-sessions
+
+Starlette's default session lives in a signed cookie, so it works across workers; PAGI's default lives in process memory, and `session["nmae"]` is a bare `KeyError` where PAGI's `get` names the keys that exist.
+
+```python
+from starlette.applications import Starlette
+from starlette.middleware import Middleware
+from starlette.middleware.sessions import SessionMiddleware
+from starlette.responses import JSONResponse, PlainTextResponse, Response
+from starlette.routing import Route
+
+
+async def visits(request):
+    request.session["visits"] = request.session.get("visits", 0) + 1
+    return JSONResponse({"visits": request.session["visits"], "name": request.session.get("name")})
+
+
+async def name(request):
+    request.session["name"] = (await request.body()).decode()
+    return Response(status_code=204)
+
+
+async def strict(request):
+    return PlainTextResponse(request.session["nmae"])  # a typo
+
+
+app = Starlette(
+    routes=[Route("/visits", visits), Route("/name", name, methods=["POST"]), Route("/strict", strict)],
+    middleware=[Middleware(SessionMiddleware, secret_key="not-a-real-secret")],
+)
+```
+
+### 07-upload-relay
+
+`bytes.upper()` knows only ASCII, so this shouts "café" as "CAFé"; and under Starlette 1.7 the relay and the transform fail (see the Verdict).
+
+```python
+import hashlib
+
+from starlette.applications import Starlette
+from starlette.responses import JSONResponse, StreamingResponse
+from starlette.routing import Route
+
+
+async def relay(request):
+    return StreamingResponse(request.stream(), media_type="application/octet-stream")
+
+
+async def shout(request):
+    async def upper():
+        async for chunk in request.stream():
+            yield chunk.upper()
+
+    return StreamingResponse(upper(), media_type="application/octet-stream")
+
+
+async def sha256(request):
+    sha, size = hashlib.sha256(), 0
+    async for chunk in request.stream():
+        sha.update(chunk)
+        size += len(chunk)
+    return JSONResponse({"bytes": size, "sha256": sha.hexdigest()})
+
+
+app = Starlette(routes=[
+    Route("/relay", relay, methods=["POST"]),
+    Route("/shout", shout, methods=["POST"]),
+    Route("/sha256", sha256, methods=["POST"]),
+])
+```
+
+### 08-negotiation
+
+The usual hand-written check, which ignores quality values; Starlette has no negotiation helper.
+
+```python
+from starlette.applications import Starlette
+from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse
+from starlette.routing import Route
+
+NOTE = {"id": 1, "text": "buy milk"}
+
+
+async def show(request):
+    accept = request.headers.get("accept", "")
+    if "application/json" in accept:
+        return JSONResponse(NOTE)
+    if "text/html" in accept or "*/*" in accept:
+        return HTMLResponse(f"<h1>{NOTE['text']}</h1>")
+    return PlainTextResponse("Not Acceptable", status_code=406)
+
+
+app = Starlette(routes=[Route("/note", show)])
+```
 
 ## Time spent
 

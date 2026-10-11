@@ -1,26 +1,14 @@
 #!/usr/bin/env perl
 #
-# Two everyday middlewares, written as plain functions (app in, app out).
-# 04b-bundled-middleware.pl does the same jobs with middleware Tools ships.
-#
-# Starlette's BaseHTTPMiddleware gives you a request and a call_next:
-#
-#     class Timing(BaseHTTPMiddleware):
-#         async def dispatch(self, request, call_next):
-#             started = time.perf_counter()
-#             response = await call_next(request)
-#             response.headers["Server-Timing"] = f"app;dur={...}"
-#             return response
-#
-#     class Maintenance(BaseHTTPMiddleware):
-#         async def dispatch(self, request, call_next):
-#             if MAINTENANCE and request.url.path != "/health":
-#                 return PlainTextResponse("back soon", status_code=503)
-#             return await call_next(request)
+# Two everyday middlewares, written as plain functions (app in, app out):
+# a Server-Timing header and a maintenance switch. 04b-bundled-middleware.pl
+# does the same jobs with middleware Tools ships.
 #
 # PAGI middleware sees protocol events, not a response object, so headers are
 # edited on the way out with wrap_response_headers. Short-circuiting is easy
 # because a response is itself an application: answer with it directly.
+#
+# The Starlette version is in README.md.
 #
 # Run:  pagi-server --app examples/gut-check/04-everyday-middleware.pl --port 5000
 # Try:  curl -i localhost:5000/

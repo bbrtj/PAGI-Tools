@@ -3,22 +3,15 @@
 # Request bodies as streams: relay an upload straight back, transform it chunk
 # by chunk, or checksum it, without ever holding the whole body in memory.
 #
-# Starlette:
-#
-#     async def shout(request):
-#         async def upper():
-#             async for chunk in request.stream():
-#                 yield chunk.upper()
-#         return StreamingResponse(upper(), media_type="application/octet-stream")
-#
-# PAGI: $request->body_stream is a pull source, and a Writer can pipe_from it
+# $request->body_stream is a pull source, and a Writer can pipe_from it
 # (a straight relay) or the producer can pull next_chunk itself (a transform).
 #
 # A stream gives bytes, so relay and sha256 take any upload, a zip included.
 # shout reads its body as text, so it asks for chunks decoded by the charset
 # the client declared (UTF-8 when it declares none), and a character split
-# across two chunks still arrives whole. Python's bytes.upper() only knows
-# ASCII; this shouts "café" as "CAFÉ".
+# across two chunks still arrives whole: it shouts "café" as "CAFÉ".
+#
+# The Starlette version is in README.md.
 #
 # Run:  pagi-server --app examples/gut-check/07-upload-relay.pl --port 5000
 # Try:  curl -s --data-binary @/usr/share/dict/words localhost:5000/sha256

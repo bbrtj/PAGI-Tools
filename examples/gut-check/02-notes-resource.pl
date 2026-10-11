@@ -1,26 +1,9 @@
 #!/usr/bin/env perl
 #
-# A small REST resource, written the way a Starlette user would reach for it:
-# lifespan builds the store, class-based endpoints serve the collection and the
-# item, and links come from route names.
+# A small REST resource: lifespan builds the store, class-based endpoints
+# serve the collection and the item, and links come from route names.
 #
-# Starlette:
-#
-#     class Notes(HTTPEndpoint):
-#         async def get(self, request):
-#             return JSONResponse(request.app.state.notes.all())
-#         async def post(self, request):
-#             note = request.app.state.notes.add(await request.json())
-#             return JSONResponse(note, status_code=201,
-#                 headers={"Location": str(request.url_for("note", id=note["id"]))})
-#
-#     @asynccontextmanager
-#     async def lifespan(app):
-#         app.state.notes = NoteStore()
-#         yield
-#
-#     app = Starlette(routes=[Route("/notes", Notes), Route("/notes/{id:int}", Note, name="note")],
-#                     lifespan=lifespan)
+# The Starlette version is in README.md.
 #
 # Run:  pagi-server --app examples/gut-check/02-notes-resource.pl --port 5000
 # Try:  curl -i -X POST localhost:5000/notes -d '{"text":"buy milk"}'

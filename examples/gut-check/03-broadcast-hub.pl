@@ -1,15 +1,10 @@
 #!/usr/bin/env perl
 #
 # One hub, three doors: WebSocket clients chat, SSE clients watch, and a plain
-# HTTP POST announces to everyone. Starlette users reach for the separate
-# `broadcaster` package for this; here it is a few lines of plain Perl,
-# because every connection helper has the same best-effort try_send_* family.
+# HTTP POST announces to everyone. The fan-out is plain Perl, because every
+# connection helper has the same best-effort try_send_* family.
 #
-# Starlette (with the encode/broadcaster package):
-#
-#     async def chat(websocket):
-#         await websocket.accept()
-#         async with broadcast.subscribe("room") as sub: ...
+# The Starlette version is in README.md.
 #
 # Run:  pagi-server --app examples/gut-check/03-broadcast-hub.pl --port 5000
 # Try:  websocat ws://localhost:5000/chat

@@ -2,20 +2,13 @@
 #
 # Streaming responses: a slow NDJSON feed and a custom streaming format.
 #
-# Starlette streams from an async generator:
-#
-#     async def ticks():
-#         for n in range(5):
-#             yield json.dumps({"tick": n}) + "\n"
-#             await asyncio.sleep(0.2)
-#
-#     return StreamingResponse(ticks(), media_type="application/x-ndjson")
-#
-# PAGI-Tools hands the producer a Writer instead of pulling from a generator:
+# The producer is handed a Writer rather than being pulled like a generator:
 # each awaited write is a backpressure point, and the producer can see a
 # disconnect and stop. A format is a Stream subclass with format_item, so the
 # producer writes items, not bytes. PAGI::Test::Client drives the producer's
 # sleeps, so this app is tested in-process like the others.
+#
+# The Starlette version is in README.md.
 #
 # Run:  pagi-server --app examples/gut-check/05-streaming.pl --port 5000
 # Try:  curl -N localhost:5000/ticks

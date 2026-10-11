@@ -2,23 +2,13 @@
 #
 # Sessions: a visit counter and a per-visitor name.
 #
-# Starlette:
-#
-#     async def visits(request):
-#         request.session["visits"] = request.session.get("visits", 0) + 1
-#         return JSONResponse({"visits": request.session["visits"],
-#                              "name": request.session.get("name")})
-#
-#     app = Starlette(routes=[...], middleware=[Middleware(SessionMiddleware, secret_key="...")])
-#
-# Two differences show up at once:
-# - Starlette's default session lives in a signed cookie (works across
-#   workers); PAGI's default lives in this process's memory, says so in a
-#   warning at startup, and the cookie store is a separate distribution
+# - The default session store lives in this process's memory, and says so in
+#   a warning at startup; a signed-cookie store is a separate distribution
 #   (PAGI-Middleware-Session-Store-Cookie).
-# - PAGI's get is strict, like State and Stash: $session->get('name') dies
-#   when 'name' was never set, to catch typos. Pass a default for optional
-#   keys.
+# - get is strict, like State and Stash: $session->get('name') dies when
+#   'name' was never set, to catch typos. Pass a default for optional keys.
+#
+# The Starlette version is in README.md.
 #
 # Run:  pagi-server --app examples/gut-check/06-sessions.pl --port 5000
 # Try:  curl -c jar -b jar localhost:5000/visits   (repeat)

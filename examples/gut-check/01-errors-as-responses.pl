@@ -1,29 +1,19 @@
 #!/usr/bin/env perl
 #
-# Starlette's HTTPException, the PAGI-Tools way.
+# Errors as responses: an error thrown from deep in the model becomes the
+# right HTTP answer.
 #
-# Starlette:
-#
-#     async def show(request):
-#         note = NOTES.get(request.path_params["id"])
-#         if note is None:
-#             raise HTTPException(status_code=404, detail="no such note")
-#         return JSONResponse(note)
-#
-#     async def http_exception(request, exc):
-#         return JSONResponse({"error": exc.detail}, status_code=exc.status_code)
-#
-#     app = Starlette(routes=[...], exception_handlers={HTTPException: http_exception})
-#
-# PAGI-Tools: throw a PAGI::Exception::HTTP (what went wrong), and let one
-# ErrorHandler handler decide how errors look. Without the handler, the stock
-# page answers with the right status and the message. A thrown response
+# Throw a PAGI::Exception::HTTP (what went wrong), and let one ErrorHandler
+# handler decide how errors look. Without the handler, the stock page answers
+# with the right status and the message. A thrown response
 # (die response('JSON', ..., status => 404)) also works with no handler at
 # all: it answers itself.
 #
 # A path no route matches is not an error: the router answers it, and the
 # handler never sees it. http_default sets that answer (a 405 is the router's
-# too; change it with a middleware). Starlette sends both through its handler.
+# too; change it with a middleware).
+#
+# The Starlette version is in README.md.
 #
 # Run:  pagi-server --app examples/gut-check/01-errors-as-responses.pl --port 5000
 # Try:  curl -i localhost:5000/notes/1
