@@ -47,7 +47,7 @@ Start here:
 HTTP:
 
 - `contact-form` - a POST handler parsing form fields and file uploads
-- `content-negotiation` - one notes resource for browsers and API clients: the ContentNegotiation middleware picks HTML or JSON from Accept, answers 406 and sends Vary; `respond_to` names each representation, and a POST reads a form or JSON by Content-Type (415 otherwise)
+- `content-negotiation` - one notes resource for browsers, htmx and API clients: the ContentNegotiation middleware on a mount picks HTML or JSON from Accept, refuses with the app's own 406 problem and sends Vary; `respond_to` names each representation; htmx gets fragments with `Vary: HX-Request`; a POST reads a form or JSON by Content-Type; `/health` stays outside the negotiation
 - `static-files` - static file serving with `PAGI::App::File`
 - `pages` - Compose-rooted `PAGI::Pages` demo covering class/configured/export factories, direct application Routes and Mount, a request-derived application return, negotiation, and lifespan
 - `process-streaming` - streams an external command's output through `response('Stream', ...)`/`pipe_from` with a four-line loop-agnostic `Future::IO` source, real pipe backpressure, and `on_close` cleanup that stops the child when the client disconnects

@@ -1,16 +1,24 @@
 #!/usr/bin/env perl
 #
-# One notes resource for browsers and API clients. Browsers get HTML pages
-# and post a form; API clients get JSON and post JSON. The middleware picks
-# the representation from Accept, answers 406, and sends Vary: Accept on
-# everything; handlers only say what each representation is.
+# One notes resource for browsers, htmx and API clients.
+#
+#   - Browsers get HTML pages and post a form; API clients get JSON and post
+#     JSON. The ContentNegotiation middleware picks the representation from
+#     Accept, refuses what neither can satisfy, and sends Vary: Accept on
+#     everything; handlers only say what each representation is.
+#   - With htmx, the same URLs answer a fragment instead of the whole page
+#     when the request says HX-Request, and say so with Vary: HX-Request.
+#   - Negotiation is declared on the /notes mount only: /health answers in
+#     one type and stays out of it.
 #
 # Run:  pagi-server --app examples/content-negotiation/app.pl --port 5000
-# Try:  open http://localhost:5000/notes in a browser and add a note
+# Try:  open http://localhost:5000/notes in a browser and add a few notes
 #       curl -i -H 'Accept: application/json' localhost:5000/notes
 #       curl -i -H 'Accept: application/json' -H 'Content-Type: application/json' \
 #            -d '{"text":"buy milk"}' localhost:5000/notes
-#       curl -i -H 'Accept: image/png' localhost:5000/notes      # 406
+#       curl -i -H 'HX-Request: true' localhost:5000/notes        # the fragment
+#       curl -i -H 'Accept: image/png' localhost:5000/notes       # 406
+#       curl -i -H 'Accept: image/png' localhost:5000/health      # 200, not negotiated
 
 use v5.40;
 use Future::AsyncAwait;
@@ -21,32 +29,53 @@ package NoteStore {
     sub new ($class) { bless { next => 1, notes => {} }, $class }
     sub all ($self) { [ map { $self->{notes}{$_} } sort { $a <=> $b } keys $self->{notes}->%* ] }
     sub find ($self, $id) { $self->{notes}{$id} }
-    sub add ($self, $data) { my $id = $self->{next}++; $self->{notes}{$id} = { id => $id, text => $data->{text} } }
+    sub add ($self, $text) { my $id = $self->{next}++; $self->{notes}{$id} = { id => $id, text => $text } }
 
     sub for_request ($class, $request) { $request->state->get('notes') }
 }
 
 package main;
 
-use PAGI::Tools qw(compose middleware negotiated_type path_for respond_to response route);
+use PAGI::Tools qw(compose middleware mount negotiated_type path_for respond_to response route);
 use Types::Standard qw(Int);
 
 sub esc ($text) { $text =~ s/([&<>"'])/'&#' . ord($1) . ';'/ger }
 
 sub page ($title, $body, %opts)
 {
-    return response('HTML', "<!doctype html><title>$title</title><h1>$title</h1>$body", %opts);
+    return response('HTML', join('',
+        '<!doctype html><title>', esc($title), '</title>',
+        '<script src="https://unpkg.com/htmx.org@2.0.4"></script>',
+        '<h1>', esc($title), '</h1>', $body,
+    ), %opts);
+}
+
+sub note_list ($request, $notes)
+{
+    return join '', '<ul id="notes">',
+        (map { '<li><a href="' . path_for($request, 'note', { id => $_->{id} }) . '">'
+            . esc($_->{text}) . '</a></li>' } @$notes),
+        '</ul>';
+}
+
+# The list's HTML depends on HX-Request as well as Accept: htmx swaps in the
+# list alone, a browser gets the whole page. Both say so, so a cache keeps
+# them apart (the middleware adds Accept to this Vary).
+sub list_html ($request, $notes)
+{
+    my @vary = (headers => [Vary => 'HX-Request']);
+    return response('HTML', note_list($request, $notes), @vary) if $request->header('HX-Request');
+    my $form = '<form method="post" action="' . path_for($request, 'notes') . '"'
+        . ' hx-post="' . path_for($request, 'notes') . '" hx-target="#notes" hx-swap="outerHTML">'
+        . '<input name="text" required><button>Add</button></form>';
+    return page('Notes', note_list($request, $notes) . $form, @vary);
 }
 
 async sub list ($request)
 {
     my $notes = NoteStore->for_request($request)->all;
     return respond_to($request,
-        html => sub {
-            page('Notes', join '',
-                '<ul>', (map { '<li>' . esc($_->{text}) . '</li>' } @$notes), '</ul>',
-                '<form method="post"><input name="text"><button>Add</button></form>');
-        },
+        html => sub { list_html($request, $notes) },
         json => sub { response('JSON', $notes) },
     );
 }
@@ -74,25 +103,49 @@ async sub create ($request)
     my $data = $request->is_json ? await $request->json
              : $request->is_form ? { text => (await $request->form_params)->get('text') }
              : return response('Text', 'Unsupported Media Type', status => 415);
+    my $text = ref $data eq 'HASH' ? $data->{text} : undef;
+    return response('Text', 'A note needs text.', status => 400)
+        unless defined $text && !ref $text && length $text;
 
-    my $note = NoteStore->for_request($request)->add($data);
-    my $url  = path_for($request, 'note', { id => $note->{id} });
+    my $store = NoteStore->for_request($request);
+    my $note  = $store->add($text);
+    my $url   = path_for($request, 'note', { id => $note->{id} });
     return respond_to($request,
-        html => sub { response('Redirect', path_for($request, 'notes'), status => 303) },
+        # htmx posted the form: answer the new list in place. A plain form
+        # post is redirected to the list, so a reload does not post again.
+        html => sub {
+            $request->header('HX-Request')
+                ? list_html($request, $store->all)
+                : response('Redirect', path_for($request, 'notes'), status => 303);
+        },
         json => sub { response('JSON', $note, status => 201, headers => [Location => $url]) },
     );
 }
 
 compose(
     routes => [
-        route('/notes'      => \&list,   name => 'notes'),
-        route('/notes'      => \&create, methods => 'POST'),
-        route('/notes/{id}' => \&show,   name => 'note', constraints => { id => Int }),
-    ],
-    middleware => [
-        # Declared once: the types every route here can answer with, most
-        # preferred first (a browser sending */* gets HTML).
-        middleware('ContentNegotiation', supported_types => ['html', 'json']),
+        route('/health' => sub ($request) { response('Text', 'ok') }),
+        mount('/notes',
+            routes => [
+                route('/'     => \&list,   name => 'notes'),
+                route('/'     => \&create, methods => 'POST'),
+                route('/{id}' => \&show,   name => 'note', constraints => { id => Int }),
+            ],
+            middleware => [
+                # The types every route here can answer with, most preferred
+                # first (a browser sending */* gets HTML). The refusal is the
+                # app's own: an RFC 9457 problem instead of the stock text.
+                middleware('ContentNegotiation',
+                    supported_types => ['html', 'json'],
+                    refuse => response('Problem', {
+                        type   => '/problems/not-acceptable',
+                        title  => 'Not Acceptable',
+                        status => 406,
+                        detail => 'This resource is available as text/html or application/json.',
+                    }),
+                ),
+            ],
+        ),
     ],
     lifespan => {
         startup => sub ($state, $scope) { $state->{notes} = NoteStore->new },
