@@ -1011,9 +1011,10 @@ fails at once instead of turning into garbage.
 A charset the stream cannot decode is a 415 when the stream is made, as for
 C<text>; catch the L<PAGI::Request::BodyError> at the call to choose
 another path. A client that disconnects partway through a character ends
-the text early and C<truncated> is true. A UTF-8 BOM arrives as U+FEFF
-(C<s/\A\x{FEFF}//> on the first chunk removes it); a UTF-16 or UTF-32 BOM
-is consumed by the decoder.
+the text early and C<truncated> is true. A byte-order mark is consumed only
+by plain C<UTF-16> and C<UTF-32>; with C<UTF-8> or an explicit byte order
+(C<UTF-16LE>, ...) it arrives as U+FEFF, and C<s/\A\x{FEFF}//> on the first
+chunk removes it (harmless when there is none).
 
 B<Important:> Body streaming is mutually exclusive with buffered body methods
 (C<body>, C<text>, C<json>, C<form_params>). Once you start streaming, you cannot use

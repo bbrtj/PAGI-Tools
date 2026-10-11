@@ -10,9 +10,9 @@ sub new {
     my $strict = delete $opts{strict};
     croak 'PAGI::Utils::TextDecoder: unknown option ' . join(', ', map { "'$_'" } sort keys %opts)
         if %opts;
-    my $encoding = defined $name ? find_encoding($name) : undef;
-    croak "PAGI::Utils::TextDecoder: unknown encoding '" . (defined $name ? $name : '') . "'"
-        unless $encoding;
+    croak 'PAGI::Utils::TextDecoder: expects an encoding name' unless defined $name;
+    my $encoding = find_encoding($name)
+        or croak "PAGI::Utils::TextDecoder: unknown encoding '$name'";
     # Encode decodes escape-based encodings (ISO-2022-*, UTF-7) only line by line.
     croak "PAGI::Utils::TextDecoder: '$name' cannot be decoded in chunks; decode the whole input"
         if $encoding->needs_lines;
@@ -96,7 +96,7 @@ sub finish {
 sub _fail {
     my ($self, $cause) = @_;
     $self->{finished} = 1;
-    $cause =~ s/ at \S+ line \d+\.?\n?\z//;
+    $cause =~ s/ at .+? line \d+\.?\n?\z//;
     chomp $cause;
     die "PAGI::Utils::TextDecoder: not valid $self->{name}: $cause\n";
 }
@@ -117,7 +117,8 @@ PAGI::Utils::TextDecoder - decode a byte stream to text as it arrives
     while (defined(my $bytes = await $source->next_chunk)) {
         handle($decoder->decode($bytes));    # whole characters only
     }
-    handle($decoder->finish);                # the input really ended here
+    # Only when the input really ended here, not when the sender went away.
+    handle($decoder->finish) unless $source->truncated;
 
 =head1 DESCRIPTION
 
@@ -191,9 +192,11 @@ WebSocket handler would close with 1007 (invalid frame payload data).
 
 =head1 LIMITS
 
-A UTF-8 byte-order mark is text and arrives as U+FEFF, as in Encode and
-L<PAGI::Request/text>; C<s/\A\x{FEFF}//> on the first chunk removes it. A
-UTF-16 or UTF-32 byte-order mark is consumed: it sets the byte order.
+A byte-order mark is consumed only by the encodings whose byte order it
+decides, plain C<UTF-16> and C<UTF-32>. With C<UTF-8>, C<UTF-16LE>/C<BE> and
+C<UTF-32LE>/C<BE> it is text and arrives as U+FEFF, as in Encode and
+L<PAGI::Request/text>; C<s/\A\x{FEFF}//> on the first chunk removes it, and
+is harmless when there is none.
 
 Strict UTF-16/32 holds back an incomplete code unit, and in UTF-16 the
 first half of a surrogate pair, until the rest arrives: Encode's UTF-16/32

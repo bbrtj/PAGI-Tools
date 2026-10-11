@@ -37,6 +37,9 @@ for my $label (sort keys %csv) {
     is [$res->status, $res->json], [200, { rows => 3 }], "$label: three rows";
 }
 
+$res = $client->post('/import', headers => { 'Content-Type' => 'text/csv; charset=utf-8' }, body => '');
+is [$res->status, $res->json], [200, { rows => 0 }], 'an empty CSV has no rows';
+
 $res = $client->post('/import', headers => { 'Content-Type' => 'text/csv; charset=x-bogus' }, body => "a\n");
 is $res->status, 415, 'a charset the stream cannot decode is a 415';
 

@@ -74,6 +74,11 @@ subtest 'mistakes croak at once' => sub {
         'an encoding Encode decodes only line by line';
     like dies { decoder('UTF-8', strickt => 1) }, qr/\APAGI::Utils::TextDecoder: unknown option 'strickt'/,
         'an unknown option';
+    like dies { decoder(undef) }, qr/\APAGI::Utils::TextDecoder: expects an encoding name/, 'no encoding name';
+    # Encode's reason loses its location even when the library path has a space.
+    my $spaced = decoder('UTF-8', strict => 1);
+    is dies { $spaced->_fail("bad byte at /Users/John Doe/lib/Encode/X.pm line 12.\n") },
+        "PAGI::Utils::TextDecoder: not valid UTF-8: bad byte\n", 'a location with a space is removed';
 };
 
 subtest 'strict UTF-16/32: a split code unit or surrogate pair waits' => sub {

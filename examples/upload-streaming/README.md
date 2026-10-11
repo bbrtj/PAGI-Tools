@@ -33,8 +33,9 @@ pagi-server --app examples/upload-streaming/app.pl --port 5000
   partial or empty file rather than keep it.
 - **The UTF-8 BOM.** Excel's "CSV UTF-8" starts with a byte-order mark,
   which is text in UTF-8 and arrives as U+FEFF; `import_csv` strips it from
-  the first chunk so the first header reads `name`, not `"\x{FEFF}name"`. A
-  UTF-16 BOM (Excel's "Unicode Text") is consumed by the decoder: UTF-16,
+  the first chunk so the first header reads `name`, not `"\x{FEFF}name"`.
+  The same strip covers `charset=utf-16le` (Excel's "Unicode Text"), where
+  the BOM is text too; only plain `utf-16`/`utf-32` consume it. UTF-16,
   strict included, imports like any other charset.
 - **A safe file name.** `{name:[\w-]+(?:\.[\w-]+)*}` allows letters,
   digits, `-`, `_` and single dots between them: no `/`, no `.` or `..`, no
