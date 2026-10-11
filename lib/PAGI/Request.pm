@@ -352,8 +352,6 @@ sub body_stream {
     croak "Body already consumed; streaming not available" if $self->{scope}{'pagi.request.body.read'};
     croak "Body streaming already started" if $self->{scope}{'pagi.request.body.stream.created'};
 
-    $self->{scope}{'pagi.request.body.stream.created'} = 1;
-
     my $max_bytes = $opts{max_bytes};
     my $limit_name = defined $max_bytes ? 'max_bytes' : undef;
     if (!defined $max_bytes) {
@@ -364,7 +362,9 @@ sub body_stream {
         }
     }
 
-    return PAGI::Request::BodyStream->new(
+    # Made before the body is marked as streaming: a stream that cannot be
+    # made (a charset it cannot decode, a 415) leaves the body to text.
+    my $stream = PAGI::Request::BodyStream->new(
         receive    => $self->{receive},
         max_bytes  => $max_bytes,
         limit_name => $limit_name,
@@ -372,6 +372,8 @@ sub body_stream {
         strict     => $opts{strict},
         _scope_type => $scope_type,
     );
+    $self->{scope}{'pagi.request.body.stream.created'} = 1;
+    return $stream;
 }
 
 # Streaming multipart - mutually exclusive with buffered body methods

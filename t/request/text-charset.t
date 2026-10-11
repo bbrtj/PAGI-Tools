@@ -54,4 +54,21 @@ sub text_of_events {
 is(text_of_events('text/plain; charset=UTF-16', "\xFF\xFEh\0i", "\0!\0"), 'hi!',
     'strict UTF-16 across two events');
 
+
+# A charset body_stream cannot decode in chunks is its 415; the body has not
+# been touched, so text can still read it whole.
+{
+    my $sent = 0;
+    my $receive = sub {
+        return Future->done({ type => 'http.disconnect' }) if $sent++;
+        return Future->done({ type => 'http.request', body => "\e\$B\$\"\e(B", more => 0 });
+    };
+    my $request = PAGI::Request->new({
+        type => 'http', method => 'POST', headers => [['content-type', 'text/plain; charset=ISO-2022-JP']],
+    }, $receive);
+    my $error = dies { $request->body_stream(decode => $request->charset, strict => 1) };
+    is($error && $error->status_code, 415, 'body_stream refuses a charset it cannot stream');
+    is((async sub { await $request->text(strict => 1) })->()->get, "\x{3042}", 'and text reads the body whole');
+}
+
 done_testing;
