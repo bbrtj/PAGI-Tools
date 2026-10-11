@@ -8,7 +8,7 @@
 # PAGI-Tools ships no template engine, flash or validation; this app shows
 # what each costs on top of it: Template Toolkit for the pages, a two-line
 # flash on the session, hand-written validation. The same application in
-# Flask is in compare/.
+# Flask is in this example's README.
 #
 # Run:  pagi-server --app examples/internal-tool/app.pl --port 5000
 # Then open http://localhost:5000/

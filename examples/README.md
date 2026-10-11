@@ -47,8 +47,8 @@ Start here:
 HTTP:
 
 - `contact-form` - a POST handler parsing form fields and file uploads
-- `internal-tool` - Perl 5.40 task board, the everyday HTML workflow: Template Toolkit pages, a form re-rendered with its errors, redirect after POST, a session flash, CSRF on every form, a static stylesheet; the same application in Flask in `compare/`, with line counts
-- `webhook-receiver` - Perl 5.40 whip-it-up GitHub-style webhook receiver: HMAC over the raw body, a JSONL log, a status page and a JSON view, written cold with a clock running; the same program in Flask and Go in `compare/`
+- `internal-tool` - Perl 5.40 task board, the everyday HTML workflow: Template Toolkit pages, a form re-rendered with its errors, redirect after POST, a session flash, CSRF on every form, a static stylesheet; the same application in Flask in its README, with line counts
+- `webhook-receiver` - Perl 5.40 whip-it-up GitHub-style webhook receiver: HMAC over the raw body, a JSONL log, a status page and a JSON view, written cold with a clock running; the same program in Flask and Go in its README
 - `upload-streaming` - streaming uploads, bytes or text: a binary file kept exactly as sent, CSV imports decoded by the client's charset with `strict` (cp1252, UTF-8 with a BOM, UTF-16), a lenient transform, a 415 for a charset the stream cannot decode, and `truncated` for a hang-up
 - `content-negotiation` - one notes resource for browsers, htmx and API clients: the ContentNegotiation middleware on a mount picks HTML or JSON from Accept, refuses with the app's own 406 problem and sends Vary; `respond_to` names each representation; htmx gets fragments with `Vary: HX-Request`; a POST reads a form or JSON by Content-Type; `/health` stays outside the negotiation
 - `static-files` - static file serving with `PAGI::App::File`

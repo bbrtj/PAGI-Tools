@@ -8,7 +8,7 @@ stylesheet comes from a static directory.
 
 PAGI-Tools ships no template engine, flash or validation. This app shows
 what each costs on top of it. The same application in Flask, which has all
-three built in, is in `compare/`; it was driven with the same requests and
+three built in, is at the end of this README; it was driven with the same requests and
 answers them the same way.
 
 ## Run
@@ -61,6 +61,154 @@ curl -c jar -b jar -X POST localhost:5000/tasks --data-urlencode 'title=Rotate t
 curl -c jar -b jar localhost:5000/                      # the flash, then the task
 curl -c jar -b jar -X POST localhost:5000/tasks/1/toggle --data-urlencode "csrf_token=$tok" -i
 curl -i localhost:5000/static/style.css
+```
+
+## The Flask version
+
+The same application, as measured and driven with the same requests.
+
+### flask_app.py
+
+```python
+# The same task board in Flask, for comparison with app.pl. Flask has
+# templates, flash and static files built in; CSRF is the Flask-WTF
+# extension, done by hand here so the two apps need the same extras.
+#
+# Run:  pip install flask
+#       flask --app flask_app run --port 8000
+
+import hmac, os, re, secrets
+from flask import Flask, abort, flash, redirect, render_template, request, session, url_for
+
+app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "dev")
+BOARD = {"next": 1, "list": []}
+
+
+def csrf_token():
+    return session.setdefault("csrf_token", secrets.token_urlsafe(32))
+
+
+app.jinja_env.globals["csrf_token"] = csrf_token
+
+
+def check_csrf():
+    if not hmac.compare_digest(request.form.get("csrf_token", ""), session.get("csrf_token", "-")):
+        abort(403, "CSRF token validation failed")
+
+
+def validate(form):
+    errors = {}
+    title = form.get("title", "").strip()
+    if not title:
+        errors["title"] = "A title is required."
+    elif len(title) > 80:
+        errors["title"] = "Keep the title under 80 characters."
+    due = form.get("due", "")
+    if due and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", due):
+        errors["due"] = "Use YYYY-MM-DD."
+    return {"title": title, "due": due}, errors
+
+
+@app.get("/")
+def index():
+    return render_template("index.html", tasks=BOARD["list"], form={}, errors={})
+
+
+@app.post("/tasks")
+def create():
+    check_csrf()
+    values, errors = validate(request.form)
+    if errors:
+        return render_template("index.html", tasks=BOARD["list"], form=values, errors=errors), 422
+    BOARD["list"].append({"id": BOARD["next"], **values, "done": False})
+    BOARD["next"] += 1
+    flash(f'Added "{values["title"]}".')
+    return redirect(url_for("index"), 303)
+
+
+@app.post("/tasks/<int:id>/toggle")
+def toggle(id):
+    check_csrf()
+    task = next((t for t in BOARD["list"] if t["id"] == id), None) or abort(404)
+    task["done"] = not task["done"]
+    flash(("Done: " if task["done"] else "Reopened: ") + task["title"] + ".")
+    return redirect(url_for("index"), 303)
+
+
+@app.post("/tasks/<int:id>/delete")
+def delete(id):
+    check_csrf()
+    before = len(BOARD["list"])
+    BOARD["list"] = [t for t in BOARD["list"] if t["id"] != id]
+    if len(BOARD["list"]) == before:
+        abort(404)
+    flash("Deleted.")
+    return redirect(url_for("index"), 303)
+```
+
+### templates/index.html
+
+```html
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Task board</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<h1>Task board</h1>
+
+{% for message in get_flashed_messages() %}<p class="flash">{{ message }}</p>{% endfor %}
+
+<form method="post" action="{{ url_for('create') }}" class="add">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label>Title
+    <input name="title" value="{{ form.title or '' }}" autofocus>
+    {% if errors.title %}<span class="error">{{ errors.title }}</span>{% endif %}
+  </label>
+  <label>Due
+    <input name="due" value="{{ form.due or '' }}" placeholder="YYYY-MM-DD">
+    {% if errors.due %}<span class="error">{{ errors.due }}</span>{% endif %}
+  </label>
+  <button type="submit">Add task</button>
+</form>
+
+<ul class="tasks">
+{% for task in tasks %}
+  <li class="{{ 'done' if task.done else 'open' }}">
+    <span class="title">{{ task.title }}</span>
+    {% if task.due %}<span class="due">{{ task.due }}</span>{% endif %}
+    <form method="post" action="{{ url_for('toggle', id=task.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit">{{ 'Reopen' if task.done else 'Done' }}</button>
+    </form>
+    <form method="post" action="{{ url_for('delete', id=task.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit">Delete</button>
+    </form>
+  </li>
+{% endfor %}
+</ul>
+{% if not tasks %}<p class="empty">Nothing to do.</p>{% endif %}
+</body>
+</html>
+```
+
+### static/style.css
+
+```css
+body { font: 16px/1.4 system-ui, sans-serif; max-width: 40em; margin: 2em auto; padding: 0 1em; }
+.flash { background: #e6f4ea; border-left: 4px solid #2e7d32; padding: .5em 1em; }
+.error { color: #b00020; font-size: .9em; }
+form.add label { display: block; margin: .5em 0; }
+ul.tasks { list-style: none; padding: 0; }
+ul.tasks li { display: flex; gap: .5em; align-items: center; padding: .4em 0; border-bottom: 1px solid #ddd; }
+ul.tasks li.done .title { text-decoration: line-through; color: #777; }
+ul.tasks .due { color: #555; font-size: .9em; }
+ul.tasks form { display: inline; }
+.empty { color: #777; }
 ```
 
 ## See also
