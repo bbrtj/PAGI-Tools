@@ -39,7 +39,7 @@ for my $case (@examples) {
             unlike($source, qr/\$router->(?:get|post|websocket|sse|mount)\b/,
                 'background tasks has no mutable route declarations');
             like($source,
-                qr/use PAGI::Routing qw\(route websocket\);/,
+                qr/use PAGI::Tools qw\(compose response route websocket\);/,
                 'background tasks imports immutable route declarations');
             like($source,
                 qr/route\('\/'\s*=>\s*sub\s*\{/s,

@@ -717,7 +717,9 @@ before starting the stream. `decline` is new in this release; `deny` took
 ## Breaking: direct WebSocket and SSE `state` matches Request
 
 `PAGI::Request`, `PAGI::WebSocket` and `PAGI::SSE` share one application-state
-contract: `state` returns a `PAGI::State` or `undef`.
+contract: `state` always returns a `PAGI::State`. Without application state it
+is an empty facade whose `get` and `data` die naming the likely cause (did
+lifespan startup run?); `app_state($scope)` still returns `undef` there.
 
 **Before:** WebSocket and SSE returned a raw hashref (or an empty one).
 
@@ -728,9 +730,7 @@ my $db = $websocket->state->{db};
 **After:**
 
 ```perl
-my $state = $websocket->state
-    or die 'lifespan state required';
-my $db = $state->get('db');
+my $db = $websocket->state->get('db');
 ```
 
 A temporary `%{}` overload still allows `->state->{db}` (with a warning), but
@@ -746,7 +746,7 @@ with 0.002002's `406 text/plain` listing the supported types.
 | 0.002002 | Now |
 |---|---|
 | `strict => 1` | the default; remove it |
-| `strict => 0` (the default) | `refuse => 0`; with no match `pagi.preferred_content_type` is undef |
+| `strict => 0` (the default) | `refuse => 0`; with no match `negotiated_type($request)` is undef |
 | `default_type => $type` | removed: a request without `Accept` gets the first supported type; with `refuse => 0` choose your own fallback (`// $type`) |
 
 Passing `strict` or `default_type` dies.
@@ -1077,7 +1077,8 @@ App::File's 416 `Content-Range`.
 URLMap with no default, on a WebSocket or SSE scope, now croaks instead of
 sending `http.response.*` on another protocol.
 
-ContentNegotiation now uses `PAGI::Request::Negotiate`: an exact `q=0`
+ContentNegotiation shares its Accept matching with `$request->preferred_type`
+(both use `PAGI::ContentNegotiation`): an exact `q=0`
 exclusion beats a less specific wildcard. Unknown, missing or malformed scope
 types are never treated as HTTP.
 

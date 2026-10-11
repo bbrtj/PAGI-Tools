@@ -171,4 +171,10 @@ subtest 'a websocket scope without pagi.connection is refused' => sub {
     );
 };
 
+subtest 'connection is the scope\'s pagi.connection' => sub {
+    my $scope = ws_scope();
+    my $ws = PAGI::WebSocket->new($scope, sub {}, sub {});
+    ref_is($ws->connection, $scope->{'pagi.connection'}, 'the server-supplied object');
+};
+
 done_testing;

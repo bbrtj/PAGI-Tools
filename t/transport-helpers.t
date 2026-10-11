@@ -21,7 +21,7 @@ use PAGITest::Connected qw(ws_scope sse_scope);
 
 {
     package Local::Transport::All;
-    PAGI::Transport->import(':ALL');
+    PAGI::Transport->import(':all');
 }
 
 {
@@ -69,15 +69,15 @@ ok(!Local::Transport::NoDefault->can('transport'),
 ok(Local::Transport::Named->can('transport'),
     'transport is available as a named export');
 ok(Local::Transport::All->can('transport'),
-    'uppercase :ALL exports transport');
+    'lowercase :all exports transport');
 
-my $lowercase_tag_error;
+my $uppercase_tag_error;
 {
     local $SIG{__WARN__} = sub { };
-    $lowercase_tag_error = dies { PAGI::Transport->import(':all') };
+    $uppercase_tag_error = dies { PAGI::Transport->import(':ALL') };
 }
-like($lowercase_tag_error, qr/"?:all"? is not defined|Can't continue/i,
-    'lowercase :all is not an export tag');
+like($uppercase_tag_error, qr/"?:?ALL"? is not defined|Can't continue/i,
+    'uppercase :ALL is not an export tag');
 
 subtest 'transport is optional and does not cache in scope' => sub {
     my $scope = { type => 'http' };

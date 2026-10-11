@@ -11,6 +11,9 @@ use PAGI::Utils::Random qw(secure_random_bytes);
 
 our @EXPORT_OK = qw(session_state session_store);
 
+# Set once the default in-memory store has been announced in this process.
+my $warned_default_store = 0;
+
 sub session_state { return _build_named('session_state', 'State', @_) }
 sub session_store { return _build_named('session_store', 'Store', @_) }
 
@@ -52,10 +55,11 @@ PAGI::Middleware::Session - Session management middleware with pluggable State/S
         return response('JSON', { visits => $session->get('visits') });
     }
 
-    # Several workers, or sessions that survive a restart: keep the whole
-    # session encrypted in the cookie (distribution
-    # PAGI-Middleware-Session-Store-Cookie). To change the cookie itself,
-    # configure the State and pass it; nothing on the middleware reaches it.
+For several workers, or sessions that survive a restart, keep the whole
+session encrypted in the cookie (distribution
+PAGI-Middleware-Session-Store-Cookie). To change the cookie itself, configure
+the State and pass it; nothing on the middleware reaches it:
+
     use PAGI::Middleware::Session qw(session_state session_store);
 
     my $production = compose(
@@ -72,6 +76,15 @@ PAGI::Middleware::Session - Session management middleware with pluggable State/S
         ],
         routes => [route('/visits' => \&visits)],
     );
+
+C<middleware('Session', ...)> also goes in a Router's, Mount's or Route's
+C<middleware> list. It constructs the middleware and wraps the application
+inside it, which you can do yourself, around any native application:
+
+    my $wrapped = PAGI::Middleware::Session->new->wrap($app->to_app);
+
+Without Compose, L<PAGI::Middleware::Builder> composes middleware the way
+Plack::Builder does.
 
 =head1 DESCRIPTION
 
@@ -169,7 +182,10 @@ see L</STATE CLASSES>.
 
 A L<PAGI::Middleware::Session::Store> object that implements async C<get($id)>,
 C<set($id, $data)>, and C<delete($id)>. If not provided, a
-L<PAGI::Middleware::Session::Store::Memory> instance is created.
+L<PAGI::Middleware::Session::Store::Memory> instance is created, and the first
+middleware built that way in a process warns that its sessions are kept in
+memory. Pass C<< store => session_store('Memory') >> to choose that store
+deliberately, without the warning.
 
 =back
 
@@ -438,6 +454,14 @@ sub _init {
     }
     PAGI::Utils::_reject_unknown_options('Session', $config,
         qw(expire secret state store));
+
+    # The fallback store suits development and a single worker only, so a
+    # middleware built with it says so, once per process.
+    warn "PAGI::Middleware::Session: no store given, so sessions are kept in "
+        . "this process's memory: lost on restart and not shared between "
+        . "workers. Fine for development; pass store => session_store(...) "
+        . "to choose one.\n"
+        if !$config->{store} && !$warned_default_store++;
 }
 
 sub wrap {

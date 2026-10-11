@@ -3,6 +3,7 @@ use strict;
 use warnings;
 use Test2::V0;
 use Future::AsyncAwait;
+use Time::HiRes ();
 
 use lib 'lib';
 use PAGI::Test::Client;
@@ -182,11 +183,113 @@ subtest 'websocket receive timeout' => sub {
 
     my $ws = $client->websocket('/ws');
 
+    my $started = Time::HiRes::time();
     like dies { $ws->receive_text(0.5) },
         qr/Timeout waiting for WebSocket text message/,
         'receive_text times out';
+    ok(Time::HiRes::time() - $started >= 0.4, 'after its timeout, not at once');
 
     $ws->close;
+};
+
+subtest 'receive_text waits for a message sent after real I/O' => sub {
+    require Future::IO;
+    my $app = async sub {
+        my ($scope, $receive, $send) = @_;
+        my $event = await $receive->();
+        return unless $event->{type} eq 'websocket.connect';
+        await $send->({ type => 'websocket.accept' });
+        await Future::IO->sleep(0.2);
+        await $send->({ type => 'websocket.send', text => 'after sleep' });
+        while (1) {
+            my $msg = await $receive->();
+            last if $msg->{type} eq 'websocket.disconnect';
+        }
+    };
+    my $ws = PAGI::Test::Client->new(app => $app)->websocket('/ws');
+    is($ws->receive_text(2), 'after sleep', 'the message arrives');
+    $ws->close;
+};
+
+subtest 'receive gives up at once when no more data can arrive' => sub {
+    my $app = async sub {
+        my ($scope, $receive, $send) = @_;
+        my $event = await $receive->();
+        return unless $event->{type} eq 'websocket.connect';
+        await $send->({ type => 'websocket.accept' });
+        await $send->({ type => 'websocket.close', code => 1000 });
+        while (1) {
+            my $msg = await $receive->();
+            last if $msg->{type} eq 'websocket.disconnect';
+        }
+    };
+    my $ws = PAGI::Test::Client->new(app => $app)->websocket('/ws', close_mode => 'manual');
+    my $started = Time::HiRes::time();
+    like dies { $ws->receive_text(2) }, qr/Timeout waiting for WebSocket text message/,
+        'after the app\'s Close, nothing more is coming';
+    ok(Time::HiRes::time() - $started < 1, 'so it does not wait out the timeout');
+    $ws->close;
+    $ws->complete_close;
+};
+
+subtest 'a handler that awaits real I/O before accept connects' => sub {
+    require Future::IO;
+    my $app = async sub {
+        my ($scope, $receive, $send) = @_;
+        my $event = await $receive->();
+        return unless $event->{type} eq 'websocket.connect';
+        await Future::IO->sleep(0.1);
+        await $send->({ type => 'websocket.accept' });
+        await $send->({ type => 'websocket.send', text => 'hello' });
+        while (1) {
+            my $msg = await $receive->();
+            last if $msg->{type} eq 'websocket.disconnect';
+        }
+    };
+    my $ws = PAGI::Test::Client->new(app => $app)->websocket('/ws');
+    is($ws->receive_text(2), 'hello', 'the connection is accepted');
+    $ws->close;
+};
+
+subtest 'an app Close that arrives during a receive ends the wait' => sub {
+    require Future::IO;
+    my $app = async sub {
+        my ($scope, $receive, $send) = @_;
+        my $event = await $receive->();
+        return unless $event->{type} eq 'websocket.connect';
+        await $send->({ type => 'websocket.accept' });
+        await Future::IO->sleep(0.2);
+        await $send->({ type => 'websocket.close', code => 1000 });
+        while (1) {
+            my $msg = await $receive->();
+            last if $msg->{type} eq 'websocket.disconnect';
+        }
+    };
+    my $ws = PAGI::Test::Client->new(app => $app)->websocket('/ws', close_mode => 'manual');
+    my $started = Time::HiRes::time();
+    like dies { $ws->receive_text(1.5) }, qr/Timeout waiting for WebSocket text message/,
+        'no more data can arrive after the app\'s Close';
+    ok(Time::HiRes::time() - $started < 1, 'so the wait ends when the Close arrives');
+    $ws->close;
+    $ws->complete_close;
+};
+
+subtest 'a handshake that times out is abandoned' => sub {
+    require Future::IO;
+    local $PAGI::Test::_Drive::TIMEOUT = 0.2;
+    my $resumed = 0;
+    my $app = async sub {
+        my ($scope, $receive, $send) = @_;
+        my $event = await $receive->();
+        return unless $event->{type} eq 'websocket.connect';
+        await Future::IO->sleep(0.4);
+        $resumed = 1;
+        await $send->({ type => 'websocket.accept' });
+    };
+    like(dies { PAGI::Test::Client->new(app => $app)->websocket('/ws') },
+        qr/WebSocket handshake did not complete within 0\.2 seconds/, 'it says it timed out');
+    Future::IO->sleep(0.4)->get;    # drive the loop past the handler's wake-up
+    is($resumed, 0, 'and the handler does not resume later');
 };
 
 done_testing;

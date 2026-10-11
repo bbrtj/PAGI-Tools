@@ -39,6 +39,13 @@ PAGI::Middleware::Builder - DSL for composing PAGI middleware
 
 =head1 DESCRIPTION
 
+Builder is for applications that do not use L<PAGI::Compose>, and for those
+who know Plack::Builder. A Compose application names its middleware in
+Compose's C<middleware> list (or a Router's, Mount's or Route's) with
+C<middleware('Name', ...)>, and that is the primary way to apply middleware
+in PAGI-Tools; each bundled middleware's SYNOPSIS shows it. Underneath both,
+C<enable 'Name', %args> is C<< PAGI::Middleware::Name->new(%args)->wrap($app) >>.
+
 PAGI::Middleware::Builder provides a DSL for composing middleware into
 a PAGI application. It supports:
 

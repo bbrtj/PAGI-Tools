@@ -8,6 +8,7 @@ use lib 'lib';
 use PAGI::Middleware::ErrorHandler;
 use PAGI::ErrorContext qw(error_context);
 use PAGI::Request::BodyError;
+use PAGI::Exception::HTTP;
 use PAGI::Response qw(response);
 use PAGI::Utils qw(as_app_object invoke_app);
 use PAGI::Pages ();
@@ -22,6 +23,30 @@ my $loop = IO::Async::Loop->new;
     use overload q{""} => sub { "status $_[0]{s}" }, fallback => 1;
     sub new { bless { s => $_[1] }, $_[0] }
     sub status_code { $_[0]{s} }
+}
+
+# Claims a status and has a to_app that must never be used.
+{
+    package Local::FactWithApp;
+    sub new { bless {}, $_[0] }
+    sub status_code { 404 }
+    sub to_app { die "a fact's to_app was called\n" }
+}
+
+# A redirect page whose rendering fails.
+{
+    package Local::BrokenRedirect;
+    sub new { bless {}, $_[0] }
+    sub status { 302 }
+    sub to_app { sub { die "redirect broke\n" } }
+}
+
+# A page whose status method dies.
+{
+    package Local::BrokenPage;
+    sub new { bless {}, $_[0] }
+    sub status { die "status broke\n" }
+    sub to_app { die "a broken page's to_app was called\n" }
 }
 
 # Runs one request; returns (status, headers hashref, body, failure, warnings).
@@ -182,6 +207,104 @@ subtest 'an author ErrorHandler inside Compose answers once' => sub {
     local $SIG{__WARN__} = sub { push @warnings, @_ };
     my $res = PAGI::Test::Client->new(app => $app)->get('/boom');
     is [$res->status, $res->json], [500, { error => 'Internal Server Error' }], 'one response, the author\'s';
+};
+
+subtest 'PAGI::Exception::HTTP is a fact with a client message' => sub {
+    my $reported = 0;
+    my ($status, undef, $body, $failure) = run(
+        error => PAGI::Exception::HTTP->new(409, 'x'),
+        options => { on_error => sub { $reported++ } },
+    );
+    is [$status, $body, $failure, $reported], [409, 'x', undef, 1];
+};
+
+subtest 'PAGI::Exception::HTTP accepts only 400-599' => sub {
+    like dies { PAGI::Exception::HTTP->new(200) },
+        qr/PAGI::Exception::HTTP status must be an integer from 400 to 599/;
+};
+
+subtest 'a 5xx PAGI::Exception::HTTP shows its reason phrase, not its client message' => sub {
+    my $error = PAGI::Exception::HTTP->new(503, 'back in five minutes');
+    my ($status, undef, $body, $failure) = run(error => $error);
+    is [$status, $body], [503, 'Service Unavailable'];
+    is $failure, exact_ref($error), 're-raised for the server to log';
+};
+
+subtest 'PAGI::Exception::HTTP stringifies as status and text' => sub {
+    is '' . PAGI::Exception::HTTP->new(409, 'x'), '409 x';
+    is '' . PAGI::Exception::HTTP->new(404), '404 Not Found', 'the reason phrase without a message';
+};
+
+subtest 'a thrown 404 page answers as thrown under bare compose and is handled' => sub {
+    my $app = compose(routes => [route('/note' => sub {
+        die response('JSON', { error => 'no such note' }, status => 404);
+    })]);
+    my @warnings;
+    local $SIG{__WARN__} = sub { push @warnings, @_ };
+    my $res = PAGI::Test::Client->new(app => $app)->get('/note');
+    is [$res->status, $res->json, \@warnings], [404, { error => 'no such note' }, []],
+        'the thrown page, not re-raised';
+    my @reported;
+    my ($status, undef, $body, $failure) = run(
+        error => response('JSON', { error => 'no such note' }, status => 404),
+        options => { on_error => sub { push @reported, $_[0] } },
+    );
+    is [$status, $body, $failure, scalar @reported], [404, '{"error":"no such note"}', undef, 1],
+        'on_error is called';
+};
+
+subtest 'a thrown redirect is an early answer' => sub {
+    my ($reported, $handled) = (0, 0);
+    my ($status, $h, undef, $failure) = run(
+        error => response('Redirect', '/login'),
+        options => {
+            on_error => sub { $reported++ },
+            handler  => sub { $handled++; response('Text', 'handled') },
+        },
+    );
+    is [$status, $h->{location}, $failure, $reported, $handled], [302, '/login', undef, 0, 0];
+};
+
+subtest 'a value with status_code and to_app is a fact; its to_app is never called' => sub {
+    my ($status, undef, $body) = run(error => Local::FactWithApp->new);
+    is [$status, $body], [404, 'Not Found'];
+};
+
+subtest 'a thrown 503 page answers as thrown and is re-raised' => sub {
+    my $page = response('Text', 'down for maintenance', status => 503);
+    my ($status, undef, $body, $failure) = run(error => $page);
+    is [$status, $body], [503, 'down for maintenance'];
+    is $failure, exact_ref($page), 're-raised for the server to log';
+};
+
+subtest 'a thrown Response without a status is a 200 early answer' => sub {
+    my $reported = 0;
+    my ($status, undef, $body, $failure) = run(
+        error => response('JSON', { ok => 1 }),
+        options => { on_error => sub { $reported++ } },
+    );
+    is [$status, $body, $failure, $reported], [200, '{"ok":1}', undef, 0];
+};
+
+subtest 'a page whose status method dies is a 500, and the page is re-raised' => sub {
+    my $page = Local::BrokenPage->new;
+    my ($status, undef, $body, $failure, $warnings) = run(error => $page);
+    is [$status, $body], [500, 'Internal Server Error'];
+    is $failure, exact_ref($page);
+    like $warnings->[0], qr/rejected a thrown page's status/, 'diagnosed (P-4)';
+};
+
+subtest 'a thrown redirect that fails to render goes through the error pipeline' => sub {
+    my (@reported, $handled);
+    my ($status, undef, $body) = run(
+        error => Local::BrokenRedirect->new,
+        options => {
+            on_error => sub { push @reported, $_[0] },
+            handler  => sub { $handled++; response('Text', 'handled') },
+        },
+    );
+    is [$status, $body, $handled, \@reported], [500, 'handled', 1, ["redirect broke\n"]],
+        'on_error and the handler see the render failure';
 };
 
 done_testing;

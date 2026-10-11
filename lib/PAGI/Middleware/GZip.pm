@@ -15,14 +15,27 @@ PAGI::Middleware::GZip - Response compression middleware
 
 =head1 SYNOPSIS
 
-    use PAGI::Middleware::Builder;
+    use PAGI::Tools qw(compose middleware response route);
 
-    my $app = builder {
-        enable 'GZip',
-            min_size => 1024,
-            mime_types => ['text/*', 'application/json'];
-        $my_app;
-    };
+    my $app = compose(
+        routes     => [route('/' => sub { response('Text', 'hello') })],
+        middleware => [
+            middleware('GZip', min_size => 1024, mime_types => ['text/*', 'application/json']),
+        ],
+    );
+
+C<middleware('GZip', ...)> also goes in a Router's, Mount's or Route's
+C<middleware> list. It constructs the middleware and wraps the application
+inside it, which you can do yourself:
+
+    use PAGI::Middleware::GZip;
+
+    my $wrapped = PAGI::Middleware::GZip->new(
+        min_size => 1024, mime_types => ['text/*', 'application/json'],
+    )->wrap($native_app);
+
+Without Compose, L<PAGI::Middleware::Builder> composes middleware the way
+Plack::Builder does.
 
 =head1 DESCRIPTION
 

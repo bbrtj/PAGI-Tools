@@ -2,21 +2,33 @@
 #
 # Background Tasks Example
 #
-# Demonstrates different patterns for running work after sending a response.
+# Work the client does not wait for, three ways:
+#   1. Start now      - begin async work in the handler and hand its Future to
+#                       a PAGI::FutureOwner; it runs alongside the response.
+#   2. After response - register it on the connection's on_complete; it starts
+#                       once the response has been delivered.
+#   3. Quick sync     - tiny bookkeeping done inline before returning.
 #
-# IMPORTANT: Understand the difference between:
-#   1. Async I/O (non-blocking) - hand the Future to a PAGI::FutureOwner
-#   2. Blocking/CPU work - Use IO::Async::Function (runs in subprocess)
+# The owner is built at lifespan startup and lives in the application state,
+# like any other long-lived thing a handler reaches for; shutdown waits for
+# the work it still holds. An owner is not a queue: the work starts the
+# moment the async sub is called, and adopt only holds its Future until it
+# settles, reports a failure, and lets shutdown wait.
 #
-# Every route is an ordinary handler: it starts its background work, then
-# returns its Response.
+# What this is not: durable. This is best-effort, in-process work, per
+# worker. A crash, restart or deploy loses it; shutdown waits only as long
+# as the server's shutdown timeout allows; there is no concurrency cap and
+# no retry. Work that must happen belongs in a durable job queue (Minion in
+# Perl; Celery, RQ or Sidekiq elsewhere; Starlette's BackgroundTasks has the
+# same limits as this file), and the handler only enqueues it.
+#
+# Blocking or CPU-heavy work belongs in another process; see
+# examples/process-streaming for a subprocess driven through Future::IO.
 #
 # Run: pagi-server --app examples/background-tasks/app.pl --port 5000
 #
 # Test:
-#   curl http://localhost:5000/async      # Fire-and-forget async I/O
-#   curl http://localhost:5000/blocking   # CPU work in subprocess
-#
+#   curl http://localhost:5000/async
 #   curl -X POST http://localhost:5000/signup -d '{"email":"test@example.com"}'
 #
 
@@ -25,36 +37,14 @@ use warnings;
 use Future::AsyncAwait;
 use Future::IO;    # pagi-server binds the implementation
 
-use PAGI::Compose qw(compose);
 use PAGI::FutureOwner;
-use PAGI::Routing qw(route websocket);
-use PAGI::Response qw(response);
+use PAGI::Tools qw(compose response route websocket);
 
-# Work the client does not wait for belongs to $background, which reports
-# failures and lets shutdown wait for it.
-my $background = PAGI::FutureOwner->new(
-    on_failure => sub { warn "Background task failed: $_[0]" },
-);
-
-#---------------------------------------------------------
-# PATTERN 1: Async I/O (Non-Blocking)
-#
-# For network calls, database queries, file I/O that use
-# async libraries. These yield control back to the event
-# loop while waiting, so they don't block other requests.
-#
-# Hand each one to $background rather than dropping it.
-#---------------------------------------------------------
-
-# Simulated async email API (would use async HTTP client in practice)
+# Simulated async email API (would use an async HTTP client in practice)
 async sub send_welcome_email {
     my ($email) = @_;
     warn "[async] Sending welcome email to $email...\n";
-
-    # This is NON-BLOCKING - yields to event loop while "waiting"
-    # In real code: await $http_client->post_async($email_api, ...)
     await Future::IO->sleep(2);
-
     warn "[async] Email sent to $email!\n";
 }
 
@@ -66,118 +56,44 @@ async sub log_to_analytics {
     warn "[async] Analytics logged!\n";
 }
 
-#---------------------------------------------------------
-# PATTERN 2: Blocking/CPU-Bound Work
-#
-# For CPU-intensive computation, synchronous libraries,
-# or any code that would block. Run in a subprocess via
-# IO::Async::Function to avoid blocking the event loop.
-#---------------------------------------------------------
-
-my $cpu_worker;
-
-sub get_cpu_worker {
-    return $cpu_worker if $cpu_worker;
-
-    require IO::Async::Function;
-    $cpu_worker = IO::Async::Function->new(
-        code => sub {
-            my ($task_name, $duration) = @_;
-            warn "[subprocess $$] Starting CPU task: $task_name\n";
-
-            # This sleep (or any blocking work) runs in a CHILD PROCESS
-            # so it doesn't block the main event loop
-            sleep $duration;
-
-            warn "[subprocess $$] Completed: $task_name\n";
-            return "Result of $task_name";
-        },
-    );
-
-    IO::Async::Loop->new->add($cpu_worker);
-    return $cpu_worker;
-}
-
-# Run blocking work in subprocess (fire-and-forget)
-sub run_blocking_task {
-    my ($task_name, $duration) = @_;
-    my $f = get_cpu_worker()->call(args => [$task_name, $duration]);
-    $f->on_done(sub {
-        my ($result) = @_;
-        warn "[main] Subprocess returned: $result\n";
-    });
-    $background->adopt($f);
-}
-
-#---------------------------------------------------------
-# PATTERN 3: Quick Sync Work
-#
-# For very fast synchronous bookkeeping. It runs in the
-# handler, just before the Response is returned, so it
-# delays that response by however long it takes.
-#
-# Must be FAST (<10ms) - blocking calls block ALL requests!
-#---------------------------------------------------------
-
+# PATTERN 3: quick sync work. It runs before the response is returned, so it
+# must be fast: a blocking call here blocks every request.
 sub quick_sync_task {
     my ($message) = @_;
     warn "[sync] Quick task: $message\n";
-    # Only do FAST things here - no sleep, no blocking I/O!
 }
 
-#---------------------------------------------------------
-# Handlers
-#
-# Each starts its background work and returns its Response. Background work is
-# asynchronous or runs in a subprocess, so the response is not held up by it.
-#---------------------------------------------------------
-
-# GOOD: Fire-and-forget async I/O
+# PATTERN 1: start now. The work runs alongside the response.
 sub async_tasks {
     my ($request) = @_;
+    my $background = $request->state->get('background');
 
-    # Not awaited: $background owns it.
-    $background->adopt(send_welcome_email('user@example.com'));
     $background->adopt(log_to_analytics('page_view', { path => '/' }));
-
     quick_sync_task("Logging request");
 
     return response('JSON', {
         status  => 'ok',
-        message => 'Response sent! Async tasks running in background.',
+        message => 'Response sent! Analytics running alongside it.',
     });
 }
 
-# GOOD: CPU-bound work in subprocess
-sub blocking_tasks {
-    my ($request) = @_;
-
-    # Fire-and-forget: runs in child processes, doesn't block the event loop
-    run_blocking_task("heavy_computation", 3);
-    run_blocking_task("image_processing", 2);
-
-    return response('JSON', {
-        status  => 'ok',
-        message => 'Response sent! Heavy computation running in subprocess.',
-    });
-}
-
-# Real-world example: user signup with background tasks
+# PATTERN 2: after the response. The email starts once the client has been
+# sent its 201; a client that disconnects first gets no email. on_complete
+# means "delivered", whatever the status, so it is registered just before
+# returning, after anything that could fail.
 async sub signup {
     my ($request) = @_;
+    my $background = $request->state->get('background');
 
     my $data = await $request->json;
     my $email = $data->{email} // 'unknown@example.com';
 
-    # The user does not wait for the email: it is sent in the background.
-    $background->adopt(send_welcome_email($email));
     $background->adopt(log_to_analytics('signup', { email => $email }));
-
     quick_sync_task("New signup: $email");
 
-    # For CPU-intensive work (e.g., generating PDF):
-    # run_blocking_task("generate_welcome_pdf", 5);
-
+    $request->connection->on_complete(sub {
+        $background->adopt(send_welcome_email($email));
+    });
     return response('JSON', {
         status  => 'created',
         message => "Account created! Check $email for welcome email.",
@@ -187,6 +103,7 @@ async sub signup {
 # WebSocket with background processing
 async sub messages {
     my ($ws) = @_;
+    my $background = $ws->state->get('background');
 
     await $ws->accept;
     await $ws->send_text('Connected! Send a message.');
@@ -194,20 +111,17 @@ async sub messages {
     await $ws->each_text(async sub {
         my ($text) = @_;
 
-        # The reply is part of the conversation, so it is awaited.
+        # The reply is best-effort: a client that has already gone has
+        # nobody to tell, and that is not an error.
         await $ws->try_send_text("Got: $text");
 
         # Background work is not awaited: $background owns it.
         $background->adopt(log_to_analytics('ws_message', { text => $text }));
-
-        # For CPU-intensive processing (e.g., NLP, image analysis):
-        # run_blocking_task("analyze_message", 1);
     });
 }
 
 compose(routes => [
 
-# Index page
 route('/' => sub {
     return response('HTML', <<'HTML');
 <!DOCTYPE html>
@@ -219,11 +133,11 @@ route('/' => sub {
 
 <h2>Endpoints</h2>
 <ul>
-  <li><a href="/async">/async</a> - Fire-and-forget async I/O (non-blocking)</li>
-  <li><a href="/blocking">/blocking</a> - CPU work in subprocess (IO::Async::Function)</li>
+  <li><a href="/async">/async</a> - async work started now, alongside the response</li>
 </ul>
 
 <h2>POST /signup</h2>
+<p>The welcome email starts after the response has been delivered.</p>
 <form id="signup">
   <input type="email" name="email" placeholder="email@example.com" required>
   <button type="submit">Sign Up</button>
@@ -247,11 +161,21 @@ document.getElementById('signup').onsubmit = async (e) => {
 HTML
 }),
 
-route('/async'    => \&async_tasks),
-route('/blocking' => \&blocking_tasks),
-route('/signup'   => \&signup, methods => ['POST']),
-websocket('/ws'   => \&messages),
+route('/async'  => \&async_tasks),
+route('/signup' => \&signup, methods => ['POST']),
+websocket('/ws' => \&messages),
 ], lifespan => {
+    # Work the client does not wait for belongs to this owner, which
+    # reports failures and lets shutdown wait for it.
+    startup => sub {
+        my ($state) = @_;
+        $state->{background} = PAGI::FutureOwner->new(
+            on_failure => sub { warn "Background task failed: $_[0]" },
+        );
+    },
     # Work still running finishes before the process exits.
-    shutdown => async sub { await $background->settled },
+    shutdown => async sub {
+        my ($state) = @_;
+        await $state->{background}->settled;
+    },
 });

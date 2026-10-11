@@ -2,8 +2,50 @@ package PAGI::Tools;
 
 use strict;
 use warnings;
+use Exporter 'import';
+use PAGI::Compose ();
+use PAGI::ContentNegotiation ();
+use PAGI::ErrorContext ();
+use PAGI::Response ();
+use PAGI::Routing ();
+use PAGI::Routing::URL ();
+use PAGI::Session ();
+use PAGI::Stash ();
+use PAGI::State ();
+use PAGI::Utils::Middleware ();
 
 our $VERSION = '0.003000';
+
+# Every name is the source module's own sub, aliased rather than wrapped:
+# route, websocket, sse and mount resolve &Name constraint providers in the
+# package that called them, and an alias keeps that the importing package.
+my @SOURCES = (
+    'PAGI::Compose'           => [qw(compose)],
+    'PAGI::Response'          => [qw(response)],
+    'PAGI::Routing'           => [qw(router route websocket sse mount middleware request_response)],
+    'PAGI::Routing::URL'      => [qw(url path_for url_for)],
+    'PAGI::ErrorContext'      => [qw(error_context)],
+    'PAGI::State'             => [qw(app_state)],
+    'PAGI::Stash'             => [qw(stash)],
+    'PAGI::Session'           => [qw(session)],
+    'PAGI::ContentNegotiation' => [qw(content_negotiation negotiated_type respond_to)],
+    'PAGI::Utils::Middleware' => [qw(clone_scope wrap_send wrap_receive wrap_response_headers)],
+);
+
+our @EXPORT_OK;
+for (my $i = 0; $i < @SOURCES; $i += 2) {
+    my ($module, $names) = @SOURCES[$i, $i + 1];
+    for my $name (@$names) {
+        no strict 'refs';
+        *{"PAGI::Tools::$name"} = \&{"${module}::$name"};
+        push @EXPORT_OK, $name;
+    }
+}
+our %EXPORT_TAGS = (
+    routes => [qw(router route websocket sse mount)],
+    urls   => [qw(url path_for url_for)],
+    all    => [@EXPORT_OK],
+);
 
 1;
 
@@ -25,9 +67,7 @@ in-process testing without hiding that protocol boundary.
 For an ordinary HTTP application:
 
     use Future::AsyncAwait;
-    use PAGI::Compose qw(compose);
-    use PAGI::Response qw(response);
-    use PAGI::Routing qw(route);
+    use PAGI::Tools qw(compose response route);
 
     async sub home {
         my ($request) = @_;
@@ -94,9 +134,7 @@ An HTTP handler gets a L<PAGI::Request> and returns a Response; a WebSocket
 handler gets a L<PAGI::WebSocket>; an SSE handler gets a L<PAGI::SSE>:
 
     use Future::AsyncAwait;
-    use PAGI::Compose qw(compose);
-    use PAGI::Response qw(response);
-    use PAGI::Routing qw(route websocket);
+    use PAGI::Tools qw(compose response route websocket);
 
     async sub user {
         my ($request) = @_;
@@ -137,6 +175,70 @@ An unmatched path answers 404, and a matched path with the wrong method
 answers 405 with an C<Allow> header. HEAD, disconnects and backpressure are
 handled for you.
 
+=head1 IMPORTS
+
+C<PAGI::Tools> exports the toolkit's everyday functions by name. Nothing is
+exported by default, and an unknown name dies at compile time:
+
+    use PAGI::Tools qw(compose response route path_for);
+    use PAGI::Tools qw(compose :routes);
+
+Each name is the function of the module listed here, re-exported as the same
+sub rather than wrapped, so it behaves exactly as when imported from that
+module. In particular C<route>, C<websocket>, C<sse> and C<mount> resolve a
+C<{name:&Provider}> constraint provider in the package that called them: the
+package that imported them from C<PAGI::Tools>.
+
+    Name                                          From
+    compose                                       PAGI::Compose
+    response                                      PAGI::Response
+    router route websocket sse mount
+      middleware request_response                 PAGI::Routing
+    url path_for url_for                          PAGI::Routing::URL
+    error_context                                 PAGI::ErrorContext
+    app_state                                     PAGI::State
+    stash                                         PAGI::Stash
+    session                                       PAGI::Session
+    content_negotiation negotiated_type
+      respond_to                                  PAGI::ContentNegotiation
+    clone_scope wrap_send wrap_receive
+      wrap_response_headers                       PAGI::Utils::Middleware
+
+=over 4
+
+=item * C<:routes> exports C<router>, C<route>, C<websocket>, C<sse> and
+C<mount>, as L<PAGI::Routing>'s C<:routes> does.
+
+=item * C<:urls> exports C<url>, C<path_for> and C<url_for>.
+
+=item * C<:all> exports every name above. Prefer naming what you use: a
+reader then sees where each function comes from.
+
+=back
+
+Loading C<PAGI::Tools> loads those modules. Importing from each module
+directly still works, and each module documents its own exports. Not exported
+here: L<PAGI::Pages>' factories (generic names such as C<not_found>),
+L<PAGI::Utils> (plumbing), L<PAGI::Middleware::Builder> (its own DSL, whose
+default export C<mount> collides with this C<mount>; import Builder
+selectively, as L<PAGI::Routing/IMPORTS> shows), and the C<PAGI::Exception::*>
+classes, which are classes, not functions. C<use Future::AsyncAwait;> stays
+your own line: C<PAGI::Tools> enables no pragmas.
+
+Route constraints read best in their explicit form, which shows where a type
+comes from:
+
+    use Types::Standard qw(Int);
+
+    route('/notes/{id}' => \&show, constraints => { id => Int });
+
+The compact form names a capitalised provider function in the calling
+package, here the same C<Int>:
+
+    route('/notes/{id:&Int}' => \&show);
+
+See L<PAGI::Routing/"Inline constraint providers">.
+
 =head1 HOW THE PIECES FIT
 
 L<PAGI::Routing> is the one way to build routes. Five pieces, each with one
@@ -162,7 +264,7 @@ want a class; they do not build routes. A class that owns a group of routes
 returns a Router instead, and the parent mounts it:
 
     package MyApp::People;
-    use PAGI::Routing qw(route router);
+    use PAGI::Tools qw(route router);
 
     sub routing {
         my ($self) = @_;

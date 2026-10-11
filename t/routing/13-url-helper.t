@@ -30,7 +30,7 @@ use PAGI::Routing::URL qw(url path_for url_for);
 
 {
     package Local::URL::All;
-    PAGI::Routing::URL->import(':ALL');
+    PAGI::Routing::URL->import(':all');
 }
 
 {
@@ -115,7 +115,7 @@ sub _response_body {
         grep { ($_->{type} // '') eq 'http.response.body' } @$events;
 }
 
-subtest 'exports are opt-in and uppercase-only' => sub {
+subtest 'exports are opt-in and lowercase-only' => sub {
     ok(!Local::URL::NoDefault->can('url'), 'url is not exported by default');
     ok(!Local::URL::NoDefault->can('path_for'),
         'path_for is not exported by default');
@@ -125,17 +125,17 @@ subtest 'exports are opt-in and uppercase-only' => sub {
     ok(Local::URL::Named->can('url'), 'url is available by name');
     ok(Local::URL::Named->can('path_for'), 'path_for is available by name');
     ok(Local::URL::Named->can('url_for'), 'url_for is available by name');
-    ok(Local::URL::All->can('url'), 'uppercase :ALL exports url');
-    ok(Local::URL::All->can('path_for'), 'uppercase :ALL exports path_for');
-    ok(Local::URL::All->can('url_for'), 'uppercase :ALL exports url_for');
+    ok(Local::URL::All->can('url'), 'lowercase :all exports url');
+    ok(Local::URL::All->can('path_for'), 'lowercase :all exports path_for');
+    ok(Local::URL::All->can('url_for'), 'lowercase :all exports url_for');
 
-    my $lowercase_error;
+    my $uppercase_error;
     {
         local $SIG{__WARN__} = sub { };
-        $lowercase_error = dies { PAGI::Routing::URL->import(':all') };
+        $uppercase_error = dies { PAGI::Routing::URL->import(':ALL') };
     }
-    like($lowercase_error, qr/"?:all"? is not defined|Can't continue/i,
-        'lowercase :all is rejected');
+    like($uppercase_error, qr/"?:?ALL"? is not defined|Can't continue/i,
+        'uppercase :ALL is rejected');
 };
 
 subtest 'object and functional forms keep one-source construction strict' => sub {

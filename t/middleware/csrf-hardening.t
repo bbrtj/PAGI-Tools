@@ -200,8 +200,9 @@ subtest 'session and httponly do not combine' => sub {
 
 subtest 'session => 1 with the real Session middleware' => sub {
     require PAGI::Middleware::Session;
+    require PAGI::Middleware::Session::Store::Memory;
     require PAGI::Test::Client;
-    my $app = PAGI::Middleware::Session->new->wrap(
+    my $app = PAGI::Middleware::Session->new(store => PAGI::Middleware::Session::Store::Memory->new)->wrap(
         PAGI::Middleware::CSRF->new(session => 1)->wrap(async sub {
             my ($scope, $receive, $send) = @_;
             await $send->({ type => 'http.response.start', status => 200,
@@ -231,9 +232,10 @@ subtest 'session => 1 replaces the token when the session is regenerated' => sub
 
 subtest 'a token known before login is useless after it' => sub {
     require PAGI::Middleware::Session;
+    require PAGI::Middleware::Session::Store::Memory;
     require PAGI::Session;
     require PAGI::Test::Client;
-    my $app = PAGI::Middleware::Session->new->wrap(
+    my $app = PAGI::Middleware::Session->new(store => PAGI::Middleware::Session::Store::Memory->new)->wrap(
         PAGI::Middleware::CSRF->new(session => 1)->wrap(async sub {
             my ($scope, $receive, $send) = @_;
             my $session = PAGI::Session->new($scope);

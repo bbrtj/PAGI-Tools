@@ -24,17 +24,32 @@ PAGI::Middleware::ErrorHandler - Exception handling middleware
 
 =head1 SYNOPSIS
 
-    use PAGI::Middleware::Builder;
+    use PAGI::Tools qw(compose middleware response route);
 
-    my $app = builder {
-        enable 'ErrorHandler',
-            development => 1,
-            on_error    => sub  {
-                my ($error, $scope) = @_;
-                $tracker->capture($error, path => $scope->{path});
-            };
-        $my_app;
-    };
+    my $app = compose(
+        routes     => [route('/' => sub { response('Text', 'hello') })],
+        middleware => [
+            middleware('ErrorHandler',
+                development => 1,
+                on_error    => sub {
+                    my ($error, $scope) = @_;
+                    warn "error at $scope->{path}: $error";
+                },
+            ),
+        ],
+    );
+
+C<middleware('ErrorHandler', ...)> also goes in a Router's, Mount's or
+Route's C<middleware> list. It constructs the middleware and wraps the
+application inside it, which you can do yourself:
+
+    use PAGI::Middleware::ErrorHandler;
+
+    my $wrapped = PAGI::Middleware::ErrorHandler->new(development => 1)
+        ->wrap($native_app);
+
+Without Compose, L<PAGI::Middleware::Builder> composes middleware the way
+Plack::Builder does.
 
 =head1 DESCRIPTION
 
@@ -43,6 +58,11 @@ application and converts them to HTTP error responses. Without a C<handler>,
 the answer is plain text -- the status's reason phrase, or a client error's
 C<client_message> -- with C<Cache-Control: no-store>, and in development the
 error's text after a blank line (see L<PAGI::ErrorContext/default>).
+
+A thrown page -- a value with C<to_app> and no C<status_code>, such as a
+thrown Response -- whose status is below 400 is not an error: it is sent as
+it is. That is how to throw a redirect: C<die response('Redirect', '/login')>.
+See L</EXCEPTION HANDLING>.
 
 ErrorHandler converts exceptions into responses; it does not report them.
 After the response is complete, the original exception is re-raised so the
@@ -53,6 +73,12 @@ error. If the handler dies or answers nothing, a last-resort 500 is sent, the
 handler's failure is warned, and the original error is re-raised. Use C<on_error> for
 reporting of your own, such as an error tracker; see
 L<PAGI::Tools::Cookbook/Who reports an application error>.
+
+ErrorHandler sees only what is thrown. A path no route matches, or a method
+a matched path does not allow, is not an error: the router answers it with a
+plain-text 404 or 405, and the handler never runs. The Router's (or
+Compose's) C<http_default> sets the 404; a 405 is changed by a middleware
+that rewrites it (see L<PAGI::Routing>).
 
 =head1 CONFIGURATION
 
@@ -178,6 +204,21 @@ sub wrap {
         return if $completed;
         my $error = $@;
 
+        # A thrown page with a status below 400 (a redirect, say) is an
+        # answer, not an error: it is sent as it is and nothing is reported.
+        # If sending it fails, that failure is the error from here on.
+        if (!$started && PAGI::ErrorContext::_is_page($error)) {
+            my $page_status = PAGI::ErrorContext::_page_status($error);
+            if (defined($page_status) && $page_status < 400) {
+                my $answered = eval {
+                    await PAGI::Utils::invoke_app($error, $scope, $receive, $wrapped_send);
+                    1;
+                };
+                return if $answered;
+                $error = $@;
+            }
+        }
+
         await $self->_report_error($error, $scope);
         _reraise($error) if $started;
 
@@ -295,7 +336,17 @@ sub _status_for_error {
         $self->_diagnose_rejected_status('status_code accessor failed');
         return 500;
     }
-    return $self->{status} unless $has_status;
+    unless ($has_status) {
+        return $self->{status} unless PAGI::ErrorContext::_is_page($error);
+        # A page claims its own status; without a usable one it is a 500.
+        my $page_status = PAGI::ErrorContext::_page_status($error);
+        return $page_status if defined $page_status;
+        $self->_diagnose_rejected_status(
+            'it is missing or not an integer from 100 to 599',
+            "a thrown page's status",
+        );
+        return 500;
+    }
     unless (defined($claimed)) {
         $self->_diagnose_rejected_status('undefined result');
         return 500;
@@ -322,10 +373,13 @@ sub _status_for_error {
     return $numeric;
 }
 
+# $subject names what was rejected: an exception's status_code claim unless
+# given, or a thrown page's own status.
 sub _diagnose_rejected_status {
-    my ($self, $reason) = @_;
+    my ($self, $reason, $subject) = @_;
+    $subject //= 'exception status_code claim';
     eval {
-        warn "PAGI ErrorHandler rejected exception status_code claim: $reason\n";
+        warn "PAGI ErrorHandler rejected $subject: $reason\n";
         1;
     };
     return;
@@ -423,23 +477,55 @@ boundary if author policy itself fails.
 
 =head1 EXCEPTION HANDLING
 
-The middleware supports exception objects with a C<status_code> method. The
-claim is called exception-safely and kept when it is an integer from 400 to
-599 (and, without a handler, not one of the statuses that need a field the
-built-in answer lacks; see C<status>). Throwing, Future-valued,
-reference-valued, malformed and out-of-range claims fall back to 500 without
-replacing the original exception:
+Return a response; throwing is the escape hatch for code far from the
+handler. ErrorHandler reads a thrown value by what it can do, never by its
+class:
+
+=over 4
+
+=item * B<A value with C<status_code> is an HTTP error.> The claim is called
+exception-safely and kept when it is an integer from 400 to 599 (and, without
+a handler, not one of the statuses that need a field the built-in answer
+lacks; see C<status>). Throwing, Future-valued, reference-valued, malformed
+and out-of-range claims fall back to 500 with a diagnostic, without replacing
+the original exception. The built-in answer shows its C<client_message> for
+a 4xx. Its own C<to_app>, if it has one, is never called.
+L<PAGI::Exception::HTTP> is the class PAGI-Tools ships:
+
+    die PAGI::Exception::HTTP->new(404, 'Resource not found');
+
+=item * B<A value with no C<status_code> but a C<to_app> is a page>, such as a
+thrown L<PAGI::Response>. Its own C<status> decides. Below 400 the page is
+sent as it is, with no C<on_error>, no handler and nothing re-raised: a
+thrown redirect. If sending it fails, that failure is handled like any other
+error. From 400 to 599 it is an error like any other: C<on_error>
+is called, the handler sees it, and C<< $error->default >> is the page
+itself, so without a handler the page is the answer. A page whose C<status>
+is missing, dies, or is not 100-599 is answered with the built-in 500. A
+Response that set no status has status 200, so throwing one sends it as a
+200.
+
+=item * B<Anything else> is answered with the C<status> option (500).
+
+=back
+
+Writing your own HTTP error class needs only a C<status_code> method, and
+optionally C<client_message>:
 
     package My::Exception;
     sub new { bless { status => $_[1], message => $_[2] }, $_[0] }
     sub status_code { $_[0]->{status} }
+    sub client_message { $_[0]->{message} }
 
-    # In app:
-    die My::Exception->new(404, 'Resource not found');
+Exception classes written for Plack, such as L<HTTP::Exception> (which uses
+C<code>) or ones relying on L<Plack::Middleware::HTTPExceptions>' C<as_psgi>
+and C<location>, probably will not work as intended: they become a 500 unless
+they implement C<status_code>, and their PSGI rendering is never used.
 
 Whether the exception is re-raised follows the status sent: a 4xx is a
 handled outcome; 500 or above, including a claim that fell back to 500, is a
-server error and is re-raised after the response.
+server error and is re-raised after the response. An early answer is never
+re-raised.
 
 An exception object whose boolean or string overload throws cannot be carried
 by a failed Future. After the response, such an exception is re-raised as the

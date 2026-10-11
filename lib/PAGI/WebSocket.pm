@@ -92,6 +92,7 @@ sub disconnect_detail {
 
 # Scope property accessors
 sub scope        { shift->{scope} }
+sub connection   { shift->{scope}{'pagi.connection'} }
 sub path         { shift->{scope}{path} }
 sub raw_path      { PAGI::Utils::Scope::raw_path(shift->{scope}) }
 sub request_uri   { PAGI::Utils::Scope::request_uri(shift->{scope}) }
@@ -116,7 +117,7 @@ sub has_state {
 sub state {
     my $self = shift;
     require PAGI::State;
-    return PAGI::State->new($self);
+    return PAGI::State->new($self) // PAGI::State->_without_state;
 }
 
 # Path parameter accessors - captured from URL path by router
@@ -192,15 +193,15 @@ sub raw_query_params {
 }
 
 # Shortcut for single query param
-sub query {
+sub query_param {
     my ($self, $name, %opts) = @_;
     return $self->query_params(%opts)->get($name);
 }
 
 # Raw single query param
-sub raw_query {
+sub raw_query_param {
     my ($self, $name) = @_;
-    return $self->query($name, raw => 1);
+    return $self->query_param($name, raw => 1);
 }
 
 # Single header lookup (case-insensitive, returns last value)
@@ -293,9 +294,35 @@ sub _set_state {
 # Register callback to run on disconnect/close
 sub on_close {
     my ($self, $callback) = @_;
-    croak 'Cannot register on_close after cleanup begins' if $self->{_close_callbacks_ran};
+    # Once the connection has ended, a callback runs now, after any still
+    # running, as the spec's on_end does.
+    return $self->_run_late_close_callback($callback) if $self->{_close_callbacks_ran};
     push @{$self->{_on_close}}, $callback;
     return $self;
+}
+
+sub _run_late_close_callback {
+    my ($self, $callback) = @_;
+    $self->{_close_chain} = $self->{_owner}->adopt(
+        $self->_late_close_worker($self->{_close_chain}, $callback));
+    return $self;
+}
+
+# A late callback's failure fails finished while the handler can still see
+# it; once finished has resolved there is nothing left to fail, so it warns.
+async sub _late_close_worker {
+    my ($self, $previous, $callback) = @_;
+    # The callbacks before it report their own failures.
+    eval { await $previous->without_cancel };
+    my $ok = eval {
+        my $result = $callback->($self->close_code, $self->close_reason, $self->disconnect_detail);
+        await $result if blessed($result) && $result->isa('Future');
+        1;
+    };
+    return if $ok;
+    die $@ unless $self->{_finished};
+    warn ref($self) . " on_close callback failed after the handler finished: $@";
+    return;
 }
 
 # Internal: run all on_close callbacks exactly once, as work the helper owns
@@ -311,6 +338,7 @@ sub _start_close_callbacks {
     $self->{_close_callbacks_ran} = 1;
     my $completion = $self->{_cleanup_future};
     my $worker = $self->{_owner}->adopt($self->_close_callbacks_worker);
+    $self->{_close_chain} = $worker;
     # The cleanup Future means the callbacks have run; a callback's failure
     # is reported once, through finished.
     $worker->on_ready(sub { $completion->done unless $completion->is_ready });
@@ -344,7 +372,10 @@ async sub finished {
     # A scope never accepted (or started) ends only when the application
     # returns, so waiting for its end would wait for the caller itself.
     await $self->{_ended}->without_cancel if $self->_ends_without_application;
-    await $self->{_owner}->settled;
+    my $settled = eval { await $self->{_owner}->settled; 1 };
+    my $error = $@;
+    $self->{_finished} = 1;
+    die $error unless $settled;
     return $self;
 }
 
@@ -559,7 +590,7 @@ sub try_send_text { my $self = shift; return $self->_keep($self->_try_send_text(
 
 async sub _try_send_text {
     my ($self, $text) = @_;
-    return 0 if $self->_response_claimed_before_start || $self->is_closed || $self->connection_state eq 'closing';
+    return 0 if $self->_response_claimed_before_start || !$self->is_connected;
 
     eval {
         await PAGI::Common::send_in_order($self, {
@@ -568,7 +599,7 @@ async sub _try_send_text {
         });
     };
     # A failed send is not a disconnect. A send after the app's OWN close is
-    # already turned away above via is_closed; a send after the PEER already
+    # already turned away above; a send after the PEER already
     # closed is a tolerated no-op per spec (dropped, not delivered, but does
     # not fail the Future), so neither case reaches here as an error. This
     # eval only catches a genuine send failure, which per the try_* contract
@@ -582,7 +613,7 @@ sub try_send_bytes { my $self = shift; return $self->_keep($self->_try_send_byte
 
 async sub _try_send_bytes {
     my ($self, $bytes) = @_;
-    return 0 if $self->_response_claimed_before_start || $self->is_closed || $self->connection_state eq 'closing';
+    return 0 if $self->_response_claimed_before_start || !$self->is_connected;
 
     eval {
         await PAGI::Common::send_in_order($self, {
@@ -591,7 +622,7 @@ async sub _try_send_bytes {
         });
     };
     # A failed send is not a disconnect. A send after the app's OWN close is
-    # already turned away above via is_closed; a send after the PEER already
+    # already turned away above; a send after the PEER already
     # closed is a tolerated no-op per spec (dropped, not delivered, but does
     # not fail the Future), so neither case reaches here as an error. This
     # eval only catches a genuine send failure, which per the try_* contract
@@ -605,7 +636,7 @@ sub try_send_json { my $self = shift; return $self->_keep($self->_try_send_json(
 
 async sub _try_send_json {
     my ($self, $data) = @_;
-    return 0 if $self->_response_claimed_before_start || $self->is_closed || $self->connection_state eq 'closing';
+    return 0 if $self->_response_claimed_before_start || !$self->is_connected;
 
     my $json = JSON::MaybeXS::encode_json($data);
     eval {
@@ -615,7 +646,7 @@ async sub _try_send_json {
         });
     };
     # A failed send is not a disconnect. A send after the app's OWN close is
-    # already turned away above via is_closed; a send after the PEER already
+    # already turned away above; a send after the PEER already
     # closed is a tolerated no-op per spec (dropped, not delivered, but does
     # not fail the Future), so neither case reaches here as an error. This
     # eval only catches a genuine send failure, which per the try_* contract
@@ -623,29 +654,6 @@ async sub _try_send_json {
     # connection state.
     return 0 if $@;
     return 1;
-}
-
-# Silent send methods - no-op when closed
-
-async sub send_text_if_connected {
-    my ($self, $text) = @_;
-    return unless $self->is_connected;
-    await $self->try_send_text($text);
-    return;
-}
-
-async sub send_bytes_if_connected {
-    my ($self, $bytes) = @_;
-    return unless $self->is_connected;
-    await $self->try_send_bytes($bytes);
-    return;
-}
-
-async sub send_json_if_connected {
-    my ($self, $data) = @_;
-    return unless $self->is_connected;
-    await $self->try_send_json($data);
-    return;
 }
 
 # Receive methods
@@ -748,17 +756,35 @@ async sub each_bytes {
     return;
 }
 
+# A message that is not JSON goes to the caller's on_invalid_json, else to
+# handle_invalid_json. The loop ends once the connection is no longer
+# connected: after our Close the peer may still send data (RFC 6455), and
+# none of it reaches the callback.
 async sub each_json {
-    my ($self, $callback) = @_;
-
+    my ($self, $callback, %opts) = @_;
+    my $on_invalid = $opts{on_invalid_json};
     while (1) {
         my $text = await $self->receive_text;
         last unless defined $text;
-
-        my $data = JSON::MaybeXS::decode_json($text);
-        await $callback->($data);
+        my $data;
+        unless (eval { $data = JSON::MaybeXS::decode_json($text); 1 }) {
+            my $error = $@;
+            await Future->wrap($on_invalid
+                ? $on_invalid->($text, $error)
+                : $self->handle_invalid_json($text, $error));
+            last unless $self->is_connected;
+            next;
+        }
+        await Future->wrap($callback->($data));
+        last unless $self->is_connected;
     }
+    return;
+}
 
+# A client's invalid JSON is its error, not the server's: close with 1007.
+async sub handle_invalid_json {
+    my ($self, $text, $error) = @_;
+    await $self->close(1007, 'invalid JSON');
     return;
 }
 
@@ -844,7 +870,7 @@ PAGI::WebSocket - Convenience wrapper for PAGI WebSocket connections
         # accept, so it runs however the connection ends.
         websocket('/json' => async sub {
             my ($ws) = @_;
-            my $user = $ws->query('user') // 'anonymous';
+            my $user = $ws->query_param('user') // 'anonymous';
             $online{$user} = $ws;
             $ws->on_close(sub {
                 my ($code, $reason) = @_;    # the peer's, when it sent a Close
@@ -893,7 +919,7 @@ protocol boilerplate and provides:
 
 =item * Cleanup and error callback registration (on_close, on_error)
 
-=item * Safe send methods for broadcast scenarios (try_send_*, send_*_if_connected)
+=item * Safe send methods for broadcast scenarios (try_send_*)
 
 =item * Message iteration helpers (each_text, each_json)
 
@@ -1008,12 +1034,12 @@ See L<PAGI::Stash> for per-connection shared state:
 
 =head2 state
 
-    my $state = $websocket->state
-        or die 'application requires lifespan state';
-    my $db = $state->get('db');
+    my $db = $websocket->state->get('db');
 
-Returns C<PAGI::State|undef> for application state injected by
-L<PAGI::Lifespan>. Absent state returns C<undef>; present state must be a
+Returns a L<PAGI::State> facade for application state injected by
+L<PAGI::Lifespan>. Without application state the facade is empty, and its
+C<get> and C<data> die naming the likely cause (did lifespan startup run?
+L<PAGI::Test::Client> needs C<< lifespan => 1 >>); present state must be a
 hashref or this method croaks. The facade is read-oriented and catches
 missing top-level keys through C<get>.
 
@@ -1070,14 +1096,15 @@ Default: false.
 
 =back
 
-=head2 query
+=head2 query_param
 
-    my $value = $ws->query('user');
-    my $value = $ws->query('page', strict => 1);
-    my $value = $ws->query('id', raw => 1);
+    my $value = $ws->query_param('user');
+    my $value = $ws->query_param('page', strict => 1);
+    my $value = $ws->query_param('id', raw => 1);
 
 Shortcut for C<< $ws->query_params(%opts)->get($name) >>. Accepts the same
-C<strict> and C<raw> options as C<query_params>.
+C<strict> and C<raw> options as C<query_params>. L<PAGI::Request> and
+L<PAGI::SSE> have the same four query accessors.
 
 =head2 raw_query_params
 
@@ -1086,12 +1113,12 @@ C<strict> and C<raw> options as C<query_params>.
 Returns query params without UTF-8 decoding. Equivalent to
 C<< $ws->query_params(raw => 1) >>.
 
-=head2 raw_query
+=head2 raw_query_param
 
-    my $value = $ws->raw_query('user');
+    my $value = $ws->raw_query_param('user');
 
 Returns a single query param without UTF-8 decoding. Equivalent to
-C<< $ws->query($name, raw => 1) >>.
+C<< $ws->query_param($name, raw => 1) >>.
 
 =head1 LIFECYCLE METHODS
 
@@ -1297,7 +1324,8 @@ methods), the callbacks are quiet no-ops and C<is_writable> is true.
     await $ws->send_bytes("\x00\x01\x02");
     await $ws->send_json({ action => 'greet', name => 'Alice' });
 
-Send a message. Dies if connection is closed.
+Send a message. Dies if the connection is closing or closed; see
+L</HANDLERS AND DISCONNECTS>.
 
 B<Sends go out one at a time.> PAGI::Spec::Www requires that an application
 not issue a send before the previous one has resolved. This object does that
@@ -1312,10 +1340,12 @@ never cancelled. Code that calls the raw C<$send> itself still owns the rule.
 
     my $sent = await $ws->try_send_json($data);
 
-B<Best-effort send.> Attempts the send and B<never throws>, returning a boolean.
-Intended for broadcast-style loops -- "send to many, skip the failures" -- where
-one bad recipient must not abort the loop or corrupt shared connection state (a
-failed send leaves C<is_closed>/C<close_code> untouched).
+B<Best-effort send.> Sends only while the socket is connected and B<never
+throws>, returning a boolean. Before C<accept>, while closing and after close
+it sends nothing and returns false. Intended for broadcast-style loops --
+"send to many, skip the failures" -- where one bad recipient must not abort
+the loop or corrupt shared connection state (a failed send leaves
+C<is_closed>/C<close_code> untouched).
 
 B<The boolean is a weak signal; do not treat it as a delivery receipt:>
 
@@ -1324,8 +1354,10 @@ B<The boolean is a weak signal; do not treat it as a delivery receipt:>
 =item *
 
 A B<false> return means the send definitely did not happen -- the socket is
-already known-closed, or the underlying send raised. It tells you I<that> it
-failed, not I<why>.
+not connected (not yet accepted, closing or closed), or the underlying send
+raised. It tells you I<that> it failed, not I<why>. A false before C<accept>
+is as quiet as any other, so while developing use C<send_*>: a send before
+C<accept> fails loudly there.
 
 =item *
 
@@ -1349,19 +1381,13 @@ this return value:
 =item * B<Why did it fail?> Use C<send_text>/C<send_bytes>/C<send_json>, which
 throw the underlying error.
 
-=item * B<Is the peer still there?> Use C<is_connected> (or the
-C<send_*_if_connected> variants) and react to the C<websocket.disconnect> event.
+=item * B<Is the peer still there?> Use C<is_connected> and react to the
+C<websocket.disconnect> event.
 
 =item * B<Is the connection backpressured?> Use C<is_writable> /
 C<buffered_amount> and the watermark / C<on_drain> controls.
 
 =back
-
-=head2 send_text_if_connected, send_bytes_if_connected, send_json_if_connected
-
-    await $ws->send_json_if_connected($data);
-
-Silent no-op if connection is closed. Useful for fire-and-forget.
 
 =head1 RECEIVE METHODS
 
@@ -1382,7 +1408,9 @@ Waits for specific frame type, skipping others. Returns undef on disconnect.
 
     my $data = await $ws->receive_json;
 
-Receives text frame and decodes as JSON. Dies on invalid JSON.
+Receives text frame and decodes as JSON. Dies on invalid JSON: the
+primitives raise, and the loop, C<each_json>, owns the policy for a client's
+bad JSON.
 
 =head1 ITERATION HELPERS
 
@@ -1403,6 +1431,60 @@ Receives text frame and decodes as JSON. Dies on invalid JSON.
 Loops until disconnect, calling callback for each message.
 Exceptions in callback propagate to caller.
 
+=head2 each_json and invalid JSON
+
+    await $ws->each_json(\&on_message);    # bad JSON: close 1007, return
+
+    await $ws->each_json(\&on_message, on_invalid_json => async sub {
+        my ($text, $error) = @_;
+        await $ws->send_json({ error => 'expected JSON' });    # and keep reading
+    });
+
+A message that is not JSON is the client's error, not the server's. Without
+C<on_invalid_json>, C<each_json> calls C<handle_invalid_json>, which closes
+the socket with 1007 C<invalid JSON>; the loop then ends and C<each_json>
+returns normally.
+
+C<on_invalid_json>, sync or async, receives C<($text, $error)> and replaces
+C<handle_invalid_json> for that call. To keep the default and add to it, call
+C<handle_invalid_json> inside it:
+
+    await $ws->each_json(\&on_message, on_invalid_json => async sub {
+        my ($text, $error) = @_;
+        $metrics->count('invalid_json');
+        await $ws->handle_invalid_json($text, $error);    # still close 1007
+    });
+
+A subclass overrides C<handle_invalid_json> instead.
+
+The loop ends as soon as the socket is no longer connected, checked after the
+invalid-JSON handler and after each callback: after our Close the peer may
+still send data (RFC 6455), and none of it reaches the callback. A handler or
+callback that dies propagates as an application error, which the client sees
+as 1011.
+
+C<$error> is the JSON backend's wording (Cpanel::JSON::XS, JSON::XS or
+JSON::PP): use it for diagnostics only; do not match on it or send it to the
+client. C<$text> can be as large as the largest message the server accepts,
+so do not log it raw. Under the default nothing is logged: watch for it in
+C<on_close>, which sees 1007, or with C<on_invalid_json>.
+
+C<receive_json> still dies on invalid JSON: primitives raise, loops own the
+policy.
+
+=head2 handle_invalid_json
+
+    package My::WebSocket;
+    use parent 'PAGI::WebSocket';
+
+    async sub handle_invalid_json {
+        my ($self, $text, $error) = @_;
+        await $self->send_json({ error => 'expected JSON' });
+    }
+
+What C<each_json> does with a message that is not JSON when the call passes no
+C<on_invalid_json>. The default closes the socket with 1007 C<invalid JSON>.
+
 =head1 EVENT CALLBACKS
 
 =head2 on_close
@@ -1419,16 +1501,21 @@ Exceptions in callback propagate to caller.
         await cleanup_resources();
     });
 
-Registers cleanup for the connection's terminal C<on_end> notification.
-Arguments are C<($peer_code, $peer_reason, $disconnect_detail)> -- a callback
-with a signature must accept all three; lifecycle
-reason is available through C<disconnect_reason>. Register before awaited I/O:
-registration after cleanup has begun (including constructor-time terminal
-notification) croaks. A local C<close> request alone does not start cleanup.
+Registers cleanup to run once, however the connection ends. Register it
+when the thing it cleans up exists, before or after C<accept>: if the
+connection has already ended (a client can leave during the handshake, and
+C<accept> still returns), the callback runs at once, after any callbacks
+still running. Arguments are C<($peer_code, $peer_reason, $disconnect_detail)>
+-- a callback with a signature must accept all three; lifecycle reason is
+available through C<disconnect_reason>. A local C<close> request alone does
+not start cleanup.
+
 Callbacks can be regular subs or async subs — async results are
 automatically awaited. Multiple callbacks run in registration order. A
 callback that dies does not stop the others; once all have run, the first
-failure is reported through L</finished>.
+failure is reported through L</finished>. A callback that runs after
+C<finished> has already resolved has nowhere to report, so its failure is
+warned.
 
 Returns C<$self> for chaining.
 
@@ -1445,6 +1532,18 @@ own L<PAGI::FutureOwner> then holds the worker that runs all hooks in order;
 it survives handler return and cancellation of cleanup observers, and
 releases hooks and helper references when cleanup finishes. There is no
 background receive watcher.
+
+=head2 connection
+
+    my $conn = $ws->connection;
+
+Returns the server-supplied object under C<pagi.connection>. Its interface is
+defined by the PAGI specification (L<PAGI::Spec::Www>); callers use those
+public methods rather than requiring a particular server's connection class.
+
+For cleanup, use L</on_close>, which runs whenever you register it. The
+connection object is there for what the helper does not wrap: the spec's
+C<end_future>, C<abort>, and the rest of its interface.
 
 =head2 finished
 
@@ -1533,6 +1632,40 @@ Callback-based event loop (alternative to C<each_*> iteration).
 Runs until disconnect, dispatching messages to registered callbacks.
 Errors in callbacks are passed to error handlers and, on connection-backed
 scopes, propagate so the server can determine the terminal outcome.
+
+=head1 HANDLERS AND DISCONNECTS
+
+A client can leave at any C<await>, and nothing interrupts your handler when
+it does. Choose the send by what a lost message means:
+
+=over 4
+
+=item * B<Strict sends for messages that must arrive.> C<send_text>,
+C<send_bytes> and C<send_json> die once the connection is closing or closed,
+and the failure is reported like any other. They also die after a refused
+handshake: that is a programming error, not a disconnect.
+
+=item * B<C<try_send_*> for setup steps and broadcasts.> They return false
+instead of dying unless the socket is connected, so a handler can stop
+quietly when its client has gone:
+
+    await $ws->accept;
+    return unless await $ws->try_send_json({ type => 'welcome' });
+
+Before C<accept> they return false just as quietly, so while developing use
+the strict sends. A broadcast to many sockets uses C<try_send_*> for the same
+reason as setup: a departed client cannot end the loop. A true return is not
+a delivery receipt (see L</"try_send_text, try_send_bytes, try_send_json">),
+so cleanup still belongs in C<on_close>.
+
+=item * B<C<accept> and C<keepalive> are already safe.> Once the connection
+is closing or closed, or a refusal has started, they return without sending.
+
+=item * B<Cleanup belongs in C<on_close>.> Register it once the thing it
+cleans up exists, before or after C<accept>; it runs however the connection
+ends, and at once if the client has already gone, so nothing is left behind.
+
+=back
 
 =head1 KEEPALIVE
 

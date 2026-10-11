@@ -13,12 +13,14 @@ PAGI::Middleware::Cookie - Cookie parsing middleware
 
 =head1 SYNOPSIS
 
-    use PAGI::Middleware::Builder;
+    use PAGI::Tools qw(compose middleware response route);
 
-    my $app = builder {
-        enable 'Cookie';
-        $my_app;
-    };
+    my $app = compose(
+        routes     => [route('/' => sub { response('Text', 'hello') })],
+        middleware => [middleware('Cookie')],
+    );
+
+The parsed cookies are in the scope:
 
     # In your app:
     async sub app {
@@ -27,6 +29,17 @@ PAGI::Middleware::Cookie - Cookie parsing middleware
         my $cookies = $scope->{'pagi.cookies'};
         my $session_id = $cookies->{session_id};
     }
+
+C<middleware('Cookie')> also goes in a Router's, Mount's or Route's
+C<middleware> list. It constructs the middleware and wraps the application
+inside it, which you can do yourself:
+
+    use PAGI::Middleware::Cookie;
+
+    my $wrapped = PAGI::Middleware::Cookie->new->wrap($native_app);
+
+Without Compose, L<PAGI::Middleware::Builder> composes middleware the way
+Plack::Builder does.
 
 =head1 DESCRIPTION
 

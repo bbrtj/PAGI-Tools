@@ -11,6 +11,7 @@ use PAGI::Middleware::CORS;
 use PAGI::Middleware::RequestId;
 use PAGI::Middleware::CSRF;
 use PAGI::Middleware::Session;
+use PAGI::Middleware::Session::Store::Memory;
 use PAGI::Middleware::Cookie;
 use PAGI::Utils::Middleware qw(wrap_response_headers);
 use Storable qw(dclone);
@@ -164,7 +165,7 @@ subtest 'RequestId, CSRF, Session and Cookie leave a shared array alone' => sub 
     for my $case (
         [RequestId => PAGI::Middleware::RequestId->new],
         [CSRF      => PAGI::Middleware::CSRF->new],
-        [Session   => PAGI::Middleware::Session->new],
+        [Session   => PAGI::Middleware::Session->new(store => PAGI::Middleware::Session::Store::Memory->new)],
         [Cookie    => PAGI::Middleware::Cookie->new],
     ) {
         my ($name, $mw) = @$case;

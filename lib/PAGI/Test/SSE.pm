@@ -8,6 +8,7 @@ use Carp qw(croak);
 
 use PAGI::Utils::_SendValidation;
 use PAGI::Test::Response;
+use PAGI::Test::_Drive;
 
 
 sub new {
@@ -83,6 +84,7 @@ sub _start {
 
         if ($type eq 'sse.start') {
             $self->{started} = 1;
+            PAGI::Test::_Drive::signal_arrival($self);
             $self->{status} = $event->{status} // 200;
             $self->{headers} = $event->{headers} // [];
             $conn->_mark_response_started if $conn;
@@ -91,7 +93,10 @@ sub _start {
             # If the peer (the test side) already closed, a real server
             # just drops writes to a dead connection: tolerated no-op,
             # nothing reaches the client's readable stream.
-            push @{$self->{recv_queue}}, $event unless $self->{closed};
+            unless ($self->{closed}) {
+                push @{$self->{recv_queue}}, $event;
+                PAGI::Test::_Drive::signal_arrival($self);
+            }
         }
         elsif ($type eq 'sse.close') {
             # Clean terminal sends also wake pending and later receives.
@@ -135,7 +140,19 @@ sub _start {
         }
         $conn->_deliver_notifications;
     });
-    $self->pump;
+    # The handler may await real I/O before it starts or refuses.
+    PAGI::Test::_Drive::wait_for($self, $PAGI::Test::_Drive::TIMEOUT, sub {
+        $self->pump;
+        return 1 if $self->{started} || $self->{refused} || $self->{app_future}->is_ready;
+        return;
+    });
+
+    unless ($self->{started} || $self->{refused} || $self->{app_future}->is_ready) {
+        # Abandoned: cancel the handler so it cannot resume later, in some
+        # other test, with nobody holding its Future.
+        $self->{app_future}->cancel;
+        croak "SSE stream did not start within $PAGI::Test::_Drive::TIMEOUT seconds";
+    }
 
     unless ($self->{started} || $self->{refused}) {
         $self->{app_future}->get if $self->{app_future}->is_ready;
@@ -160,6 +177,8 @@ sub _pump_app {
 
 sub _wake_pending_receives {
     my ($self) = @_;
+    # Whatever ended the scope may be what a receive awaits.
+    PAGI::Test::_Drive::signal_arrival($self);
     return unless $self->{_end_event};
 
     while (my $future = shift @{$self->{_pending_receives}}) {
@@ -185,27 +204,27 @@ sub response {
 
 sub receive_event {
     my ($self, %opts) = @_;
-    $self->pump;
     my $timeout = $opts{timeout} // 5;
 
-    # Check if we have an event already waiting
-    if (@{$self->{recv_queue}}) {
-        my $event = shift @{$self->{recv_queue}};
-
-        # Extract SSE event fields
-        return {
-            event => $event->{event},
-            data  => $event->{data},
-            id    => $event->{id},
-            retry => $event->{retry},
-        };
-    }
-
-    # Check if connection closed
-    return undef if $self->{closed};
-
-    # No event available yet
-    croak "Timeout waiting for SSE event";
+    # Waits up to $timeout seconds, driving the event loop while the
+    # application waits on real I/O; answers undef once closed. In the
+    # attempt, `return undef` answers (closed) and a bare `return` keeps
+    # waiting.
+    my @got = PAGI::Test::_Drive::wait_for($self, $timeout, sub {
+        $self->pump;
+        if (my $event = shift @{$self->{recv_queue}}) {
+            return {
+                event => $event->{event},
+                data  => $event->{data},
+                id    => $event->{id},
+                retry => $event->{retry},
+            };
+        }
+        return undef if $self->{closed};
+        return;
+    });
+    croak "Timeout waiting for SSE event" unless @got;
+    return $got[0];
 }
 
 sub receive_json {
@@ -377,12 +396,10 @@ wait before reconnecting.
 
 =back
 
-Returns undef if the connection is closed. Throws an exception if timeout is
-reached.
-
-B<Current limitation:> this method does not actually block or wait for the
-timeout duration. If no queued SSE event is immediately available, it throws
-an exception right away.
+Waits up to C<timeout> seconds (default 5), driving the event loop while the
+application waits on real I/O (L<Future::IO>). Returns undef if the connection
+is closed; throws C<Timeout waiting for SSE event> if no event arrives in
+time.
 
 Example:
 
@@ -412,11 +429,6 @@ This is a convenience method equivalent to:
 
 This helper does not simulate real SSE wire formatting, chunking, buffering,
 or transport timing.
-
-=item *
-
-The receive timeout arguments are advisory only at present; receive methods
-check the current queue immediately rather than waiting asynchronously.
 
 =item *
 
@@ -472,7 +484,8 @@ Drains pending receives and deferred terminal notifications. Public client
 operations and application Future completion do this automatically. If a test
 resolves an external Future and the app then parks again after a terminal
 send, call C<pump> to deliver its queued notifications. Terminal facts are
-already readable before pumping. This in-process client has no event loop.
+already readable before pumping. Receives drive the event loop themselves while
+they wait.
 
 =head1 SSE PROTOCOL
 

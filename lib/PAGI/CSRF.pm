@@ -9,7 +9,7 @@ use PAGI::Utils::SecureCompare ();
 
 our @EXPORT = ();
 our @EXPORT_OK = qw(csrf);
-our %EXPORT_TAGS = (ALL => [@EXPORT_OK]);
+our %EXPORT_TAGS = (all => [@EXPORT_OK]);
 
 =head1 NAME
 
@@ -80,7 +80,7 @@ separate facade objects.
 
 Constructs a CSRF facade from exactly one unblessed scope hashref or object
 with a C<scope> method. This function is an opt-in named export and is also
-available through the uppercase C<:ALL> tag. Nothing is exported by default.
+available through the C<:all> tag. Nothing is exported by default.
 
 =cut
 

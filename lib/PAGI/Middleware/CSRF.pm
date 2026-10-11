@@ -16,12 +16,15 @@ PAGI::Middleware::CSRF - Cross-Site Request Forgery protection middleware
 
 =head1 SYNOPSIS
 
-    use PAGI::Compose qw(compose);
-    use PAGI::Response qw(response);
-    use PAGI::Routing qw(middleware);
+    use PAGI::Tools qw(compose middleware response route);
 
     # Refuse a failed check with a 403 text response (the default)
-    middleware('CSRF');
+    my $app = compose(
+        routes     => [route('/' => sub { response('Text', 'hello') })],
+        middleware => [middleware('CSRF')],
+    );
+
+Its other modes:
 
     # Refuse it with your own application or Response
     middleware('CSRF',
@@ -35,6 +38,17 @@ PAGI::Middleware::CSRF - Cross-Site Request Forgery protection middleware
     middleware('CSRF', session => 1);
 
 L<PAGI::CSRF/SYNOPSIS> shows both modes in full, as complete applications.
+
+C<middleware('CSRF', ...)> also goes in a Router's, Mount's or Route's
+C<middleware> list. It constructs the middleware and wraps the application
+inside it, which you can do yourself:
+
+    use PAGI::Middleware::CSRF;
+
+    my $wrapped = PAGI::Middleware::CSRF->new->wrap($native_app);
+
+Without Compose, L<PAGI::Middleware::Builder> composes middleware the way
+Plack::Builder does.
 
 =head1 DESCRIPTION
 

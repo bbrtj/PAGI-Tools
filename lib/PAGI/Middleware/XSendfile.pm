@@ -14,29 +14,38 @@ PAGI::Middleware::XSendfile - Delegate file serving to reverse proxy
 
 =head1 SYNOPSIS
 
-    use PAGI::Middleware::Builder;
+    use PAGI::Tools qw(compose middleware response route);
 
     # For Nginx (X-Accel-Redirect)
-    my $app = builder {
-        enable 'XSendfile',
-            type    => 'X-Accel-Redirect',
-            mapping => '/protected/files/';  # URL prefix for internal location
-        $my_app;
-    };
+    my $app = compose(
+        routes     => [route('/' => sub { response('Text', 'hello') })],
+        middleware => [
+            middleware('XSendfile',
+                type    => 'X-Accel-Redirect',
+                mapping => '/protected/files/',    # URL prefix for internal location
+            ),
+        ],
+    );
+
+Other front-end servers:
 
     # For Apache (mod_xsendfile)
-    my $app = builder {
-        enable 'XSendfile',
-            type => 'X-Sendfile';
-        $my_app;
-    };
+    middleware('XSendfile', type => 'X-Sendfile')
 
     # For Lighttpd
-    my $app = builder {
-        enable 'XSendfile',
-            type => 'X-Lighttpd-Send-File';
-        $my_app;
-    };
+    middleware('XSendfile', type => 'X-Lighttpd-Send-File')
+
+C<middleware('XSendfile', ...)> also goes in a Router's, Mount's or Route's
+C<middleware> list. It constructs the middleware and wraps the application
+inside it, which you can do yourself:
+
+    use PAGI::Middleware::XSendfile;
+
+    my $wrapped = PAGI::Middleware::XSendfile->new(type => 'X-Sendfile')
+        ->wrap($native_app);
+
+Without Compose, L<PAGI::Middleware::Builder> composes middleware the way
+Plack::Builder does.
 
 =head1 DESCRIPTION
 

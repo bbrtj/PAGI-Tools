@@ -5,15 +5,15 @@ use Hash::MultiValue;
 use PAGI::Headers ();
 use PAGI::Authority ();
 use PAGI::Utils::Scope ();
-use Encode qw(decode FB_CROAK FB_DEFAULT LEAVE_SRC);
+use Encode qw(decode find_encoding FB_CROAK FB_DEFAULT LEAVE_SRC);
 use Cookie::Baker qw(crush_cookie);
 use Future::AsyncAwait;
 use JSON::MaybeXS qw(decode_json);
-use Carp qw(croak carp);
+use Carp qw(croak);
 use Scalar::Util qw(blessed);
 use PAGI::Request::MultiPartHandler;
 use PAGI::Request::Upload;
-use PAGI::Request::Negotiate;
+use PAGI::ContentNegotiation;
 use PAGI::Request::BodyError;
 use PAGI::Request::BodyStream;
 use PAGI::Request::_BodyInput ();
@@ -78,6 +78,34 @@ sub _decode_body_utf8 {
     );
 }
 
+# The body as text in the charset the client declared, UTF-8 when it declared
+# none. A charset Encode does not know is a 415; under strict, bytes invalid in
+# the charset are a 400.
+sub _decode_body_text {
+    my ($self, $body, $strict) = @_;
+    my $charset = $self->charset;
+    return _decode_body_utf8($body, $strict) unless defined $charset;
+
+    my $encoding = find_encoding($charset)
+        or PAGI::Request::BodyError->throw(
+            status_code => 415,
+            reason => 'unsupported_charset',
+            message => "The request body's charset is not supported.",
+        );
+    # Encode's 'utf8' is its lax variant; a client's UTF-8 is decoded strictly.
+    return _decode_body_utf8($body, $strict) if $encoding->name =~ /\Autf-?8/i;
+
+    my $text = eval {
+        $encoding->decode($body // '', ($strict ? FB_CROAK : FB_DEFAULT) | LEAVE_SRC);
+    };
+    return $text unless $@;
+    PAGI::Request::BodyError->throw(
+        reason => 'invalid_encoding',
+        message => "The request body is not valid $charset.",
+        cause => $@,
+    );
+}
+
 sub host {
     my ($self) = @_;
     return PAGI::Authority->host_from_scope($self->{scope});
@@ -87,6 +115,13 @@ sub host {
 sub content_type {
     my ($self, @opts) = @_;
     return $self->headers->content_type(@opts) // '';
+}
+
+# The Content-Type charset parameter, as sent (undef when there is none)
+sub charset {
+    my $self = shift;
+    my $parameters = $self->headers->content_type_parameters or return undef;
+    return $parameters->{charset};
 }
 
 # Content-Length shortcut
@@ -158,24 +193,10 @@ sub query_param {
     return $self->query_params(%opts)->get($name);
 }
 
-# DEPRECATED: Alias with warning
-sub query {
-    my $self = shift;
-    carp "query() is deprecated; use query_param() instead";
-    return $self->query_param(@_);
-}
-
 # Raw single query param
 sub raw_query_param {
     my ($self, $name) = @_;
     return $self->query_param($name, raw => 1);
-}
-
-# DEPRECATED: Alias with warning
-sub raw_query {
-    my $self = shift;
-    carp "raw_query() is deprecated; use raw_query_param() instead";
-    return $self->raw_query_param(@_);
 }
 
 # All cookies as hashref (cached in scope)
@@ -219,7 +240,9 @@ sub is_disconnected {
 sub is_json {
     my $self = shift;
     my $ct = $self->content_type;
-    return $ct eq 'application/json';
+    # application/json, or any +json structured-syntax type (RFC 6839), such
+    # as application/vnd.api+json or application/problem+json.
+    return $ct eq 'application/json' || $ct =~ m{\Aapplication/[^/\s]+\+json\z} ? 1 : 0;
 }
 
 sub is_form {
@@ -235,13 +258,13 @@ sub is_multipart {
     return $ct eq 'multipart/form-data';
 }
 
-# Accept header check using Negotiate module
+# Accept header check using PAGI::ContentNegotiation
 # Combines multiple Accept headers per RFC 7230 Section 3.2.2
 sub accepts {
     my ($self, $mime_type) = @_;
     my @accept_values = $self->header_all('accept');
     my $accept = join(', ', @accept_values);
-    return PAGI::Request::Negotiate->accepts_type($accept, $mime_type);
+    return PAGI::ContentNegotiation->accepts_type($accept, $mime_type);
 }
 
 # Find best matching content type from supported list
@@ -250,7 +273,7 @@ sub preferred_type {
     my ($self, @types) = @_;
     my @accept_values = $self->header_all('accept');
     my $accept = join(', ', @accept_values);
-    return PAGI::Request::Negotiate->best_match(\@types, $accept);
+    return PAGI::ContentNegotiation->best_match(\@types, $accept);
 }
 
 # Extract Bearer token from Authorization header
@@ -320,7 +343,7 @@ sub has_state {
 sub state {
     my $self = shift;
     require PAGI::State;
-    return PAGI::State->new($self);
+    return PAGI::State->new($self) // PAGI::State->_without_state;
 }
 
 # Body streaming - mutually exclusive with buffered body methods
@@ -330,8 +353,6 @@ sub body_stream {
 
     croak "Body already consumed; streaming not available" if $self->{scope}{'pagi.request.body.read'};
     croak "Body streaming already started" if $self->{scope}{'pagi.request.body.stream.created'};
-
-    $self->{scope}{'pagi.request.body.stream.created'} = 1;
 
     my $max_bytes = $opts{max_bytes};
     my $limit_name = defined $max_bytes ? 'max_bytes' : undef;
@@ -343,7 +364,9 @@ sub body_stream {
         }
     }
 
-    return PAGI::Request::BodyStream->new(
+    # Made before the body is marked as streaming: a stream that cannot be
+    # made (a charset it cannot decode, a 415) leaves the body to text.
+    my $stream = PAGI::Request::BodyStream->new(
         receive    => $self->{receive},
         max_bytes  => $max_bytes,
         limit_name => $limit_name,
@@ -351,6 +374,8 @@ sub body_stream {
         strict     => $opts{strict},
         _scope_type => $scope_type,
     );
+    $self->{scope}{'pagi.request.body.stream.created'} = 1;
+    return $stream;
 }
 
 # Streaming multipart - mutually exclusive with buffered body methods
@@ -426,14 +451,14 @@ async sub body {
 }
 
 # Read body as decoded UTF-8 text (async)
-# Options: strict => 1 (croak on invalid UTF-8)
+# Options: strict => 1 (bytes invalid in the charset are a 400)
 async sub text {
     my ($self, %opts) = @_;
     my $strict = delete $opts{strict} // 0;
     croak("Unknown options to text: " . join(', ', keys %opts)) if %opts;
 
     my $body = await $self->body;
-    return _decode_body_utf8($body, $strict);
+    return $self->_decode_body_text($body, $strict);
 }
 
 # Parse body as JSON (async; a body that is not JSON is a BodyError, 400)
@@ -502,13 +527,6 @@ async sub form_params {
     return $self->{scope}{$cache_key};
 }
 
-# DEPRECATED: Alias with warning
-async sub form {
-    my $self = shift;
-    carp "form() is deprecated; use form_params() instead";
-    return await $self->form_params(@_);
-}
-
 # Singular accessor for form params
 async sub form_param {
     my ($self, $name, %opts) = @_;
@@ -520,13 +538,6 @@ async sub form_param {
 async sub raw_form_params {
     my ($self, %opts) = @_;
     return await $self->form_params(%opts, raw => 1);
-}
-
-# DEPRECATED: Alias with warning
-async sub raw_form {
-    my $self = shift;
-    carp "raw_form() is deprecated; use raw_form_params() instead";
-    return await $self->raw_form_params(@_);
 }
 
 # Raw singular accessor
@@ -765,6 +776,17 @@ Accepts C<raise_on_error =E<gt> 1> to report duplicate or malformed input.
 Use C<< $request->header('Content-Type') >> for the raw last-value lookup;
 parsing does not alter the stored field.
 
+=head2 charset
+
+    my $charset = $request->charset;    # 'ISO-8859-1', or undef
+
+The C<charset> parameter of the Content-Type field, exactly as the client
+sent it (unquoted), or C<undef> when the field has none or is absent,
+duplicated or malformed. Nothing is decoded because of it: pass it on when
+you decide to read the body as text, for example
+C<< body_stream(decode => $request->charset // 'UTF-8') >> (see
+L</body_stream>).
+
 =head2 content_length
 
 Content-Length header value.
@@ -836,6 +858,12 @@ C<strict> and C<raw> options as C<query_params>.
 
 Shortcut for C<< $req->query_param($name, raw => 1) >>. Returns the raw bytes
 without UTF-8 decoding.
+
+=head2 raw_query_params
+
+    my $params = $req->raw_query_params;
+
+Shortcut for C<< $req->query_params(raw => 1) >>.
 
 =head1 PATH PARAMETERS
 
@@ -944,8 +972,8 @@ a body, form, or upload cache is already present.
     my $stream = $req->body_stream;
     my $stream = $req->body_stream(
         max_bytes => 10 * 1024 * 1024,  # 10MB limit
-        decode    => 'UTF-8',            # Decode to UTF-8
-        strict    => 1,                  # Strict UTF-8 decoding
+        decode    => 'UTF-8',            # Decode from UTF-8
+        strict    => 1,                  # invalid bytes are a 400
     );
 
 Returns a L<PAGI::Request::BodyStream> for streaming body consumption. This is
@@ -958,11 +986,37 @@ B<Options:>
 
 =item * C<max_bytes> - Maximum body size. Defaults to Content-Length header if present.
 
-=item * C<decode> - Encoding to decode chunks to (typically 'UTF-8').
+=item * C<decode> - The encoding to decode chunks from, such as C<'UTF-8'>.
+Without it, chunks are the bytes the client sent. A character split across
+chunks is held back until it is complete; an encoding the stream cannot
+decode is a 415 when it is made.
 
-=item * C<strict> - If true, throw on invalid UTF-8. Default: false (use replacement chars).
+=item * C<strict> - If true, bytes invalid in the C<decode> encoding throw a
+L<PAGI::Request::BodyError> (400). Default: false (they become U+FFFD).
 
 =back
+
+B<Bytes or text.> Without C<decode>, C<body_stream> gives you the bytes
+exactly as sent: use that for files, archives, images, anything binary.
+With C<decode>, it gives you text, decoded by the client's declared charset
+and UTF-8 when it declares none:
+
+    my $stream = $req->body_stream(decode => $req->charset // 'UTF-8');
+
+B<strict>: off (the default) replaces bytes that are not valid in the
+encoding with U+FFFD -- use it where a garbled character is acceptable,
+such as a display or a transformation. On rejects them with a 400 -- use it
+where you store or act on the text, and wherever a client might send
+something that is not text at all: a binary file posted to a text route
+fails at once instead of turning into garbage.
+
+A charset the stream cannot decode is a 415 when the stream is made, as for
+C<text>; catch the L<PAGI::Request::BodyError> at the call to choose
+another path. A client that disconnects partway through a character ends
+the text early and C<truncated> is true. A byte-order mark is consumed only
+by plain C<UTF-16> and C<UTF-32>; with C<UTF-8> or an explicit byte order
+(C<UTF-16LE>, ...) it arrives as U+FEFF, and C<s/\A\x{FEFF}//> on the first
+chunk removes it (harmless when there is none).
 
 B<Important:> Body streaming is mutually exclusive with buffered body methods
 (C<body>, C<text>, C<json>, C<form_params>). Once you start streaming, you cannot use
@@ -1047,7 +1101,11 @@ See L<PAGI::Request::MultipartStream> for full documentation.
 
     my $bytes = await $req->body;
 
-Read raw body bytes. Cached after first read.
+Read raw body bytes. Cached after first read, and C<text>, C<json> and a
+URL-encoded C<form_params> all read through it, so the exact bytes are still
+here after they have parsed the body -- what a webhook signature check needs.
+A multipart C<form_params> streams its parts to disk instead and keeps no raw
+copy.
 
 B<Important:> Cannot be used after C<body_stream()> has been called.
 
@@ -1064,10 +1122,13 @@ so they fail the same way.
 =head2 text
 
     my $text = await $req->text;
-    my $text = await $req->text(strict => 1);   # invalid UTF-8 is a 400
+    my $text = await $req->text(strict => 1);   # invalid bytes are a 400
 
-Read body as UTF-8 decoded text. With C<< strict => 1 >>, invalid UTF-8 throws
-a L<PAGI::Request::BodyError> (400); see L</BAD REQUEST BODIES>.
+Read the body as text, decoded with the charset the client declared in
+Content-Type (see L</charset>), or as UTF-8 when it declared none. A charset
+L<Encode> does not know throws a L<PAGI::Request::BodyError> (415). With
+C<< strict => 1 >>, bytes invalid in the charset throw one (400); without it
+they become U+FFFD. See L</BAD REQUEST BODIES>.
 
 =head2 json
 
@@ -1154,11 +1215,12 @@ Get all uploads for a field name.
 
 =head1 BAD REQUEST BODIES
 
-When the body itself is wrong -- not JSON, not valid UTF-8 under C<strict>, a
-multipart body that cannot be parsed or has no boundary, or a part over a
-configured limit -- the buffered helpers (C<json>, C<text>, C<form_params>,
-C<uploads>) throw a L<PAGI::Request::BodyError>. It carries C<status_code>
-(400, or 413 for a limit), C<reason>, a client-safe C<message>, and the
+When the body itself is wrong -- not JSON, not valid in its charset under
+C<strict>, text in a charset Perl does not know, a multipart body that cannot
+be parsed or has no boundary, or a part over a configured limit -- the
+buffered helpers (C<json>, C<text>, C<form_params>, C<uploads>) throw a
+L<PAGI::Request::BodyError>. It carries C<status_code> (400, 413 for a limit,
+or 415 for an unknown charset), C<reason>, a client-safe C<message>, and the
 underlying C<cause>.
 
 Most applications do nothing: every L<PAGI::Compose> application answers with
@@ -1189,7 +1251,9 @@ Check HTTP method.
 
 =head2 is_json
 
-True if Content-Type is C<application/json>.
+True if Content-Type is C<application/json> or any C<+json> type (the RFC 6839
+structured-syntax suffix: C<application/vnd.api+json>,
+C<application/problem+json>, ...).
 
 =head2 is_form
 
@@ -1214,6 +1278,13 @@ client accepts the given MIME type.
 Returns the best matching content type from the provided list based on the
 client's Accept header and quality values. Returns undef if none are acceptable.
 Supports shortcuts (json, html, xml, etc).
+
+A response chosen this way depends on the request's Accept header, so every
+answer the handler gives from it -- the 406 and the no-Accept default
+included -- should carry C<Vary: Accept>, and the handler writes it. To have
+it written for you, along with the 406, put
+L<PAGI::Middleware::ContentNegotiation> on the route and answer with
+L<PAGI::ContentNegotiation/respond_to>.
 
 =head1 CONNECTION STATE METHODS
 
@@ -1319,8 +1390,11 @@ and handlers. Construct from a Request object or scope:
 
 Returns a L<PAGI::State> facade over the application state injected by
 L<PAGI::Lifespan>. This contains worker-level shared state like database
-connections and configuration. Returns C<undef> if no state was injected and
-croaks if a present state value is not a hashref.
+connections and configuration. Always returns a facade: without application
+state it is empty, and its C<get> and C<data> die naming the likely cause
+(did lifespan startup run? L<PAGI::Test::Client> needs C<< lifespan => 1 >>).
+Croaks if a
+present state value is not a hashref. C<has_state> tells whether state exists.
 
 Repeated calls are not guaranteed to return the same facade object.
 

@@ -10,7 +10,7 @@ use PAGI::Utils::Scope ();
 
 our @EXPORT = ();
 our @EXPORT_OK = qw(url path_for url_for);
-our %EXPORT_TAGS = (ALL => [@EXPORT_OK]);
+our %EXPORT_TAGS = (all => [@EXPORT_OK]);
 
 =encoding UTF-8
 
@@ -49,7 +49,7 @@ supplies its request-local namespace, captures, root boundary, and scope.
 =head1 EXPORTS
 
 Nothing is exported by default. C<url>, C<path_for>, and C<url_for> are opt-in
-named exports and are all available through the uppercase C<:ALL> tag.
+named exports and are all available through the C<:all> tag.
 
 =head2 url
 
@@ -93,6 +93,23 @@ Resolves a route relative to the current frame unless its reference begins
 with C</>. Relative calls inherit only captures required by the exact target;
 explicit parameters override inherited values. The compiled routing boundary's
 C<root_path> is encoded and applied exactly once.
+
+Names are logical addresses, not URL paths. Inside a Mount:
+
+    compose(routes => [
+        route('/' => \&home, name => 'home'),
+        mount('/api', routes => [
+            route('/notes/{id}' => \&show_note,  name => 'note'),
+            route('/notes'      => \&list_notes, name => 'notes'),
+        ], name => 'api'),
+    ]);
+
+    path_for($request, '/api/note', { id => 1 });   # /api/notes/1, from anywhere
+    path_for($request, 'notes');                      # /api/notes, from a handler in api
+    path_for($request, '../home');                    # /, from a handler in api
+
+L<PAGI::Tools::Cookbook/"Linking inside a mounted app"> runs this example;
+L<PAGI::Routing/"REVERSE ROUTING AND INSPECTION"> has the full rules.
 
 =cut
 

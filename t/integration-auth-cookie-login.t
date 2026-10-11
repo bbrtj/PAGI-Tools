@@ -18,6 +18,7 @@ my $app = do "$Bin/../examples/auth-cookie-login/app.pl";
 my $load_error = $@ || $!;
 ok($app && !$load_error, 'cookie login example loads cleanly') or diag($load_error);
 plan skip_all => 'example did not load' unless $app;
+like(warning { $app->to_app }, qr/\APAGI::Middleware::Session: no store given/, 'its default session store says so');
 
 # The forms carry the CSRF token as a hidden field; post it back like a browser.
 sub form_token {

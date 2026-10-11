@@ -7,7 +7,7 @@ use Scalar::Util qw(refaddr);
 use overload ();
 
 use lib 'lib';
-use PAGI::Routing qw(:ALL);
+use PAGI::Routing qw(:all);
 use PAGI::Response::Text ();
 use PAGI::Utils qw(as_app_object);
 
@@ -28,7 +28,7 @@ use PAGI::Utils qw(as_app_object);
 
 {
     package AllImports;
-    use PAGI::Routing qw(:ALL);
+    use PAGI::Routing qw(:all);
 }
 
 {
@@ -173,7 +173,7 @@ use PAGI::Utils qw(as_app_object);
 subtest 'exports are opt-in and tag-specific' => sub {
     for my $name (qw(router route websocket sse mount middleware request_response)) {
         ok(!NoImports->can($name), "no default $name export");
-        ok(AllImports->can($name), "ALL exports $name");
+        ok(AllImports->can($name), "all exports $name");
     }
     for my $name (qw(router route websocket sse mount)) {
         ok(RouteImports->can($name), "routes tag exports $name");
@@ -191,12 +191,12 @@ subtest 'exports are opt-in and tag-specific' => sub {
     {
         local *STDERR;
         open STDERR, '>', \$stderr or die "cannot capture STDERR: $!";
-        $error = dies { eval q{ package BadImports; use PAGI::Routing qw(:all); 1 } or die $@ };
+        $error = dies { eval q{ package BadImports; use PAGI::Routing qw(:ALL); 1 } or die $@ };
     }
     like $error,
-        qr/Can't continue after import errors/, 'lowercase all is rejected';
-    like $stderr, qr/"all" is not defined in %PAGI::Routing::EXPORT_TAGS/,
-        'lowercase all diagnostic is captured';
+        qr/Can't continue after import errors/, 'uppercase ALL is rejected';
+    like $stderr, qr/"ALL" is not defined in %PAGI::Routing::EXPORT_TAGS/,
+        'uppercase ALL diagnostic is captured';
 };
 
 subtest 'public constructors retain their direct declaration package' => sub {

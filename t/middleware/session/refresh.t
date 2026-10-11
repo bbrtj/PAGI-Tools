@@ -8,6 +8,7 @@ BEGIN { *CORE::GLOBAL::time = sub () { defined $main::NOW ? $main::NOW : CORE::t
 use Test2::V0;
 use Future::AsyncAwait;
 use PAGI::Middleware::Session;
+use PAGI::Middleware::Session::Store::Memory;
 
 # A client's copy of the session's last-access time moves only when a cookie
 # is sent, and a request that only reads sends none. The middleware re-sends
@@ -34,7 +35,7 @@ sub request {
 
 # The memory store saves last-access on every request, so each check starts a
 # fresh session and reads it once.
-my $mw = PAGI::Middleware::Session->new(expire => 10);
+my $mw = PAGI::Middleware::Session->new(expire => 10, store => PAGI::Middleware::Session::Store::Memory->new);
 my $read_at = sub {
     my ($elapsed) = @_;
     local $NOW = 1_000;

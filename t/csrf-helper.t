@@ -22,20 +22,20 @@ use PAGITest::Connected qw(ws_scope sse_scope);
 
 {
     package Local::CSRF::All;
-    PAGI::CSRF->import(':ALL');
+    PAGI::CSRF->import(':all');
 }
 
 ok(!Local::CSRF::NoDefault->can('csrf'), 'csrf is not exported by default');
 ok(Local::CSRF::Named->can('csrf'), 'csrf is available as a named export');
-ok(Local::CSRF::All->can('csrf'), 'uppercase :ALL exports csrf');
+ok(Local::CSRF::All->can('csrf'), 'lowercase :all exports csrf');
 
-my $lowercase_tag_error;
+my $uppercase_tag_error;
 {
     local $SIG{__WARN__} = sub { };
-    $lowercase_tag_error = dies { PAGI::CSRF->import(':all') };
+    $uppercase_tag_error = dies { PAGI::CSRF->import(':ALL') };
 }
-like($lowercase_tag_error, qr/"?:all"? is not defined|Can't continue/i,
-    'lowercase :all is not an export tag');
+like($uppercase_tag_error, qr/"?:?ALL"? is not defined|Can't continue/i,
+    'uppercase :ALL is not an export tag');
 
 subtest 'scope and direct protocol sources expose the exact token' => sub {
     my $scope = {

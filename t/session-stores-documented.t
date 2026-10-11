@@ -35,6 +35,10 @@ sub app_with {
 
 sub count { return $_[0]->get('/visits')->json->{visits} }
 
+subtest 'the default store says it is in memory' => sub {
+    like(warning { app_with()->to_app }, qr/\APAGI::Middleware::Session: no store given/, 'once, when the middleware is built');
+};
+
 subtest 'the middleware takes no secret: session IDs are random' => sub {
     like(dies { PAGI::Middleware::Session->new(secret => 'x') },
         qr/'secret' is not a Session option/, 'passing secret dies, saying so');

@@ -7,6 +7,13 @@
   UPGRADING-REFERENCE.md has the details. Needs PAGI::Server 0.003000.
 
   [New]
+  - PAGI::Utils::TextDecoder: decodes a byte stream to text as it arrives
+    (Encode's stateful decoder), strict or with U+FFFD; body_stream's decode
+    is built on it.
+  - PAGI::ContentNegotiation's handler side: respond_to, negotiated_type
+    and content_negotiation (also from PAGI::Tools) read the
+    ContentNegotiation middleware's choice; respond_to calls the branch for
+    the chosen type.
   - PAGI::Routing (route, websocket, sse, mount, router, path_for,
     url_for) and PAGI::Compose (application root with lifespan, error
     handling and a response guard).
@@ -25,7 +32,25 @@
     helpers; PAGI::Authority; PAGI::Utils::Headers; PAGI::Utils
     path_from_root, pagi_env and environment predicates.
   - request_uri and raw_path_info on Request, WebSocket and SSE;
-    PAGI::Request::BodyError (bad bodies answer 400 or 413).
+    PAGI::Request::BodyError (bad bodies answer 400, 413 or 415).
+  - Request charset: the Content-Type charset parameter, to decode a
+    streamed body by (body_stream(decode => $req->charset // 'UTF-8')).
+  - body_stream with strict: bytes invalid in the encoding are a
+    BodyError 400 (they were a 500), a valid character split across chunks
+    is no longer rejected, an encoding it cannot decode in chunks (unknown,
+    ISO-2022-*, UTF-7) is a BodyError 415 when the stream is made; decoding
+    no longer holds back the rest of the body after a bad byte; UTF-16 and
+    UTF-32 decode correctly across chunks, strict included; and a strict
+    error is reported on the chunk that carries it.
+  - Request text decodes with the declared charset, UTF-8 when none is
+    declared; a charset Perl does not know is a BodyError 415
+    (unsupported_charset).
+  - Session warns, once per process, when it falls back to the in-memory
+    store because no store was given: those sessions are lost on restart
+    and not shared between workers.
+  - WebSocket and SSE connection, as Request has: the scope's
+    pagi.connection, for the parts of the spec interface the helpers do
+    not wrap.
   - Session's session_state and session_store constructors.
   - PAGI::Test::Client root_path; PAGI::Middleware::BufferedResponse;
     App::File from_app_path; the process-streaming example.
@@ -45,8 +70,30 @@
   - Text and HTML responses declare the UTF-8 they always send: a custom
     content type without a charset gets "; charset=utf-8" (JSON types
     excepted), whether given to the constructor or set later.
+  - PAGI::Exception::HTTP: throw an HTTP error with a status from 400 to
+    599 and an optional client message --
+    PAGI::Exception::HTTP->throw(404, 'no such note') -- and ErrorHandler
+    answers with that status and message.
+  - PAGI::Tools exports the everyday toolkit functions by name -- use
+    PAGI::Tools qw(compose response route path_for) -- or by the :routes,
+    :urls and :all tags. Each is its source module's own function, so
+    importing from the modules themselves still works the same.
+  - Cookbook: "Linking inside a mounted app"; PAGI::Routing::URL's
+    path_for shows absolute, sibling and parent references in a Mount.
+  - examples/gut-check: everyday applications next to their Starlette
+    versions, with measured behaviour and line counts, tested in
+    t/example-gut-check.t.
 
   [Changed]
+  - Request is_json is true for every +json media type
+    (application/vnd.api+json, application/problem+json, ...), not only
+    application/json.
+  - BodyError documents unsupported_media_type (415) for a body in a media
+    type the route does not take; the Cookbook's "Accept JSON and a form on
+    one route" shows the one way to read either and refuse the rest.
+  - Encode 3.00 or later is required (perl 5.30 and later ship it).
+  - ContentNegotiation sends Vary: Accept on every answer, its 406 and
+    refusals included, merged into any Vary the response has.
   - raw_path is the full requested path at every mount level; AccessLog
     logs, and HTTPSRedirect redirects to, the encoded request URI.
   - Stock error responses from first-party components are plain text, each
@@ -119,6 +166,11 @@
     shutting-down PAGI::Server waits for that cleanup. Every
     on_close callback runs; the first failure fails the call (the server
     logs it) instead of being warned.
+  - on_close registered after the connection has ended runs at once,
+    after any callbacks still running, so cleanup registered once its
+    resource exists is never missed, whenever the client leaves. A late
+    callback's failure fails finished, or is warned once finished has
+    resolved.
   - PAGI::App::WrapCGI: a refused request completes once its script has
     been reaped.
   - Nothing in PAGI-Tools uses ->retain; the cookbook and the
@@ -130,8 +182,48 @@
     (client_closed, a closed tab): a client cannot announce that it is
     leaving, so that is the stream's ordinary end. Other abnormal ends,
     and WebSocket and HTTP disconnects, are still noted.
+  - ErrorHandler answers a thrown page -- a value with to_app and no
+    status_code, such as a Response -- with the page itself. Below 400 it
+    is sent as it is, with no on_error, handler or re-raise, so
+    die response('Redirect', '/login') redirects; from 400 to 599 it goes
+    through on_error and the handler, and $error->default is the page. A
+    thrown Response used to be a 500.
+  - $request->state, $ws->state and $sse->state always return a
+    PAGI::State. Without application state it is empty, and its get and
+    data die naming the likely cause (lifespan startup did not run;
+    PAGI::Test::Client needs lifespan => 1). app_state and
+    PAGI::State->new still return undef there.
+  - Every module's tag for all its exports is :all. Compose, CSRF,
+    Transport, Stash, Session, ErrorContext, Routing, State and
+    Routing::URL used :ALL, which no release shipped.
+  - Every bundled middleware's SYNOPSIS leads with Compose's
+    middleware('Name', ...), then shows PAGI::Middleware::Name->new(...)
+    ->wrap($app); PAGI::Middleware::Builder is documented as the way to
+    compose middleware without Compose.
+  - The Tutorial's middleware part leads with Compose's middleware list
+    and wrap; Builder is a short section for applications without Compose.
+  - The background-tasks example shows work started at once next to work
+    started after the response (the connection's on_complete), and no
+    longer uses IO::Async; a Cookbook recipe, "Work After the Response",
+    explains the choice.
+  - PAGI::SSE and PAGI::WebSocket document handlers and disconnects:
+    strict sends for messages that must arrive, try_send_* for setup steps
+    and broadcasts, start, accept and keepalive safe once the client has
+    gone. The sse-dashboard example drops its is_closed checks.
 
   [Breaking -- see UPGRADING.md]
+  - body_stream over max_bytes is a BodyError 413 too_large (it was a plain
+    die, so a 500), or 400 invalid_body past the request's own
+    Content-Length; the message no longer names the limit, which moves to
+    the error's cause.
+  - body_stream with decode: a client disconnect no longer flushes a
+    partial character as U+FFFD or throws under strict; truncated reports
+    it.
+  - ContentNegotiation writes one scope record, pagi.content_negotiation,
+    in place of pagi.preferred_content_type and pagi.accepted_types; an
+    unknown or empty supported_types dies; the stock 406 lists media types.
+  - PAGI::Request::Negotiate is now PAGI::ContentNegotiation (the same
+    class methods), with is_known_type and shortcuts.
   - PAGI::App::Router and PAGI::Endpoint::Router are removed; PAGI::Routing
     is the routing API.
   - The PAGI::Context family is removed: handlers receive PAGI::Request,
@@ -190,8 +282,36 @@
   - Middleware scope keys move under pagi.*, which PAGI::Spec::Www reserves
     for extensions: pagi.csrf_token, pagi.original_client,
     pagi.original_method, pagi.original_path, pagi.request_id.
+  - PAGI::WebSocket's query and raw_query are now query_param and
+    raw_query_param, the names PAGI::Request and PAGI::SSE use; all three
+    have query_param, query_params, raw_query_param and raw_query_params.
+    PAGI::Request's deprecated query, raw_query, form and raw_form are
+    removed: use query_param, raw_query_param, form_params and
+    raw_form_params.
+  - PAGI::WebSocket's send_text_if_connected, send_bytes_if_connected and
+    send_json_if_connected are removed. try_send_text, try_send_bytes and
+    try_send_json send only while the socket is connected: before accept,
+    too, they now return false and send nothing.
+  - PAGI::WebSocket each_json closes with 1007 "invalid JSON" and returns
+    when a message is not JSON; it used to die, a server error (1011). Its
+    on_invalid_json option, or a subclass's handle_invalid_json, answers
+    otherwise. The loop also ends once the socket is no longer connected,
+    so nothing the peer sends after our Close reaches the callback.
+    receive_json still dies on invalid JSON.
 
   [Fixed]
+  - PAGI::Test::Client drives the event loop while a request waits on real
+    I/O: a streamed response whose producer awaits Future::IO now completes
+    in-process instead of failing with a 500 (it previously worked only by
+    accident, for handlers whose first wait was the I/O itself). A request
+    still pending after 5 seconds dies with a timeout message.
+  - PAGI::Test::WebSocket's receive_text, receive_bytes and receive_json,
+    and PAGI::Test::SSE's receive_event and receive_json, wait up to their
+    timeout, driving the event loop, for a message the application sends
+    after real I/O. They used to throw at once.
+  - PAGI::Test::Client's websocket and sse wait up to 5 seconds, driving the
+    event loop, for a handler that awaits real I/O before accept or start,
+    then die naming the timeout.
   - PAGI::Middleware::XSendfile removes Content-Length when it hands a
     file to the proxy, since the body it sends is empty (#19).
   - PAGI::Utils::Random's secure_random_bytes croaks unless its length is

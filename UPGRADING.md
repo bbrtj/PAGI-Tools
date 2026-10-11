@@ -32,6 +32,9 @@ in [UPGRADING-REFERENCE.md](UPGRADING-REFERENCE.md).
 | scope keys `csrf_token`, `original_client`, `original_method`, `original_path`, `request_id` | the same names under `pagi.` ([details](UPGRADING-REFERENCE.md#breaking-middleware-scope-keys-move-under-pagi)) |
 | Maintenance `body`, `content_type` | `response => response('HTML', $page, status => 503)`; the default is now plain text; both options now die ([details](UPGRADING-REFERENCE.md#breaking-maintenance-body-and-content_type-are-replaced-by-response)) |
 | ContentNegotiation `strict`, `default_type` | refusing is the default; `refuse => 0` lets the application decide; both options now die ([details](UPGRADING-REFERENCE.md#breaking-contentnegotiation-refuses-by-default-strict-and-default_type-are-removed)) |
+| `PAGI::Request::Negotiate` | `PAGI::ContentNegotiation`: the same class methods |
+| scope keys `pagi.preferred_content_type`, `pagi.accepted_types` | `negotiated_type($request)` (PAGI::ContentNegotiation); the record `pagi.content_negotiation` holds `type`, `supported`, `refusing` and `accepted` |
+| an unknown shortcut in ContentNegotiation `supported_types` became `application/<name>` | it dies when the middleware is built; use a media type or a known shortcut |
 | `Auth::Basic`, `Auth::Bearer` | `Authentication` with a backend, plus `requires` ([details](UPGRADING-REFERENCE.md#breaking-authbasic-and-authbearer-are-replaced-by-authentication)) |
 | `FormBody`, `JSONBody` middleware | `$request->form_params`, `$request->json` ([details](UPGRADING-REFERENCE.md#breaking-pagimiddlewareformbody-and-pagimiddlewarejsonbody-are-removed)) |
 | `PAGI::App::Loader` | `pagi-server --app`, or `do $file` ([details](UPGRADING-REFERENCE.md#breaking-pagiapploader-is-removed)) |
@@ -44,6 +47,13 @@ in [UPGRADING-REFERENCE.md](UPGRADING-REFERENCE.md).
 | Builder `enable '^My::Middleware'` | `enable '+My::Middleware'` ([details](UPGRADING-REFERENCE.md#breaking-use-explicit-middleware-descriptions-at-core-boundaries)) |
 | Directory `show_hidden` | `allow_hidden` ([details](UPGRADING-REFERENCE.md#rooted-file-serving-security-contract)) |
 | `WebSocket::RateLimit`, `SSE::Pubsub`, `WebSocket::Broadcast`/`Chat` | removed; Cookbook recipes ([details](UPGRADING-REFERENCE.md#other-breaking-changes)) |
+| WebSocket `query`, `raw_query`; Request `query`, `raw_query`, `form`, `raw_form` | `query_param`, `raw_query_param`, `form_params`, `raw_form_params`: one set of names on Request, WebSocket and SSE |
+| WebSocket `send_text_if_connected`, `send_bytes_if_connected`, `send_json_if_connected` | `try_send_text`, `try_send_bytes`, `try_send_json`: they send nothing unless connected (before `accept` too) and return false |
+| `body_stream(strict => 1)` died with "Failed to decode chunk" (a 500) on invalid bytes | a `PAGI::Request::BodyError` 400; an encoding it cannot decode in chunks (unknown, ISO-2022-*, UTF-7) is a `BodyError` 415 when the stream is made |
+| a client disconnect mid-character flushed U+FFFD from `body_stream(decode)`, or threw under strict | the text ends at the last whole character; check `$stream->truncated` |
+| `body_stream` over `max_bytes` died with "Request body max_bytes exceeded" (a 500) | a `PAGI::Request::BodyError` 413 `too_large` (400 `invalid_body` past the Content-Length); the limit's name is in `->cause`, not the message |
+| `$request->text` decoded every body as UTF-8 | it decodes with the Content-Type charset, UTF-8 when none is declared; an unknown charset is a 415 |
+| `each_json` died (a 1011 server error) on a message that is not JSON | it closes 1007 and returns; pass `on_invalid_json`, or override `handle_invalid_json`, to answer otherwise |
 
 Behaviour that changes without a code change: stock refusals and error
 responses are plain text, each replaceable by one option ([details](UPGRADING-REFERENCE.md#audit-changed-first-party-defaults));

@@ -123,28 +123,26 @@ PAGI::Endpoint::HTTP - Class-based HTTP endpoint handler
     package MyApp::UserAPI;
     use parent 'PAGI::Endpoint::HTTP';
     use Future::AsyncAwait;
-    use PAGI::Response::Empty ();
-    use PAGI::Response::JSON ();
-    use PAGI::Routing qw(route);
+    use PAGI::Tools qw(response route);
 
     async sub get {
         my ($self, $request) = @_;
         my $users = get_all_users();
-        return PAGI::Response::JSON->new($users);
+        return response('JSON', $users);
     }
 
     async sub post {
         my ($self, $request) = @_;
         my $data = await $request->json;
         my $user = create_user($data);
-        return PAGI::Response::JSON->new($user, status => 201);
+        return response('JSON', $user, status => 201);
     }
 
     async sub delete {
         my ($self, $request) = @_;
         my $id = $request->path_param('id');
         delete_user($id);
-        return PAGI::Response::Empty->new(status => 204);
+        return response('Empty', status => 204);
     }
 
     # Place one configured object at one exact Route.
@@ -264,7 +262,7 @@ resulting application without emitting it. Called automatically by C<to_app>.
 =head2 method_not_allowed
 
     sub method_not_allowed ($self, $request, @allowed) {
-        return PAGI::Response::JSON->new({ detail => 'Not supported here' }, status => 405);
+        return response('JSON', { detail => 'Not supported here' }, status => 405);
     }
 
 Answers a request for a method this endpoint does not implement. The default

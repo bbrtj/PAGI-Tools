@@ -48,6 +48,10 @@ subtest 'each client mistake is a BodyError with a status, a reason and a safe m
           sub { request_with('{not json')->json } ],
         [ 'invalid UTF-8 text (strict)', 400, 'invalid_encoding',
           sub { request_with("caf\xE9")->text(strict => 1) } ],
+        [ 'invalid UTF-8 stream (strict)', 400, 'invalid_encoding',
+          sub { request_with("caf\xE9")->body_stream(decode => 'UTF-8', strict => 1)->next_chunk } ],
+        [ 'text in a charset Perl does not know', 415, 'unsupported_charset',
+          sub { request_with("caf\xC3\xA9", ['Content-Type', 'text/plain; charset=x-bogus'])->text } ],
         [ 'invalid UTF-8 form (strict)', 400, 'invalid_encoding',
           sub { request_with("name=caf%E9", ['Content-Type', 'application/x-www-form-urlencoded'])
               ->form_params(strict => 1) } ],
@@ -83,11 +87,32 @@ subtest 'the existing messages are kept, so code matching them still works' => s
         qr/No boundary found in Content-Type/);
 };
 
+subtest 'a stream response already started cannot answer 400: it is cut short' => sub {
+    # Stream sends its start before the producer reads the body.
+    my $app = compose(routes => [route('/' => async sub {
+        my ($r) = @_;
+        my $text = $r->body_stream(decode => 'UTF-8', strict => 1);
+        response('Stream', async sub {
+            my ($writer) = @_;
+            while (defined(my $chunk = await $text->next_chunk)) { await $writer->write($chunk) }
+        });
+    }, methods => ['POST'])]);
+    my $res = PAGI::Test::Client->new(app => $app)->post('/', body => "caf\xFF");
+    isa_ok($res->exception, 'PAGI::Request::BodyError');
+    isnt($res->status, 400, 'no 400 can follow a started response');
+};
+
 subtest 'a Compose application answers 400 or 413, and logs nothing' => sub {
     my $app = compose(routes => [
         route('/json' => async sub { my ($r) = @_; response('JSON', await $r->json) }, methods => ['POST']),
         route('/form' => async sub { my ($r) = @_; await $r->form_params(max_field_size => 10); response('JSON', {}) },
             methods => ['POST']),
+        route('/stream' => async sub {
+            my ($r) = @_;
+            my $body = $r->body_stream(max_bytes => 10);
+            1 while defined(await $body->next_chunk);
+            response('JSON', {});
+        }, methods => ['POST']),
     ]);
     my $client = PAGI::Test::Client->new(app => $app);
     my ($stderr, %res) = ('');
@@ -98,11 +123,13 @@ subtest 'a Compose application answers 400 or 413, and logs nothing' => sub {
             headers => { 'Content-Type' => 'application/json', Accept => 'application/json' });
         $res{form} = $client->post('/form', body => part('note', 'x' x 50) . "--$boundary--\r\n",
             headers => { 'Content-Type' => "multipart/form-data; boundary=$boundary", Accept => 'application/json' });
+        $res{stream} = $client->post('/stream', body => 'x' x 50);
     }
     is([$res{json}->status, $res{json}->header('content-type'), $res{json}->text],
         [400, 'text/plain; charset=utf-8', 'The request body is not valid JSON.'],
         'invalid JSON is a plain 400 carrying the client message');
     is($res{form}->status, 413, 'an oversized part is a 413');
+    is($res{stream}->status, 413, 'a streamed body over max_bytes is a 413');
     is($stderr, '', 'and neither is reported as a server error');
 };
 

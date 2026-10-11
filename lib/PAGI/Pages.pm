@@ -13,7 +13,7 @@ use Scalar::Util qw(blessed);
 use PAGI::Pages::_Catalog;
 use PAGI::Pages::Application ();
 use PAGI::Request;
-use PAGI::Request::Negotiate;
+use PAGI::ContentNegotiation;
 use PAGI::Response ();
 use PAGI::Response::Empty ();
 use PAGI::Response::HTML ();
@@ -849,14 +849,14 @@ sub _select_representation {
         }
     }
 
-    my $matched = PAGI::Request::Negotiate->best_match(\@supported, $accept);
+    my $matched = PAGI::ContentNegotiation->best_match(\@supported, $accept);
     return defined($matched) ? $family_for{$matched} : $self->{default};
 }
 
 sub _problem_type_explicitly_rejected {
     my ($accept) = @_;
     return 0 unless defined($accept) && length($accept);
-    for my $entry (PAGI::Request::Negotiate->parse_accept($accept)) {
+    for my $entry (PAGI::ContentNegotiation->parse_accept($accept)) {
         return 1
             if $entry->[0] eq 'application/problem+json' && $entry->[1] == 0;
     }

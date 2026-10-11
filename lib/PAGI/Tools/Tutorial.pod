@@ -91,8 +91,7 @@ handlers receive their direct protocol objects:
   Mount app object                     -> app object via to_app
 
   use Future::AsyncAwait;
-  use PAGI::Routing qw(:routes);
-  use PAGI::Response qw(response);
+  use PAGI::Tools qw(:routes response);
 
   async sub home {
       my ($request) = @_;
@@ -121,6 +120,11 @@ handlers receive their direct protocol objects:
   );
 
   my $routing_component = $routing->to_app;
+
+L<PAGI::Tools> re-exports the everyday functions by name (see
+L<PAGI::Tools/IMPORTS>); C<use PAGI::Routing qw(:routes)> and
+C<use PAGI::Response qw(response)> import the same functions from their own
+modules.
 
 Constructors validate and build immutable descriptions. C<to_app> compiles a
 fresh native PAGI wrapper graph and starts no request; call it once for the app
@@ -467,7 +471,16 @@ of those methods ever sees raw chunks to make that judgment call itself.
 
 Options: C<max_bytes> (a size cap; defaults to the Content-Length header),
 C<decode> (e.g. C<'UTF-8'>, which handles multi-byte sequences split across
-chunk boundaries), and C<strict> (throw on invalid UTF-8).
+chunk boundaries), and C<strict> (invalid bytes are a 400 instead of
+U+FFFD: use it when you store or act on the text).
+
+Chunks are bytes unless you pass C<decode>, so a zip or image upload passes
+through untouched. A route that reads its body as text decodes by the
+client's declared charset, falling back to UTF-8:
+
+  my $stream = $req->body_stream(decode => $req->charset // 'UTF-8');
+
+A charset the stream cannot decode is a 415, as for C<text>.
 
 B<Streaming is mutually exclusive with the buffered methods.> Once you call
 C<body_stream>, C<body>/C<text>/C<json>/C<form_params> are unavailable on that
@@ -526,8 +539,9 @@ C<app_state> is deliberately not named C<state>: under C<use v5.40>, a call
 spelled C<state (...)> parses as Perl's C<state> declarator instead of calling an
 imported function. C<< $request->state >>, C<< $websocket->state >>, and
 C<< $sse->state >> are equivalent direct forms: each returns the same strict
-L<PAGI::State> facade when state exists and C<undef> when it does not.
-C<< app_state($scope) >> remains the raw-PAGI/protocol-neutral spelling.
+L<PAGI::State> facade, empty when the scope has no application state (its
+C<get> and C<data> then name the likely cause). C<< app_state($scope) >> remains the
+raw-PAGI/protocol-neutral spelling, and returns C<undef> without state.
 C<get> catches missing-key typos and C<data> is the explicit escape hatch for
 code that requires a real HashRef.
 
@@ -925,17 +939,19 @@ a new event with what you changed:
 
   1;
 
-Now it composes with the C<builder> as a flat stack that reads top-to-bottom, in
-the order it runs:
+Now it goes in Compose's C<middleware> list, which reads top-to-bottom in the
+order it runs:
 
-  use PAGI::Middleware::Builder;
+  use PAGI::Tools qw(compose middleware);
 
-  my $app = builder {
-      enable '+MyApp::Middleware::PoweredBy';
-      enable 'AccessLog';
-      enable 'Runtime';
-      $app_root;
-  };
+  my $app = compose(
+      routes     => $routes,
+      middleware => [
+          middleware('+MyApp::Middleware::PoweredBy'),
+          middleware('AccessLog'),
+          middleware('Runtime'),
+      ],
+  );
 
 =head3 Why the toolkit version is worth it
 
@@ -943,21 +959,21 @@ The behavior is identical — what you gain is everything around it:
 
 =over 4
 
-=item * B<Composition.> The C<builder> stack reads in run order, top to bottom,
-instead of inside-out function nesting. Adding, removing, or reordering a
-middleware is a one-line change.
+=item * B<Composition.> The C<middleware> list reads in run order, top to
+bottom, instead of inside-out function nesting. Adding, removing, or
+reordering a middleware is a one-line change.
 
 =item * B<Configuration.> A middleware is a configurable object —
-C<enable 'GZip', min_size =E<gt> 1024> — with construction-time validation,
-rather than a closure capturing lexicals.
+C<middleware('GZip', min_size =E<gt> 1024)> — with construction-time
+validation, rather than a closure capturing lexicals.
 
 =item * B<Reuse.> It is an ordinary class: ship it on CPAN, share it between
 apps, or reach for one of the 30+ already in this distribution (see
 L</6.3 Essential Middleware Reference>) rather than writing your own.
 
-=item * B<Conditional and per-route use.> C<enable_if { ... } 'Name'> applies a
-middleware only when a condition holds, and any route can carry its own
-middleware list (see L</6.2 Using Middleware with Builder>).
+=item * B<Per-route use.> A Router, a Mount and a Route each take their own
+C<middleware> list, so a middleware applies only where it belongs (see
+L</6.2 Using Middleware with Compose>).
 
 =item * B<Helpers.> The base provides C<intercept_send>, C<modify_scope>,
 C<buffer_request_body>, and friends, so each middleware isn't re-implementing
@@ -965,59 +981,77 @@ the protocol plumbing.
 
 =back
 
-=head2 6.2 Using Middleware with Builder
-
-The L<PAGI::Middleware::Builder> DSL lets you compose middleware into your application.
+=head2 6.2 Using Middleware with Compose
 
 =head3 Global Middleware
 
-Apply middleware to all routes using the C<builder> function:
+Name middleware in Compose's C<middleware> list; it wraps every route:
 
-  use PAGI::Compose qw(compose);
-  use PAGI::Middleware::Builder;
-  use PAGI::Response qw(response);
-  use PAGI::Routing qw(route);
+  use PAGI::Tools qw(compose middleware response route);
 
-  my $routing = compose(routes => [
-      route('/' => sub { return response('Text', 'Hello World') }),
-  ]);
-
-  # Wrap with middleware using builder; the block's final value can be
-  # a native app coderef or app object
-  my $app = builder {
-      enable 'AccessLog', format => 'combined';
-      enable 'CORS', origins => '*';
-      enable 'GZip', min_size => 1024;
-      $routing;
-  };
+  my $app = compose(
+      routes => [
+          route('/' => sub { return response('Text', 'Hello World') }),
+      ],
+      middleware => [
+          middleware('AccessLog', format => 'combined'),
+          middleware('CORS', origins => ['*']),
+          middleware('GZip', min_size => 1024),
+      ],
+  );
 
 Middleware executes in order: AccessLog -> CORS -> GZip -> app.
+C<middleware('Name', ...)> resolves C<Name> to C<PAGI::Middleware::Name>; a
+leading C<+> names a class exactly, as in C<middleware('+MyApp::Middleware::Auth')>.
 
 =head3 Multiple Middleware Example
 
+  middleware => [
+      middleware('RequestId'),                         # Add X-Request-Id header
+      middleware('AccessLog', format => 'tiny'),       # Log requests
+      middleware('Runtime'),                           # Add X-Runtime header
+      middleware('CORS', origins => ['*']),            # Enable CORS
+      middleware('SecurityHeaders'),                   # Add security headers
+      middleware('GZip', min_size => 1024),            # Compress responses
+      middleware('ErrorHandler', development => 1),    # Development diagnostics
+  ],
+
+=head3 Per-Route and Per-Mount Middleware
+
+A Router, a Mount and a Route take the same C<middleware> list, applied only
+to what they route:
+
+  mount('/api', routes => $api_routes, middleware => [
+      middleware('RateLimit', requests_per_second => 10, burst => 20),
+  ]),
+
+=head3 Middleware Instances and wrap
+
+C<middleware(...)> constructs the middleware and calls its C<wrap> on the
+application inside it. Both steps are public, so you can do them yourself --
+to build an instance once and reuse it, or to wrap an application without
+Compose:
+
+  use PAGI::Middleware::GZip;
+
+  my $gzip    = PAGI::Middleware::GZip->new(min_size => 1024);
+  my $wrapped = $gzip->wrap($native_app);    # a native app in, a native app out
+
+A configured instance also goes in a C<middleware> list:
+
+  middleware => [middleware('AccessLog', format => 'tiny'), middleware($gzip)],
+
+=head3 Without Compose: Builder
+
+L<PAGI::Middleware::Builder> composes middleware the way Plack::Builder does,
+for applications that do not use Compose:
+
+  use PAGI::Middleware::Builder;
+
   my $app = builder {
-      enable 'RequestId';                      # Add X-Request-Id header
-      enable 'AccessLog', format => 'tiny';    # Log requests
-      enable 'Runtime';                        # Add X-Runtime header
-      enable 'CORS', origins => '*';           # Enable CORS
-      enable 'SecurityHeaders';                # Add security headers
-      enable 'GZip', min_size => 1024;         # Compress responses
-      enable 'ErrorHandler', development => 1;  # Development diagnostics
-      $routing;
-  };
-
-=head3 Middleware Instances
-
-C<enable> also accepts an already-configured middleware instance — useful
-when you build the instance elsewhere or want construction-time errors.
-The parentheses are required for the instance form:
-
-  my $gzip = PAGI::Middleware::GZip->new(min_size => 1024);
-
-  my $app = builder {
-      enable 'AccessLog', format => 'tiny';
-      enable($gzip);
-      $routing;
+      enable 'AccessLog', format => 'combined';
+      enable 'GZip', min_size => 1024;
+      $native_app;
   };
 
 =head2 6.3 Essential Middleware Reference
@@ -1030,15 +1064,15 @@ The parentheses are required for the instance form:
 
 Log HTTP requests in Apache-style formats:
 
-  enable 'AccessLog', format => 'combined';  # Apache combined log
-  enable 'AccessLog', format => 'common';    # Apache common log
-  enable 'AccessLog', format => 'tiny';      # Minimal format
+  middleware('AccessLog', format => 'combined'),  # Apache combined log
+  middleware('AccessLog', format => 'common'),    # Apache common log
+  middleware('AccessLog', format => 'tiny'),      # Minimal format
 
 =item * L<PAGI::Middleware::RequestId>
 
 Add unique request ID to each request:
 
-  enable 'RequestId';  # Adds X-Request-Id header
+  middleware('RequestId'),  # Adds X-Request-Id header
 
 Access via C<$scope-E<gt>{'pagi.request_id'}>.
 
@@ -1046,7 +1080,7 @@ Access via C<$scope-E<gt>{'pagi.request_id'}>.
 
 Add response time header:
 
-  enable 'Runtime';  # Adds X-Runtime header in seconds
+  middleware('Runtime'),  # Adds X-Runtime header in seconds
 
 =back
 
@@ -1058,18 +1092,19 @@ Add response time header:
 
 Enable Cross-Origin Resource Sharing:
 
-  enable 'CORS',
-      origins     => '*',                    # or ['https://example.com']
+  middleware('CORS',
+      origins     => ['https://example.com'],   # ['*'] for any origin, without credentials
       methods     => ['GET', 'POST'],
       headers     => ['Content-Type'],
       credentials => 1,
-      max_age     => 86400;
+      max_age     => 86400,
+  ),
 
 =item * L<PAGI::Middleware::SecurityHeaders>
 
 Add security-related HTTP headers:
 
-  enable 'SecurityHeaders';  # Adds CSP, X-Frame-Options, etc.
+  middleware('SecurityHeaders'),  # Adds CSP, X-Frame-Options, etc.
 
 Includes:
 
@@ -1082,7 +1117,7 @@ Includes:
 
 Protect against Cross-Site Request Forgery:
 
-  enable 'CSRF', cookie_name => '_csrf_token';
+  middleware('CSRF', cookie_name => '_csrf_token'),
 
 Validates CSRF tokens on POST/PUT/PATCH/DELETE requests.
 
@@ -1096,7 +1131,7 @@ Validates CSRF tokens on POST/PUT/PATCH/DELETE requests.
 
 Parse request cookies:
 
-  enable 'Cookie';
+  middleware('Cookie'),
 
 Access via C<$scope-E<gt>{'pagi.cookies'}>.
 
@@ -1107,12 +1142,13 @@ this process's memory):
 
   use PAGI::Middleware::Session qw(session_state);
 
-  enable 'Session',
+  middleware('Session',
       state  => session_state('Cookie',
           cookie_name => 'session',
           expire      => 86400,
       ),
-      expire => 86400;
+      expire => 86400,
+  ),
 
 Access via C<$scope-E<gt>{'pagi.session'}>.
 
@@ -1126,15 +1162,16 @@ Access via C<$scope-E<gt>{'pagi.session'}>.
 
 Compress responses with gzip:
 
-  enable 'GZip',
+  middleware('GZip',
       min_size   => 1024,             # Only compress if > 1KB
-      mime_types => ['text/', 'application/json'];
+      mime_types => ['text/', 'application/json'],
+  ),
 
 =item * L<PAGI::Middleware::ETag>
 
 Automatic ETag generation and validation:
 
-  enable 'ETag';
+  middleware('ETag'),
 
 Returns 304 Not Modified for matching If-None-Match headers.
 
@@ -1143,13 +1180,14 @@ Returns 304 Not Modified for matching If-None-Match headers.
 An in-process token-bucket limiter -- a proof of concept to build on (see its
 LIMITATIONS):
 
-  enable 'RateLimit',
+  middleware('RateLimit',
       requests_per_second => 100,         # token-bucket refill rate
       burst               => 100,         # bucket capacity (max burst)
       key_generator       => sub {        # key generator (defaults to client IP)
           my ($scope) = @_;
           return $scope->{client}[0];      # by IP
-      };
+      },
+  ),
 
 =back
 
@@ -1161,23 +1199,23 @@ LIMITATIONS):
 
 Catch and format errors:
 
-  enable 'ErrorHandler', development => 1;  # Safely stringified development detail
-  enable 'ErrorHandler';                    # Production (default): generic errors, no detail leak
+  middleware('ErrorHandler', development => 1),  # Safely stringified development detail
+  middleware('ErrorHandler'),                    # Production (default): generic errors, no detail leak
 
 C<ErrorHandler>'s built-in answer is plain text. To answer another way, give
 it a C<handler> -- a Request handler that reads the error with
 C<error_context($request)>:
 
-  use PAGI::ErrorContext qw(error_context);
-  use PAGI::Response qw(response);
+  use PAGI::Tools qw(error_context middleware response);
 
-  enable 'ErrorHandler',
+  middleware('ErrorHandler',
       handler => sub {
           my ($request) = @_;
           my $error = error_context($request);
           return $error->default if $error->is_server_error;
           return response('JSON', { error => $error->message });
-      };
+      },
+  ),
 
 Ordinary construction has static C<development =E<gt> 0> behavior and does
 not consult C<PAGI_ENV>. The handler returns a Response or an application,
@@ -1244,23 +1282,15 @@ Create reusable middleware by extending L<PAGI::Middleware>:
 
   1;
 
-Use it with the builder:
+Use it in a C<middleware> list:
 
-  my $app = builder {
-      enable '+MyApp::Middleware::Auth', secret => 'secret-key';
-      $app_root;
-  };
+  middleware => [middleware('+MyApp::Middleware::Auth', secret => 'secret-key')],
 
-The leading C<+> tells the builder to use the class name as-is instead of
-prepending C<PAGI::Middleware::>. This is the Plack-familiar exact-package
-escape shared by Builder and explicit routing middleware descriptions. Or skip
-name resolution entirely by
-passing a configured instance (parentheses required):
+The leading C<+> uses the class name as-is instead of prepending
+C<PAGI::Middleware::>; Builder's C<enable> takes the same spelling. Or skip
+name resolution entirely by passing a configured instance:
 
-  my $app = builder {
-      enable(MyApp::Middleware::Auth->new(secret => 'secret-key'));
-      $app_root;
-  };
+  middleware => [middleware(MyApp::Middleware::Auth->new(secret => 'secret-key'))],
 
 Or per-route:
 

@@ -270,8 +270,36 @@ subtest 'content-type parameter stripping' => sub {
     ok(!$req_plain->is_json, 'malformed media type does not match JSON');
     like dies { $req_plain->content_type(raise_on_error => 1) }, qr/content_type|parse_header_parameters/i,
         'shortcut forwards reporting option';
+    for my $type ('application/vnd.api+json', 'Application/Problem+JSON; charset=utf-8') {
+        $req_plain->headers->set('Content-Type', $type);
+        is($req_plain->is_json, 1, "a +json media type is JSON: $type");
+    }
+    for my $type ('application/json-seq', 'application/+json', 'text/plain') {
+        $req_plain->headers->set('Content-Type', $type);
+        ok(!$req_plain->is_json, "not JSON: $type");
+    }
     $req_plain->headers->remove('Content-Type');
     is($req_plain->content_type, '', 'absent field retains empty-string fallback');
+};
+
+subtest 'charset is the Content-Type charset parameter' => sub {
+    my $req = PAGI::Request->new({
+        type => 'http', method => 'POST',
+        headers => [['content-type', 'text/plain; charset=ISO-8859-1']],
+    }, $receive);
+    is($req->charset, 'ISO-8859-1', 'the charset as sent');
+
+    $req->headers->set('Content-Type', 'text/plain; format=flowed; charset="utf-8"');
+    is($req->charset, 'utf-8', 'a quoted charset among other parameters');
+
+    $req->headers->set('Content-Type', 'application/zip');
+    is($req->charset, undef, 'undef without a charset parameter');
+
+    $req->headers->set('Content-Type', 'text/plain; charset=');
+    is($req->charset, undef, 'undef for a malformed field');
+
+    $req->headers->remove('Content-Type');
+    is($req->charset, undef, 'undef without a Content-Type');
 };
 
 subtest 'constructor requires a supported request scope and receive callback' => sub {

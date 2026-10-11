@@ -31,6 +31,7 @@ subtest 'the After runs as published' => sub {
     close $fh;
     my $app = do $file;
     ok($app, 'the After loads') or diag($@ || $!);
+    like(warning { $app->to_app }, qr/\APAGI::Middleware::Session: no store given/, 'its default session store says so');
 
     my $client = PAGI::Test::Client->new(app => $app, lifespan => 1);
     $client->start;

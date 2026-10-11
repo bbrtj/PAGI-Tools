@@ -72,18 +72,19 @@ async sub events {
         print STDERR "SSE client $sub_id disconnected\n";
     });
 
+    # The client may leave at any await. start and keepalive do nothing once
+    # it has gone, and a best-effort send returns false, so setup stops there.
     await $sse->start;
-    return if $sse->is_closed;    # the client may leave at any await
     await $sse->keepalive(25);
-    await $sse->send_event(
+    return unless await $sse->try_send_event(
         event => 'connected',
         data  => { subscriber_id => $sub_id, server_time => time() },
     );
-    return if $sse->is_closed;
-
     if (my $last_id = $sse->last_event_id) {
-        await $sse->send_event(event => 'reconnected', data => { last_id => $last_id });
-        return if $sse->is_closed;
+        return unless await $sse->try_send_event(
+            event => 'reconnected',
+            data  => { last_id => $last_id },
+        );
     }
 
     $subscribers{$sub_id} = $sse;

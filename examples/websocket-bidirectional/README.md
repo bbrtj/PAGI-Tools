@@ -23,14 +23,14 @@ async sub duplex {
 
     my $incoming = $ws->each_text(async sub {
         my ($text) = @_;
-        await $ws->send_text_if_connected("you said: \U$text");
+        await $ws->try_send_text("you said: \U$text");
     });
 
     my $outgoing = (async sub {
         my $n = 0;
         while ($ws->is_connected) {
             await Future::IO->sleep(1);
-            await $ws->send_text_if_connected('server tick #' . ++$n);
+            await $ws->try_send_text('server tick #' . ++$n);
         }
     })->();
 
@@ -44,7 +44,7 @@ compose(routes => [websocket('/' => \&duplex)]);
 |---|---|
 | `$ws->accept` | the handshake |
 | `$ws->each_text(sub {...})` | the **receive loop**, a Future that completes when the client disconnects |
-| `$ws->send_text_if_connected(...)` | a send that becomes a **no-op once the socket is closing**, so the send loop never races the teardown |
+| `$ws->try_send_text(...)` | a send that does **nothing once the socket is closing**, so the send loop never races the teardown |
 | `$ws->is_connected` | a clean loop guard |
 
 The two branches are joined with `Future->wait_any`: a client disconnect ends

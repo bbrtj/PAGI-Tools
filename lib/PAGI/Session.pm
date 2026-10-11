@@ -8,7 +8,7 @@ use PAGI::Utils::Scope ();
 
 our @EXPORT = ();
 our @EXPORT_OK = qw(session);
-our %EXPORT_TAGS = (ALL => [@EXPORT_OK]);
+our %EXPORT_TAGS = (all => [@EXPORT_OK]);
 
 =head1 NAME
 
@@ -116,7 +116,7 @@ for keys that may or may not be present.
 
 Constructs a session facade from exactly one unblessed scope hashref or object
 with a C<scope> method. This function is an opt-in named export and is also
-available through the uppercase C<:ALL> tag. Nothing is exported by default.
+available through the C<:all> tag. Nothing is exported by default.
 
 =cut
 
@@ -199,6 +199,10 @@ Retrieves a value from the session. With one argument, dies with an
 error including the key name if the key does not exist. With a default
 argument, returns the default when the key is missing (even if the
 default is C<undef>).
+
+For an optional key, pass the default explicitly, C<undef> included:
+C<< $session->get('name', undef) >>. L</exists> tells a key stored as
+C<undef> from a missing one.
 
 =cut
 

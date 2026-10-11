@@ -141,8 +141,9 @@ subtest 'HTTP and SSE body streams keep native events and existing limits' => su
         my ($limited) = request_for($protocol, [
             { type => event_type($protocol, 'request'), body => '123456', more => 0 },
         ]);
-        like dies { $limited->body_stream(max_bytes => 5)->next_chunk->get },
-            qr/max_bytes exceeded/, "$protocol stream enforces size limit";
+        my $error = dies { $limited->body_stream(max_bytes => 5)->next_chunk->get };
+        is([$error->status_code, $error->cause], [413, 'Request body max_bytes exceeded'],
+            "$protocol stream enforces size limit");
 
         my $other = $protocol eq 'http' ? 'sse' : 'http';
         my ($wrong) = request_for($protocol, [
@@ -254,10 +255,8 @@ subtest 'WebSocket body APIs reject before receive, caches, or flags' => sub {
         ['text',             sub { $_[0]->text->get }],
         ['json',             sub { $_[0]->json->get }],
         ['form_params',      sub { $_[0]->form_params->get }],
-        ['form',             sub { local $SIG{__WARN__} = sub {}; $_[0]->form->get }],
         ['form_param',       sub { $_[0]->form_param('name')->get }],
         ['raw_form_params',  sub { $_[0]->raw_form_params->get }],
-        ['raw_form',         sub { local $SIG{__WARN__} = sub {}; $_[0]->raw_form->get }],
         ['raw_form_param',   sub { $_[0]->raw_form_param('name')->get }],
         ['uploads',          sub { $_[0]->uploads->get }],
         ['upload',           sub { $_[0]->upload('file')->get }],

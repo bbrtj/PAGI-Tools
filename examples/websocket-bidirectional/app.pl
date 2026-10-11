@@ -7,8 +7,8 @@
 #   - incoming: $ws->each_text(...) echoes every client message, uppercased.
 #     It is a Future that completes when the client disconnects.
 #   - outgoing: an unprompted server tick every second, guarded by
-#     $ws->is_connected and sent with send_text_if_connected, a no-op once
-#     the socket is closing.
+#     $ws->is_connected and sent with try_send_text, which sends nothing
+#     once the socket is closing.
 #
 # Future->wait_any joins them: a disconnect ends `incoming`, and wait_any then
 # cancels the idle `outgoing` loop. Both branches send on the same socket at
@@ -32,14 +32,14 @@ async sub duplex {
 
     my $incoming = $ws->each_text(async sub {
         my ($text) = @_;
-        await $ws->send_text_if_connected("you said: \U$text");
+        await $ws->try_send_text("you said: \U$text");
     });
 
     my $outgoing = (async sub {
         my $n = 0;
         while ($ws->is_connected) {
             await Future::IO->sleep(1);
-            await $ws->send_text_if_connected('server tick #' . ++$n);
+            await $ws->try_send_text('server tick #' . ++$n);
         }
     })->();
 

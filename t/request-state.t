@@ -10,11 +10,19 @@ sub request_for {
     return PAGI::Request->new($scope, sub { die 'body unavailable' });
 }
 
-subtest 'absent state is optional' => sub {
+subtest 'absent state is an empty facade whose get and data say why' => sub {
     my $request = request_for({ type => 'http' });
 
     ok(!$request->has_state, 'has_state is false when state is absent');
-    is($request->state, undef, 'state is undef when absent');
+    my $state = $request->state;
+    isa_ok($state, ['PAGI::State'], 'state is a facade even when absent');
+    is([$state->keys], [], 'and it is empty');
+    like(dies { $state->get('notes') },
+        qr/\AState key 'notes' does not exist: this scope has no application state \(did lifespan startup run\? PAGI::Test::Client needs lifespan => 1\) at /,
+        'get names the likely cause');
+    like(dies { $state->data },
+        qr/\AState data is unavailable: this scope has no application state \(did lifespan startup run\? PAGI::Test::Client needs lifespan => 1\) at /,
+        'data does too');
 };
 
 subtest 'empty and populated state return a strict facade' => sub {
@@ -33,8 +41,8 @@ subtest 'empty and populated state return a strict facade' => sub {
     isa_ok($state, ['PAGI::State']);
     is($state->get('db'), 'test-connection', 'state reads application data');
     is($state->get('config')->{env}, 'test', 'state preserves nested values');
-    like(dies { $state->get('missing') }, qr/State key 'missing'.*config.*db|State key 'missing'.*db.*config/i,
-        'request state access is strict');
+    like(dies { $state->get('missing') }, qr/\AState key 'missing' does not exist\. Available keys: config, db at /,
+        'request state access is strict, with the message unchanged');
     is($request->state->data, exact_ref($scope->{state}),
         'repeated access uses the same backing data without promising facade identity');
 };

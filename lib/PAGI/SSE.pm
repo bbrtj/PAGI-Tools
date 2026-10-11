@@ -91,6 +91,7 @@ sub disconnect_detail {
 
 # Scope property accessors
 sub scope        { shift->{scope} }
+sub connection   { shift->{scope}{'pagi.connection'} }
 sub path         { shift->{scope}{path} // '/' }
 sub raw_path      { PAGI::Utils::Scope::raw_path(shift->{scope}) }
 sub request_uri   { PAGI::Utils::Scope::request_uri(shift->{scope}) }
@@ -186,7 +187,7 @@ sub has_state {
 sub state {
     my $self = shift;
     require PAGI::State;
-    return PAGI::State->new($self);
+    return PAGI::State->new($self) // PAGI::State->_without_state;
 }
 
 # Path parameter accessors - captured from URL path by router
@@ -613,9 +614,35 @@ async sub _trigger_error {
 # Register close callback
 sub on_close {
     my ($self, $callback) = @_;
-    croak 'Cannot register on_close after cleanup begins' if $self->{_close_callbacks_ran};
+    # Once the connection has ended, a callback runs now, after any still
+    # running, as the spec's on_end does.
+    return $self->_run_late_close_callback($callback) if $self->{_close_callbacks_ran};
     push @{$self->{_on_close}}, $callback;
     return $self;
+}
+
+sub _run_late_close_callback {
+    my ($self, $callback) = @_;
+    $self->{_close_chain} = $self->{_owner}->adopt(
+        $self->_late_close_worker($self->{_close_chain}, $callback));
+    return $self;
+}
+
+# A late callback's failure fails finished while the handler can still see
+# it; once finished has resolved there is nothing left to fail, so it warns.
+async sub _late_close_worker {
+    my ($self, $previous, $callback) = @_;
+    # The callbacks before it report their own failures.
+    eval { await $previous->without_cancel };
+    my $ok = eval {
+        my $result = $callback->($self, $self->disconnect_reason, $self->disconnect_detail);
+        await $result if blessed($result) && $result->isa('Future');
+        1;
+    };
+    return if $ok;
+    die $@ unless $self->{_finished};
+    warn ref($self) . " on_close callback failed after the handler finished: $@";
+    return;
 }
 
 # Register error callback
@@ -652,6 +679,7 @@ sub _start_close_callbacks {
     $self->{_close_callbacks_ran} = 1;
     my $completion = $self->{_cleanup_future};
     my $worker = $self->{_owner}->adopt($self->_close_callbacks_worker);
+    $self->{_close_chain} = $worker;
     # The cleanup Future means the callbacks have run; a callback's failure
     # is reported once, through finished.
     $worker->on_ready(sub { $completion->done unless $completion->is_ready });
@@ -684,7 +712,10 @@ async sub finished {
     # A scope never accepted (or started) ends only when the application
     # returns, so waiting for its end would wait for the caller itself.
     await $self->{_ended}->without_cancel if $self->_ends_without_application;
-    await $self->{_owner}->settled;
+    my $settled = eval { await $self->{_owner}->settled; 1 };
+    my $error = $@;
+    $self->{_finished} = 1;
+    die $error unless $settled;
     return $self;
 }
 
@@ -893,18 +924,18 @@ PAGI::SSE - Convenience wrapper for PAGI Server-Sent Events connections
             await $sse->keepalive(25);
             await $sse->start;
 
-            $sse->on_close(sub {
-                my ($sse, $reason) = @_;    # undef after an explicit close
-                delete $subscribers{refaddr $sse};
-            });
-
             # Replay what a reconnecting client missed, then go live. Sends go
             # out in the order they are made, so making the replay sends and
             # subscribing in one step (no await between) puts anything
             # published meanwhile after the replay: nothing missed or reordered.
             my $seen = $sse->last_event_id // 0;
             my @replay = map { $sse->send_event(%$_) } @history[$seen .. $#history];
-            $subscribers{refaddr $sse} = $sse;
+            my $id = refaddr $sse;
+            $subscribers{$id} = $sse;
+
+            # Unsubscribe however the stream ends, at once if the client has
+            # already gone.
+            $sse->on_close(sub { delete $subscribers{$id} });
             await Future->needs_all(@replay);
 
             await $sse->run;    # until the client disconnects
@@ -1099,12 +1130,12 @@ Shortcut for C<< query_param($name, raw => 1) >>.
 
 =head2 state
 
-    my $state = $sse->state
-        or die 'application requires lifespan state';
-    my $db = $state->get('db');
+    my $db = $sse->state->get('db');
 
-Returns C<PAGI::State|undef> for application state injected by
-L<PAGI::Lifespan>. Absent state returns C<undef>; present state must be a
+Returns a L<PAGI::State> facade for application state injected by
+L<PAGI::Lifespan>. Without application state the facade is empty, and its
+C<get> and C<data> die naming the likely cause (did lifespan startup run?
+L<PAGI::Test::Client> needs C<< lifespan => 1 >>); present state must be a
 hashref or this method croaks. The facade is read-oriented and catches
 missing top-level keys through C<get>.
 
@@ -1355,11 +1386,53 @@ event.
     $_->try_send_event(event => 'news', data => $item) for @subscribers;
 
 Returns true on success, false on failure. Does not throw.
-Useful for broadcasting to multiple clients.
+Useful for broadcasting to multiple clients. Before C<start>, a C<try_send*>
+starts the stream, as C<send> does.
+
+A true return is not a delivery receipt. Per the spec, a send to a client
+that has disconnected is a silent no-op, so if the client has gone but the
+server has not yet noticed, the send no-ops and this still returns true.
+"Sent" means "the send call did not fail", not "the client received it".
+Clean up in C<on_close>, which runs however the client leaves.
 
 You may make one and drop the returned Future -- the usual shape of a
 broadcast loop. The send keeps itself alive until it settles, so it still goes
 out even when it must wait behind a send already in flight.
+
+=head1 HANDLERS AND DISCONNECTS
+
+A client can leave at any C<await>, and nothing interrupts your handler when
+it does. Choose the send by what a lost message means:
+
+=over 4
+
+=item * B<Strict sends for messages that must arrive.> C<send>, C<send_json>,
+C<send_event> and C<send_comment> die once the connection is closing or
+closed, and the failure is reported like any other. Use them where a send
+that cannot happen is an error worth hearing about.
+
+=item * B<C<try_send*> for setup steps and broadcasts.> They return false
+instead of dying once the connection is closing or closed, so a handler can
+stop quietly when its client has gone:
+
+    await $sse->start;
+    await $sse->keepalive(25);
+    return unless await $sse->try_send_event(event => 'welcome', data => $state);
+
+A broadcast to many streams uses them for the same reason: a departed client
+cannot end the loop. A true return is not a delivery receipt (see
+L</"try_send, try_send_json, try_send_comment, try_send_event">), so cleanup
+still belongs in C<on_close>.
+
+=item * B<C<start> and C<keepalive> are already safe.> Once the connection is
+closing or closed, or after L</decline>, they return without sending, so they
+need no check.
+
+=item * B<Cleanup belongs in C<on_close>.> Register it once the thing it
+cleans up exists, before or after C<start>; it runs however the connection
+ends, and at once if the client has already gone, so nothing is left behind.
+
+=back
 
 =head1 KEEPALIVE
 
@@ -1496,11 +1569,8 @@ the connection outcome.
 
     $sse->on_close(sub {
         my ($sse, $reason) = @_;
-        if (!defined $reason) {
-            cleanup_resources();
-        } else {
-            log_error("Unexpected disconnect: $reason");
-        }
+        cleanup_resources();
+        log_error("Unexpected disconnect: $reason") if defined $reason;
     });
 
     # Async callback — return value is awaited automatically
@@ -1509,13 +1579,19 @@ the connection outcome.
         await cleanup_async($reason);
     });
 
-Registers cleanup for the connection's terminal C<on_end> notification.
-Register before awaited I/O. Registration after cleanup has started or
-finished (including constructor-time terminal notification) croaks.
+Registers cleanup to run once, however the connection ends. Register it
+when the thing it cleans up exists, before or after C<start>: if the
+connection has already ended (a client can leave during C<start>, and it
+still returns), the callback runs at once, after any callbacks still running.
 Callbacks can be regular subs or async subs — async results are
 automatically awaited. Multiple callbacks run in registration order. A
 callback that dies does not stop the others; once all have run, the first
-failure is reported through L</finished>.
+failure is reported through L</finished>. A callback that runs after
+C<finished> has already resolved has nowhere to report, so its failure is
+warned.
+
+Its arguments differ from L<PAGI::WebSocket>'s C<on_close>, which receives
+the peer's close code and reason instead of the helper.
 
 Callbacks receive three arguments:
 
@@ -1548,6 +1624,18 @@ The connection retains the helper until terminal notification. The helper's
 own L<PAGI::FutureOwner> then holds the single worker that runs the hooks,
 surviving handler return until cleanup settles and releases the hooks and
 helper.
+
+=head2 connection
+
+    my $conn = $sse->connection;
+
+Returns the server-supplied object under C<pagi.connection>. Its interface is
+defined by the PAGI specification (L<PAGI::Spec::Www>); callers use those
+public methods rather than requiring a particular server's connection class.
+
+For cleanup, use L</on_close>, which runs whenever you register it. The
+connection object is there for what the helper does not wrap: the spec's
+C<end_future>, C<abort>, and the rest of its interface.
 
 =head2 finished
 
@@ -1624,15 +1712,6 @@ Returns C<$self> for chaining.
 
         my $sse = PAGI::SSE->new($scope, $receive, $send);
 
-        my $sub_id;
-        $sse->on_close(sub {
-            my ($sse, $reason) = @_;
-            unsubscribe_metrics($sub_id) if defined $sub_id;
-            # Log abnormal disconnects for debugging
-            warn "SSE client disconnected: $reason"
-                if defined $reason;
-        });
-
         await $sse->keepalive(25);
 
         # Send initial state
@@ -1641,10 +1720,8 @@ Returns C<$self> for chaining.
             data  => { time => time() },
         );
 
-        return if $sse->is_closed;
-
         # Subscribe to metrics
-        $sub_id = subscribe_metrics(sub {
+        my $sub_id = subscribe_metrics(sub {
             my ($metrics) = @_;
             $sse->try_send_event(
                 event => 'metrics',
@@ -1652,8 +1729,17 @@ Returns C<$self> for chaining.
             );
         });
 
+        # Unsubscribe however the stream ends, at once if the client has
+        # already gone.
+        $sse->on_close(sub {
+            my ($sse, $reason) = @_;
+            unsubscribe_metrics($sub_id);
+            # Log abnormal disconnects for debugging
+            warn "SSE client disconnected: $reason"
+                if defined $reason;
+        });
+
         await $sse->run;
-        await $sse->finished;    # its on_close cleanup is part of this call
     }
 
 =head1 SEE ALSO

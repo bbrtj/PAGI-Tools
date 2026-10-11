@@ -16,8 +16,8 @@ Router object; servers accept anything with `to_app`.
 ## Requirements
 
 - Perl 5.18+ with `Future::AsyncAwait` for the distribution and most examples;
-  `large-application`, `starlette-apples`, `process-streaming`,
-  `auth-cookie-login`, `auth-extensions`, `auth-notes`, and `auth-jwt-sandbox`
+  `large-application`, `starlette-apples`, `gut-check`, `content-negotiation`, `upload-streaming`, `process-streaming`,
+  `webhook-receiver`, `framework-on-tools`, `escape-hatches`, `internal-tool`, `auth-cookie-login`, `auth-extensions`, `auth-notes`, and `auth-jwt-sandbox`
   require Perl 5.40+
 - A PAGI server to run examples against:
   ```
@@ -47,11 +47,16 @@ Start here:
 HTTP:
 
 - `contact-form` - a POST handler parsing form fields and file uploads
+- `internal-tool` - Perl 5.40 task board, the everyday HTML workflow: Template Toolkit pages, a form re-rendered with its errors, redirect after POST, a session flash, CSRF on every form, a static stylesheet; the same application in Flask in `compare/`, with line counts
+- `webhook-receiver` - Perl 5.40 whip-it-up GitHub-style webhook receiver: HMAC over the raw body, a JSONL log, a status page and a JSON view, written cold with a clock running; the same program in Flask and Go in `compare/`
+- `upload-streaming` - streaming uploads, bytes or text: a binary file kept exactly as sent, CSV imports decoded by the client's charset with `strict` (cp1252, UTF-8 with a BOM, UTF-16), a lenient transform, a 415 for a charset the stream cannot decode, and `truncated` for a hang-up
+- `content-negotiation` - one notes resource for browsers, htmx and API clients: the ContentNegotiation middleware on a mount picks HTML or JSON from Accept, refuses with the app's own 406 problem and sends Vary; `respond_to` names each representation; htmx gets fragments with `Vary: HX-Request`; a POST reads a form or JSON by Content-Type; `/health` stays outside the negotiation
 - `static-files` - static file serving with `PAGI::App::File`
 - `pages` - Compose-rooted `PAGI::Pages` demo covering class/configured/export factories, direct application Routes and Mount, a request-derived application return, negotiation, and lifespan
 - `process-streaming` - streams an external command's output through `response('Stream', ...)`/`pipe_from` with a four-line loop-agnostic `Future::IO` source, real pipe backpressure, and `on_close` cleanup that stops the child when the client disconnects
 - `psgi-bridge` - a legacy PSGI application on a catch-all route beside native routes (via `PAGI::App::WrapPSGI`)
 - `starlette-apples` - Perl 5.40 single-file apples CRUD application for direct comparison with the original Starlette version, using `Types::Standard` path constraints, Router-owned routing outcomes, and a PAGI-only NDJSON export
+- `gut-check` - Perl 5.40 applications each paired with a runnable Starlette version (thrown HTTP errors, a CRUD resource, a WebSocket/SSE/HTTP broadcast hub, everyday and bundled middleware, streaming formats, sessions, upload relay, negotiation), with measured behaviour and line counts, what the comparison found, and what changed
 
 WebSocket and SSE:
 
@@ -67,13 +72,15 @@ Structuring applications:
 - `declarative-routing` - immutable `PAGI::Routing` tree with package handlers, a configured child Router mount, route middleware, boundary-specific HTTP defaults, and reverse URLs
 - `endpoint-demo` - HTTP, WebSocket, and SSE endpoint classes as route leaves, with per-route middleware
 - `endpoint-class-demo` - ordinary modular objects returning immutable Router subtrees, with configured exact-leaf endpoint classes
+- `framework-on-tools` - Perl 5.40 small Sinatra/FastAPI-shaped framework (`lib/Tiny.pm`) built on Tools, and a notes app on it: a Request subclass, plain-value returns, `before` and `around` (call_next) hooks, startup services, typed path parameters, exception mapping, a plugin, a raw escape hatch and an OpenAPI document from the Router; the README lists each seam and its cost
+- `escape-hatches` - Perl 5.40 the easy way, then each step down to raw PAGI in one app: a handler returning a response, one reading the raw scope and connection, one answering with a hand-written application mid-request, a raw application mounted at a route, and raw middleware editing events
 - `large-application` - Perl 5.40+ Compose-rooted modular HTML application with named Person/Blogs Router application mounts, cross-component links, boundary-specific Router defaults, an opaque static-file mount, lifespan data, and a deferred-work ledger
 
 Lifespan and background work:
 
 - `lifespan-utils` - lifespan hooks via `PAGI::Utils`
 - `test-lifespan-shutdown` - testing graceful lifespan shutdown hooks
-- `background-tasks` - starting fire-and-forget work from ordinary handlers
+- `background-tasks` - work the client does not wait for: started at once, or after the response is delivered (`on_complete`)
 
 Each example has its own `README.md` explaining how to run it.
 

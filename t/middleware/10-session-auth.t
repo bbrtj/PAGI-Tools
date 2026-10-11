@@ -8,6 +8,7 @@ use IO::Async::Loop;
 
 use PAGI::Middleware::Cookie;
 use PAGI::Middleware::Session;
+use PAGI::Middleware::Session::Store::Memory;
 use PAGI::Middleware::Session::State::Cookie;
 
 my $loop = IO::Async::Loop->new;
@@ -49,7 +50,7 @@ subtest 'Cookie middleware - cookie jar sets response cookies' => sub {
 subtest 'Session middleware - creates new session' => sub {
     PAGI::Middleware::Session->clear_sessions;
     my $captured;
-    my $app = PAGI::Middleware::Session->new()->wrap(async sub {
+    my $app = PAGI::Middleware::Session->new(store => PAGI::Middleware::Session::Store::Memory->new)->wrap(async sub {
         my ($scope, $receive, $send) = @_;
         $captured = $scope;
         $scope->{'pagi.session'}{user_id} = 42;
@@ -67,7 +68,7 @@ subtest 'Session middleware - creates new session' => sub {
 
 subtest 'Session middleware - restores existing session' => sub {
     PAGI::Middleware::Session->clear_sessions;
-    my $session = PAGI::Middleware::Session->new();
+    my $session = PAGI::Middleware::Session->new(store => PAGI::Middleware::Session::Store::Memory->new);
     my $session_id;
     my $first = $session->wrap(async sub {
         my ($scope, $receive, $send) = @_;
@@ -90,7 +91,7 @@ for my $case (['default', undef, qr/SameSite=Lax/], ['custom', 'Strict', qr/Same
         my %options = $samesite
             ? (state => PAGI::Middleware::Session::State::Cookie->new(
                 cookie_options => { httponly => 1, path => '/', samesite => $samesite })) : ();
-        my $app = PAGI::Middleware::Session->new(%options)->wrap(async sub {
+        my $app = PAGI::Middleware::Session->new(%options, store => PAGI::Middleware::Session::Store::Memory->new)->wrap(async sub {
             my ($scope, $receive, $send) = @_;
             await $send->({ type => 'http.response.start', status => 200, headers => [] });
             await $send->({ type => 'http.response.body', body => 'OK', more => 0 });

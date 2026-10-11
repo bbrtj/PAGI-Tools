@@ -734,6 +734,49 @@ C<exception after response completed: ...> for a re-raised error, or raises it
 with C<< raise_app_exceptions => 1 >>. A test that deliberately provokes a 500
 should capture that warning.
 
+=head3 Thrown pages and house-styled errors
+
+Return responses; throw only from code far from the handler. When you do,
+L<PAGI::Exception::HTTP> says what went wrong and a thrown Response is an
+answer in itself. One ErrorHandler handler can honour thrown pages as they
+are and give every other client error the house style:
+
+  use Scalar::Util qw(blessed);
+  use PAGI::ErrorContext qw(error_context);
+  use PAGI::Response qw(response);
+
+  middleware('ErrorHandler', handler => sub {
+      my ($request) = @_;
+      my $error = error_context($request);
+      my $thrown = $error->exception;
+      # Server errors first: default is a 5xx page itself, or the stock 500
+      # for anything that could not be read as one.
+      return $error->default if $error->is_server_error;
+      # A page: no status_code, a to_app. Facts are checked first.
+      return $thrown
+          if blessed($thrown) && !$thrown->can('status_code') && $thrown->can('to_app');
+      return response('JSON', { error => $error->message });
+  })
+
+The server-error line comes first so that a thrown object ErrorHandler could
+not read as a page -- one with C<to_app> but no usable status, such as an
+exception written for Plack -- gets the stock 500 instead of being run. A
+thrown page below 400, such as C<die response('Redirect', '/login')>, never
+reaches the handler: ErrorHandler sends it at once.
+
+Routing misses never reach the handler either: they are answers, not errors.
+The router answers a path nothing matches (404) and a method a matched path
+does not allow (405) itself, in plain text. Give the 404 the house style with
+C<http_default>, beside C<routes>:
+
+  http_default => sub {
+      my ($request) = @_;
+      return response('JSON', { error => 'Not Found' }, status => 404);
+  },
+
+A 405 is changed by a middleware that rewrites it (see L<PAGI::Routing>), and
+a mounted Router answers its own misses.
+
 =head2 Real Catch-All Routes
 
 A Router default means "nothing matched." A wildcard is a real route:
@@ -1007,6 +1050,47 @@ Inspect direct children and named leaves without mutating the tree:
 C<named_routes> maps absolute addresses to their original leaves. Immutable
 Router C<app> mounts are inspected recursively; other applications are opaque.
 C<desc> is a human note for listings and tools.
+
+=head2 Linking inside a mounted app
+
+Route names are logical addresses, not URL paths. A Mount named C<api>
+holding a route named C<note> gives the address C</api/note>, whatever
+prefix the Mount serves. A reference without a leading C</> resolves from
+the namespace of the handler that calls it, so routes inside a Mount link to
+their siblings, and up to their parent, without knowing where they are
+mounted:
+
+  use v5.40;
+  use PAGI::Tools qw(compose mount path_for response route);
+  use PAGI::Test::Client;
+
+  my $app = compose(routes => [
+      route('/' => sub ($request) {
+          # An absolute reference names the full address, from anywhere.
+          response('JSON', { note => path_for($request, '/api/note', { id => 1 }) });
+      }, name => 'home'),
+      mount('/api', routes => [
+          route('/notes/{id}' => sub ($request) {
+              response('JSON', { id => $request->path_param('id') });
+          }, name => 'note'),
+          route('/notes' => sub ($request) {
+              response('JSON', {
+                  notes => path_for($request, 'notes'),     # a sibling: /api/notes
+                  home  => path_for($request, '../home'),   # the parent's: /
+              });
+          }, name => 'notes'),
+      ], name => 'api'),
+  ]);
+
+  my $client = PAGI::Test::Client->new(app => $app);
+  my $from_root = $client->get('/')->json;           # { note => '/api/notes/1' }
+  my $from_api  = $client->get('/api/notes')->json;  # { notes => '/api/notes', home => '/' }
+
+Mount the same routes again at C</v2> under the name C<v2>, and
+C<path_for($request, 'notes')> gives C</v2/notes> there with no change to the
+handlers. The full rules -- C<./> and C<../>, absolute references, and which
+captures a relative reference inherits -- are in
+L<PAGI::Routing/"REVERSE ROUTING AND INSPECTION">.
 
 =head2 Matched-Route Metadata
 
@@ -1768,6 +1852,50 @@ a value the response already has. To hear back from layers further in, seed a
 shared reference before calling inward -- L<PAGI::Stash>, or the spec
 Cookbook's "Reporting back to an outer layer" recipe.
 
+=head2 Vary on a request header you branch on
+
+When a handler answers differently by a request header, the response says so
+in C<Vary>, or a shared cache serves one client's answer to another. For
+Accept, L<PAGI::Middleware::ContentNegotiation> writes C<Vary: Accept> for
+you. For any other header, the handler or a small route middleware writes
+it.
+
+htmx asks for a fragment by sending C<HX-Request: true>; the full page and
+the fragment are both HTML:
+
+  async sub notes {
+      my ($request) = @_;
+      my $notes = load_notes();
+      my $html = $request->header('HX-Request') ? render_fragment($notes)
+                                                : render_page($notes);
+      return response('HTML', $html, headers => [Vary => 'HX-Request']);
+  }
+
+The same, for every answer of a route, as route middleware:
+
+  use PAGI::Utils::Middleware qw(wrap_response_headers);
+
+  sub vary_on_hx {
+      my ($app) = @_;
+      return async sub {
+          my ($scope, $receive, $send) = @_;
+          await $app->($scope, $receive, wrap_response_headers($send, sub {
+              $_[0]->add_vary('HX-Request');
+          }));
+      };
+  }
+
+  route('/notes' => \&notes, middleware => [middleware(\&vary_on_hx)])
+
+htmx's documentation also asks you to turn off
+C<htmx.config.historyRestoreAsHxRequest> when the server answers fragments
+by C<HX-Request>, so a history restore is not cached as a fragment.
+
+A response thrown with C<die response('JSON', ...)> is sent by Compose's error
+handler, outside your route's middleware, so it gets no C<Vary> from there.
+Return an answer that depends on a request header; throw only answers that
+do not.
+
 =head2 Compare conditional entity tags
 
 For an existing representation selected by a successful GET or HEAD, read all
@@ -2344,6 +2472,8 @@ Server-Sent Events are ideal for real-time dashboards:
           );
       });
 
+      # Unsubscribe however the stream ends, at once if the client has
+      # already gone.
       $sse->on_close(sub { unsubscribe_metrics($sub_id) });
       await $sse->run;
   }),
@@ -2552,6 +2682,55 @@ B<Middleware authors:> If your middleware inherits from L<IO::Async::Notifier>,
 use C<< $self->adopt_future($f) >> instead. It properly tracks futures and
 propagates unhandled errors to the notifier's C<invoke_error> method.
 
+=head2 Work After the Response
+
+Some work should start only once the client has its answer: a welcome email
+for a signup that succeeded, say. Register it on the connection's
+C<on_complete> (L<PAGI::Request/connection>), and hand what it starts to the
+same lifespan-owned L<PAGI::FutureOwner>:
+
+  use v5.40;
+  use Future::AsyncAwait;
+  use Future::IO;    # pagi-server binds the implementation
+  use PAGI::FutureOwner;
+  use PAGI::Tools qw(compose response route);
+
+  my $background = PAGI::FutureOwner->new(
+      on_failure => sub ($error) { warn "Background task failed: $error" },
+  );
+
+  async sub send_welcome_email ($email) {
+      await Future::IO->sleep(2);    # in reality, an async HTTP call
+      warn "Email sent to $email\n";
+  }
+
+  async sub signup ($request) {
+      my $email = (await $request->json)->{email};
+      # ... create the account: everything that can fail comes first ...
+      $request->connection->on_complete(sub {
+          $background->adopt(send_welcome_email($email));
+      });
+      return response('JSON', { status => 'created' }, status => 201);
+  }
+
+  my $app = compose(
+      routes   => [route('/signup' => \&signup, methods => ['POST'])],
+      lifespan => {
+          # Emails still being sent finish before the process exits.
+          shutdown => async sub { await $background->settled },
+      },
+  );
+
+C<on_complete> runs once the response has been delivered, whatever its
+status; a client that disconnects first does not trigger it. A 500 is
+delivered too, so a handler that registers C<on_complete> and then dies still
+fires it: register it just before C<return>, after everything that can fail.
+C<on_end> runs however the connection ends; use it for cleanup that must
+always run, not for work that assumes success.
+
+Start the work in the handler instead (L</Background Work the Client Does Not
+Wait For>) when it does not depend on the client getting its answer.
+
 =head2 CPU-Bound Work in Subprocess
 
 B<Note:> This pattern uses L<IO::Async::Function>, which is specific to
@@ -2614,7 +2793,9 @@ For blocking or CPU-intensive work, use L<IO::Async::Function> to run in a child
 
 B<Warning:> IO::Async::Function forks child processes. If running with C<--workers N>, each server worker forks its own Function workers. With 4 server workers and 2 Function workers each, you have 12 processes. For high-volume CPU work, consider a dedicated job queue instead.
 
-See C<examples/background-tasks/> for complete working examples.
+C<examples/background-tasks/> shows the asynchronous patterns;
+C<examples/process-streaming/> drives a subprocess through L<Future::IO>,
+without naming an event loop.
 
 =head1 FORMS & UPLOADS
 
@@ -2711,12 +2892,74 @@ See C<examples/background-tasks/> for complete working examples.
 
 See C<examples/10-forms-and-uploads/> for complete examples.
 
+=head2 A huge upload in a legacy encoding
+
+C<body_stream(decode =E<gt> ...)> decodes as the body arrives. For the
+heaviest legacy-encoded uploads, spool the bytes to disk first and read the
+file through PerlIO's own decoder, line by line:
+
+  my $path = "$dir/import.csv";
+  await $request->body_stream->stream_to_file($path);
+  open my $fh, '<:encoding(cp1252)', $path or die "$path: $!";
+  while (my $line = <$fh>) { ... }
+
+C<:encoding> also reads the encodings a stream cannot (ISO-2022-JP,
+UTF-7), because it reads by lines.
+
+=head2 Accept JSON and a form on one route
+
+A route that takes the same data from an API client (JSON) and from a
+browser (a form) reads the body by its Content-Type, and refuses anything
+else as the client's 415:
+
+  use PAGI::Request::BodyError;
+
+  async sub create {
+      my ($request) = @_;
+      my $data = $request->is_json ? await $request->json
+               : $request->is_form ? (await $request->form_params)->as_hashref
+               : PAGI::Request::BodyError->throw(
+                     status_code => 415,
+                     reason      => 'unsupported_media_type',
+                     message     => 'The request body must be JSON or a form.',
+                 );
+      my $text = ref $data eq 'HASH' ? $data->{text} : undef;
+      return response('Text', 'A note needs text.', status => 400)
+          unless defined $text && !ref $text && length $text;
+      ...
+  }
+
+=over 4
+
+=item * C<is_json> is true for C<application/json> and every C<+json> type
+(C<application/vnd.api+json>, ...); C<is_form> for URL-encoded and multipart
+forms.
+
+=item * C<as_hashref> keeps the last value of a repeated form field; use
+C<as_hashref_mixed> for an array of them.
+
+=item * The thrown L<PAGI::Request::BodyError> is answered like every other
+body error: a plain-text 415 from Compose, or your ErrorHandler's rendering.
+
+=item * The data is still only as trustworthy as its checks: a JSON body need
+not be an object, and a field need not be a string. Check the shape before
+using it.
+
+=item * C<< $request->body >> still holds the raw bytes of a JSON or
+URL-encoded body after it has been parsed, for a signature check.
+
+=back
+
+C<examples/content-negotiation> uses this in its C<create>.
+
 =head2 Bad request bodies
 
-A body the client got wrong -- not JSON, not valid UTF-8 under C<strict>, a
-multipart body that cannot be parsed, a part over a limit -- is the client's
-error, not the application's. L<PAGI::Request>'s buffered helpers throw a
-L<PAGI::Request::BodyError> (status 400, or 413 for a limit), and every
+A body the client got wrong -- not JSON, not valid in its charset under
+C<strict>, text in a charset Perl does not know, a multipart body that cannot
+be parsed, a part over a limit -- is the client's error, not the
+application's. L<PAGI::Request>'s buffered helpers throw a
+L<PAGI::Request::BodyError> (status 400, 413 for a limit, or 415 for an
+unknown charset), and every
 Compose application answers with that status. Most handlers need no code for
 it; one that wants its own response catches the error:
 

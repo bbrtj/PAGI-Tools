@@ -8,6 +8,7 @@ my @load_modules = qw(
     PAGI::Compose
     PAGI::Compose::Compiler
     PAGI::Exception::IncompleteResponse
+    PAGI::Exception::HTTP
     PAGI::Authority
     PAGI::Auth
     PAGI::Auth::Credentials
@@ -41,7 +42,7 @@ my @load_modules = qw(
     PAGI::CSRF
     PAGI::Transport
     PAGI::Request::Upload
-    PAGI::Request::Negotiate
+    PAGI::ContentNegotiation
     PAGI::Response
     PAGI::Response::Text
     PAGI::Response::HTML
@@ -65,6 +66,7 @@ my @load_modules = qw(
     PAGI::Utils::Middleware
     PAGI::Utils::AppObject
     PAGI::Utils::Scope
+    PAGI::Utils::TextDecoder
     PAGI::Utils::_SendValidation
     PAGI::Test::Client
     PAGI::Test::Response

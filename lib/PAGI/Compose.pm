@@ -8,7 +8,7 @@ use PAGI::Routing::Middleware ();
 use PAGI::Routing::Router ();
 
 our @EXPORT_OK = qw(compose);
-our %EXPORT_TAGS = (ALL => [@EXPORT_OK]);
+our %EXPORT_TAGS = (all => [@EXPORT_OK]);
 
 sub compose {
     return __PACKAGE__->new(@_);
@@ -166,12 +166,12 @@ remain supported alternatives.
 =head1 IMPORTS
 
 Nothing is exported by default. Import C<compose> explicitly or through the
-uppercase C<:ALL> tag:
+C<:all> tag:
 
     use PAGI::Compose qw(compose);
-    use PAGI::Compose qw(:ALL);
+    use PAGI::Compose qw(:all);
 
-There is no lowercase C<:all> alias.
+L<PAGI::Tools> also exports C<compose>.
 
 =head1 CONSTRUCTOR
 
@@ -433,6 +433,14 @@ scope keys and may not fabricate or replace the state reference. Compose does
 not create fallback state or copy state into request scopes; the server owns
 that propagation.
 
+Startup writes the raw hash; handlers read it through a read-only
+L<PAGI::State> facade (C<< $request->state->get('db') >>). Each request scope
+gets a shallow copy of the state, so a top-level key assigned after startup --
+in a request, or by a timer that kept startup's C<$state> -- changes only one
+copy and silently desyncs the rest. Store each shared object once in startup
+and change it through its reference; see
+L<PAGI::State/"WRITTEN AT STARTUP, READ THROUGH A FACADE">.
+
 With callbacks configured, missing, malformed, replaced, or unprovable server
 state prevents both callbacks from running and sends:
 
@@ -444,8 +452,8 @@ state prevents both callbacks from running and sends:
 Without callbacks, ordinary startup and shutdown complete without requiring a
 C<state> key.
 
-Callback return values are ignored. Plain immediate completion and
-Future-backed completion are normalized. A synchronous exception or failed
+A callback's return value is ignored unless it is a Future, which is awaited:
+a callback may be a plain sub or an async sub. A synchronous exception or failed
 Future from startup produces C<lifespan.startup.failed>; shutdown failure
 produces C<lifespan.shutdown.failed>, using the exception text as C<message>.
 A failed startup does not invoke shutdown. A startup callback that allocates

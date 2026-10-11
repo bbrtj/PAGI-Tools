@@ -16,7 +16,7 @@ use PAGI::State qw(app_state);
 
 {
     package Local::State::All;
-    PAGI::State->import(':ALL');
+    PAGI::State->import(':all');
 }
 
 {
@@ -26,15 +26,15 @@ use PAGI::State qw(app_state);
 
 ok(!Local::State::NoDefault->can('app_state'), 'app_state is not exported by default');
 ok(Local::State::Named->can('app_state'), 'app_state is available as a named export');
-ok(Local::State::All->can('app_state'), 'uppercase :ALL exports app_state');
+ok(Local::State::All->can('app_state'), 'lowercase :all exports app_state');
 
-my $lowercase_tag_error;
+my $uppercase_tag_error;
 {
     local $SIG{__WARN__} = sub { };
-    $lowercase_tag_error = dies { PAGI::State->import(':all') };
+    $uppercase_tag_error = dies { PAGI::State->import(':ALL') };
 }
-like($lowercase_tag_error, qr/"?:all"? is not defined|Can't continue/i,
-    'lowercase :all is not an export tag');
+like($uppercase_tag_error, qr/"?:?ALL"? is not defined|Can't continue/i,
+    'uppercase :ALL is not an export tag');
 
 my $state_import_error;
 {

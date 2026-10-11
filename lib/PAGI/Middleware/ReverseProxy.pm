@@ -15,13 +15,27 @@ PAGI::Middleware::ReverseProxy - Handle X-Forwarded-* headers from reverse proxi
 
 =head1 SYNOPSIS
 
-    use PAGI::Middleware::Builder;
+    use PAGI::Tools qw(compose middleware response route);
 
-    my $app = builder {
-        enable 'ReverseProxy',
-            trusted_proxies => ['127.0.0.1', '10.0.0.0/8'];
-        $my_app;
-    };
+    my $app = compose(
+        routes     => [route('/' => sub { response('Text', 'hello') })],
+        middleware => [
+            middleware('ReverseProxy', trusted_proxies => ['127.0.0.1', '10.0.0.0/8']),
+        ],
+    );
+
+C<middleware('ReverseProxy', ...)> also goes in a Router's, Mount's or
+Route's C<middleware> list. It constructs the middleware and wraps the
+application inside it, which you can do yourself:
+
+    use PAGI::Middleware::ReverseProxy;
+
+    my $wrapped = PAGI::Middleware::ReverseProxy->new(
+        trusted_proxies => ['127.0.0.1', '10.0.0.0/8'],
+    )->wrap($native_app);
+
+Without Compose, L<PAGI::Middleware::Builder> composes middleware the way
+Plack::Builder does.
 
 =head1 DESCRIPTION
 

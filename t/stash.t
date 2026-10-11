@@ -19,7 +19,7 @@ my $named_imported = eval q{
 
 my $all_imported = eval q{
     package Local::Stash::All;
-    PAGI::Stash->import(':ALL');
+    PAGI::Stash->import(':all');
     1;
 };
 
@@ -28,15 +28,15 @@ ok($no_default_imported && !Local::Stash::NoDefault->can('stash'),
 ok($named_imported && Local::Stash::Named->can('stash'),
     'stash is available as a named export');
 ok($all_imported && Local::Stash::All->can('stash'),
-    'uppercase :ALL exports stash');
+    'lowercase :all exports stash');
 
-my $lowercase_tag_error;
+my $uppercase_tag_error;
 {
     local $SIG{__WARN__} = sub { };
-    $lowercase_tag_error = dies { PAGI::Stash->import(':all') };
+    $uppercase_tag_error = dies { PAGI::Stash->import(':ALL') };
 }
-like($lowercase_tag_error, qr/"?:all"? is not defined|Can't continue/i,
-    'lowercase :all is not an export tag');
+like($uppercase_tag_error, qr/"?:?ALL"? is not defined|Can't continue/i,
+    'uppercase :ALL is not an export tag');
 
 # ===================
 # from_data constructor

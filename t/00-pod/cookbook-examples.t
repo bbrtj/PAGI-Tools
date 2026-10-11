@@ -243,6 +243,17 @@ subtest 'Serving behind a proxy prefix recipe executes as published' => sub {
     );
 };
 
+subtest 'Linking inside a mounted app recipe executes as published' => sub {
+    my $recipe = first_code_block($cookbook, '=head2 Linking inside a mounted app');
+    perl_script_runs(
+        'mounted app links',
+        $recipe
+            . "die 'absolute from the root' unless \$from_root->{note} eq '/api/notes/1';\n"
+            . "die 'relative sibling' unless \$from_api->{notes} eq '/api/notes';\n"
+            . "die 'parent' unless \$from_api->{home} eq '/';\n",
+    );
+};
+
 subtest 'Declaring what a route requires recipe executes as published' => sub {
     my $recipe = first_code_block($cookbook, '=head2 Declaring what a route requires');
     perl_script_runs(
@@ -293,6 +304,37 @@ subtest 'Streaming Response Formats recipe executes as published' => sub {
             . "die 'expected the TSV type' unless \$res->header('Content-Type') eq 'text/tab-separated-values; charset=utf-8';\n"
             . "local \$SIG{__WARN__} = sub { die \"warned: \$_[0]\" };\n"
             . "die 'expected an undef field to be empty' unless \$response->format_item(['a', undef]) eq qq|a\\t\\n|;\n",
+    );
+};
+
+subtest 'Thrown pages recipe executes as published' => sub {
+    my $recipe = code_block_containing($cookbook,
+        '=head3 Thrown pages and house-styled errors', "middleware('ErrorHandler'");
+    my $miss = code_block_containing($cookbook,
+        '=head3 Thrown pages and house-styled errors', 'http_default');
+    perl_script_runs(
+        'thrown pages recipe',
+        "use PAGI::Compose qw(compose);\nuse PAGI::Routing qw(middleware route);\n"
+            . "use PAGI::Exception::HTTP;\nuse PAGI::Test::Client;\n"
+            . "my \$psgi_called = 0;\n"
+            . "{ package Local::PlackStyle; sub new { bless {}, \$_[0] } sub to_app { \$psgi_called++; sub { [200, [], ['psgi']] } } }\n"
+            . "my \$errors = do {\n" . $recipe . "};\n"
+            . "my \$app = compose(middleware => [\$errors], routes => [\n"
+            . "    route('/plack' => sub { die Local::PlackStyle->new }),\n"
+            . "    route('/page' => sub { die response('Text', 'down', status => 503) }),\n"
+            . "    route('/fact' => sub { die PAGI::Exception::HTTP->new(404, 'nope') }),\n"
+            . "],\n" . $miss . ");\n"
+            . "local \$SIG{__WARN__} = sub {};\n"
+            . "my \$client = PAGI::Test::Client->new(app => \$app);\n"
+            . "my \$res = \$client->get('/plack');\n"
+            . "die 'plack-style: expected the stock 500' unless \$res->status == 500;\n"
+            . "die 'plack-style: its PSGI to_app ran as a PAGI app' if \$psgi_called;\n"
+            . "\$res = \$client->get('/page');\n"
+            . "die 'a 503 page answers as thrown' unless \$res->status == 503 && \$res->text eq 'down';\n"
+            . "\$res = \$client->get('/fact');\n"
+            . "die 'a fact gets the house style' unless \$res->status == 404 && \$res->json->{error} eq 'nope';\n"
+            . "\$res = \$client->get('/nope');\n"
+            . "die 'a routing miss gets it from http_default' unless \$res->status == 404 && \$res->json->{error} eq 'Not Found';\n",
     );
 };
 
