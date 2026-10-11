@@ -32,7 +32,11 @@ is [$res->status, $res->header('Vary')], [200, 'HX-Request, Accept'], 'an htmx P
 like $res->text, qr/\A<ul id="notes">.*feed cat/s, 'with the updated list fragment';
 
 $res = $client->post('/notes', headers => { 'Content-Type' => 'text/plain' }, body => 'hi');
-is $res->status, 415, 'any other body is a 415';
+is [$res->status, $res->text], [415, 'The request body must be JSON or a form.'], 'any other body is a 415';
+
+$res = $client->post('/notes', headers => { %$json, 'Content-Type' => 'application/vnd.api+json' },
+    body => '{"text":"from an api client"}');
+is $res->status, 201, 'a +json media type is read as JSON';
 
 $res = $client->post('/notes', headers => $json, json => { title => 'no text' });
 is $res->status, 400, 'a note without text is a 400';

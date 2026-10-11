@@ -240,7 +240,9 @@ sub is_disconnected {
 sub is_json {
     my $self = shift;
     my $ct = $self->content_type;
-    return $ct eq 'application/json';
+    # application/json, or any +json structured-syntax type (RFC 6839), such
+    # as application/vnd.api+json or application/problem+json.
+    return $ct eq 'application/json' || $ct =~ m{\Aapplication/[^/\s]+\+json\z} ? 1 : 0;
 }
 
 sub is_form {
@@ -1099,7 +1101,11 @@ See L<PAGI::Request::MultipartStream> for full documentation.
 
     my $bytes = await $req->body;
 
-Read raw body bytes. Cached after first read.
+Read raw body bytes. Cached after first read, and C<text>, C<json> and a
+URL-encoded C<form_params> all read through it, so the exact bytes are still
+here after they have parsed the body -- what a webhook signature check needs.
+A multipart C<form_params> streams its parts to disk instead and keeps no raw
+copy.
 
 B<Important:> Cannot be used after C<body_stream()> has been called.
 
@@ -1245,7 +1251,9 @@ Check HTTP method.
 
 =head2 is_json
 
-True if Content-Type is C<application/json>.
+True if Content-Type is C<application/json> or any C<+json> type (the RFC 6839
+structured-syntax suffix: C<application/vnd.api+json>,
+C<application/problem+json>, ...).
 
 =head2 is_form
 

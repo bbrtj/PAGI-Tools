@@ -37,6 +37,7 @@ package NoteStore {
 package main;
 
 use PAGI::Tools qw(compose middleware mount negotiated_type path_for respond_to response route);
+use PAGI::Request::BodyError;
 use Types::Standard qw(Int);
 
 sub esc ($text) { $text =~ s/([&<>"'])/'&#' . ord($1) . ';'/ger }
@@ -100,9 +101,15 @@ async sub create ($request)
 {
     # The body's type decides how to read it (input); Accept decides the
     # answer (output). They are separate questions.
+    # Anything but JSON or a form is the client's 415, answered like any other
+    # body error.
     my $data = $request->is_json ? await $request->json
-             : $request->is_form ? { text => (await $request->form_params)->get('text') }
-             : return response('Text', 'Unsupported Media Type', status => 415);
+             : $request->is_form ? (await $request->form_params)->as_hashref
+             : PAGI::Request::BodyError->throw(
+                   status_code => 415,
+                   reason      => 'unsupported_media_type',
+                   message     => 'The request body must be JSON or a form.',
+               );
     my $text = ref $data eq 'HASH' ? $data->{text} : undef;
     return response('Text', 'A note needs text.', status => 400)
         unless defined $text && !ref $text && length $text;

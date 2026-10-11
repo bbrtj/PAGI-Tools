@@ -85,6 +85,12 @@
     t/example-gut-check.t.
 
   [Changed]
+  - Request is_json is true for every +json media type
+    (application/vnd.api+json, application/problem+json, ...), not only
+    application/json.
+  - BodyError documents unsupported_media_type (415) for a body in a media
+    type the route does not take; the Cookbook's "Accept JSON and a form on
+    one route" shows the one way to read either and refuse the rest.
   - Encode 3.00 or later is required (perl 5.30 and later ship it).
   - ContentNegotiation sends Vary: Accept on every answer, its 406 and
     refusals included, merged into any Vary the response has.

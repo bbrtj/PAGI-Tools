@@ -270,6 +270,14 @@ subtest 'content-type parameter stripping' => sub {
     ok(!$req_plain->is_json, 'malformed media type does not match JSON');
     like dies { $req_plain->content_type(raise_on_error => 1) }, qr/content_type|parse_header_parameters/i,
         'shortcut forwards reporting option';
+    for my $type ('application/vnd.api+json', 'Application/Problem+JSON; charset=utf-8') {
+        $req_plain->headers->set('Content-Type', $type);
+        is($req_plain->is_json, 1, "a +json media type is JSON: $type");
+    }
+    for my $type ('application/json-seq', 'application/+json', 'text/plain') {
+        $req_plain->headers->set('Content-Type', $type);
+        ok(!$req_plain->is_json, "not JSON: $type");
+    }
     $req_plain->headers->remove('Content-Type');
     is($req_plain->content_type, '', 'absent field retains empty-string fallback');
 };

@@ -70,12 +70,15 @@ errors keeps working.
 C<invalid_multipart>, and C<invalid_body> for one longer than its own
 Content-Length); 413 for a body over a configured limit
 (C<too_large>); 415 for text in a charset Perl does not know
-(C<unsupported_charset>).
+(C<unsupported_charset>), or a body in a media type the route does not take
+(C<unsupported_media_type>, thrown by the application, as in the Cookbook's
+"Accept JSON and a form on one route").
 
 =head2 reason
 
 One of C<invalid_json>, C<invalid_encoding>, C<invalid_multipart>,
-C<invalid_body>, C<too_large>, C<unsupported_charset>.
+C<invalid_body>, C<too_large>, C<unsupported_charset>,
+C<unsupported_media_type>.
 
 =head2 message
 

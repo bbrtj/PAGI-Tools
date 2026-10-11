@@ -2906,6 +2906,52 @@ file through PerlIO's own decoder, line by line:
 C<:encoding> also reads the encodings a stream cannot (ISO-2022-JP,
 UTF-7), because it reads by lines.
 
+=head2 Accept JSON and a form on one route
+
+A route that takes the same data from an API client (JSON) and from a
+browser (a form) reads the body by its Content-Type, and refuses anything
+else as the client's 415:
+
+  use PAGI::Request::BodyError;
+
+  async sub create {
+      my ($request) = @_;
+      my $data = $request->is_json ? await $request->json
+               : $request->is_form ? (await $request->form_params)->as_hashref
+               : PAGI::Request::BodyError->throw(
+                     status_code => 415,
+                     reason      => 'unsupported_media_type',
+                     message     => 'The request body must be JSON or a form.',
+                 );
+      my $text = ref $data eq 'HASH' ? $data->{text} : undef;
+      return response('Text', 'A note needs text.', status => 400)
+          unless defined $text && !ref $text && length $text;
+      ...
+  }
+
+=over 4
+
+=item * C<is_json> is true for C<application/json> and every C<+json> type
+(C<application/vnd.api+json>, ...); C<is_form> for URL-encoded and multipart
+forms.
+
+=item * C<as_hashref> keeps the last value of a repeated form field; use
+C<as_hashref_mixed> for an array of them.
+
+=item * The thrown L<PAGI::Request::BodyError> is answered like every other
+body error: a plain-text 415 from Compose, or your ErrorHandler's rendering.
+
+=item * The data is still only as trustworthy as its checks: a JSON body need
+not be an object, and a field need not be a string. Check the shape before
+using it.
+
+=item * C<< $request->body >> still holds the raw bytes of a JSON or
+URL-encoded body after it has been parsed, for a signature check.
+
+=back
+
+C<examples/content-negotiation> uses this in its C<create>.
+
 =head2 Bad request bodies
 
 A body the client got wrong -- not JSON, not valid in its charset under
