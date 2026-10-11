@@ -50,4 +50,19 @@ my $mixed = stream_of(["a\nb\n"]);
 $mixed->next_line->get;
 like dies { $mixed->next_chunk->get }, qr/next_chunk: line reading has started; use next_line/, 'chunks after lines would lose the buffer';
 
+# After a body error the lines end: a held fragment is not a line.
+for my $case (
+    [ 'a decode 400',   ["good\npart", "\xFF\n"], decode => 'UTF-8', strict => 1 ],
+    [ 'a max_bytes 413', ["ab\ncd", "efgh\n"],    max_bytes => 6 ],
+    [ 'a line 413',      ["12345\nab\n"],         max_line_length => 4 ],
+) {
+    my ($label, $chunks, %opts) = @$case;
+    my $stream = stream_of($chunks, %opts);
+    my @before;
+    my $error = dies { while (defined(my $line = $stream->next_line->get)) { push @before, $line } };
+    ok $error, "$label is thrown";
+    is $stream->next_line->get, undef, "after $label, next_line has no more lines";
+    ok defined $stream->error, "and error says why";
+}
+
 done_testing;

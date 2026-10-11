@@ -437,7 +437,8 @@ async sub stream_to {
 Resolves to the next line, without its C<\n> and without a C<\r> before it;
 a last line without a newline is delivered; undef at the end. A client that
 hangs up partway through a line ends the lines there, and C<truncated> is
-true. A line longer than C<max_line_length> is a
+true. After a body error (invalid bytes, C<max_bytes>, a line too long) the
+lines end: C<next_line> resolves to undef and C<error> says why. A line longer than C<max_line_length> is a
 L<PAGI::Request::BodyError> 413 (C<too_large>).
 
 Once line reading starts, C<next_chunk>, C<stream_to> and C<stream_to_file>
@@ -447,6 +448,8 @@ die: the partial line held for C<next_line> would be lost.
 
 async sub next_line {
     my ($self) = @_;
+    # After a body error the lines end: a held fragment is not a line.
+    return undef if $self->{_error};
     my $buffer = \($self->{_lines} //= '');
     while (1) {
         my $at = index $$buffer, "\n";
@@ -498,12 +501,14 @@ async sub each_line {
 
 sub _line_too_long {
     my ($self) = @_;
+    $self->{_error} = "line longer than max_line_length ($self->{max_line_length})";
     $self->{_done} = 1;
+    $self->{_lines} = '';
     PAGI::Request::BodyError->throw(
         status_code => 413,
         reason      => 'too_large',
         message     => 'A line in the request body is longer than this route accepts.',
-        cause       => "line longer than max_line_length ($self->{max_line_length})",
+        cause       => $self->{_error},
     );
 }
 
@@ -572,11 +577,14 @@ NDJSON, one JSON document per line, read without holding the body:
     async sub import_events ($request) {
         my $stream = $request->body_stream(decode => 'UTF-8', strict => 1);
         my $json   = JSON::PP->new;    # decoded text in, so not decode_json
-        my $count  = await $stream->each_line(sub ($line) {
+        my $events = 0;
+        await $stream->each_line(sub ($line) {
             return unless length $line;    # NDJSON allows blank lines
             store_event($json->decode($line));
+            $events++;
         });
-        return response('JSON', { events => $count });
+        # each_line resolves to the count of all lines, blank ones included.
+        return response('JSON', { events => $events });
     }
 
 C<next_line> is the same one line at a time. A line ends at C<\n> (a C<\r>

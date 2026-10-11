@@ -46,6 +46,9 @@ is [$res->status, $res->json], [200, { columns => [], rows => 0 }], 'an empty CS
 $res = $client->post('/import', headers => { 'Content-Type' => 'text/csv; charset=utf-8' }, body => qq{name\n"unclosed\n});
 is $res->status, 400, 'malformed CSV is the client\'s 400';
 
+$res = $client->post('/import', headers => { 'Content-Type' => 'text/csv; charset=utf-8' }, body => qq{na"me,city\nA,B\n});
+is $res->status, 400, 'a malformed header row is the client\'s 400 too';
+
 $res = $client->post('/events', headers => { 'Content-Type' => 'application/x-ndjson' },
     body => qq{{"type":"a"}\n\n{"type":"\xC3\xA9"}\r\n});
 is [$res->status, $res->json], [200, { events => 2, types => ['a', "\x{E9}"] }], 'NDJSON: one event per line, blank lines skipped';

@@ -57,13 +57,16 @@ async sub import_csv ($request) {
 
     seek $spool, 0, 0;
     my $csv = Text::CSV->new({ binary => 1 });
-    my $columns = $csv->getline($spool) // [];
+    # A getline that returns undef either reached the end (Text::CSV's code
+    # 2012) or failed to parse (any other code; eof alone is true even when
+    # the last record failed). Each such undef is checked.
+    my $malformed = sub { 0 + $csv->error_diag != 2012 };
+    my $columns = $csv->getline($spool);
+    return response('Text', 'The CSV is malformed.', status => 400) if !$columns && $malformed->();
     my $rows = 0;
     $rows++ while $csv->getline($spool);
-    # 2012 is Text::CSV's "end of data"; any other code is a parse error
-    # (eof alone is true even when the last record failed).
-    return response('Text', 'The CSV is malformed.', status => 400) if 0 + $csv->error_diag != 2012;
-    return response('JSON', { columns => $columns, rows => $rows });
+    return response('Text', 'The CSV is malformed.', status => 400) if $malformed->();
+    return response('JSON', { columns => $columns // [], rows => $rows });
 }
 
 # NDJSON, one event per line: the input twin of response('NDJSON'). A line
