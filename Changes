@@ -195,6 +195,9 @@
     gone. The sse-dashboard example drops its is_closed checks.
 
   [Breaking -- see UPGRADING.md]
+  - ContentNegotiation writes one scope record, pagi.content_negotiation,
+    in place of pagi.preferred_content_type and pagi.accepted_types; an
+    unknown or empty supported_types dies; the stock 406 lists media types.
   - PAGI::Request::Negotiate is now PAGI::ContentNegotiation (the same
     class methods), with is_known_type and shortcuts.
   - PAGI::App::Router and PAGI::Endpoint::Router are removed; PAGI::Routing

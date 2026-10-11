@@ -746,7 +746,7 @@ with 0.002002's `406 text/plain` listing the supported types.
 | 0.002002 | Now |
 |---|---|
 | `strict => 1` | the default; remove it |
-| `strict => 0` (the default) | `refuse => 0`; with no match `pagi.preferred_content_type` is undef |
+| `strict => 0` (the default) | `refuse => 0`; with no match `negotiated_type($request)` is undef |
 | `default_type => $type` | removed: a request without `Accept` gets the first supported type; with `refuse => 0` choose your own fallback (`// $type`) |
 
 Passing `strict` or `default_type` dies.

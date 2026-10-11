@@ -101,7 +101,7 @@ subtest 'ContentNegotiation - selects preferred type' => sub {
 
     run_async { $wrapped->($scope, $receive, $send) };
 
-    is $captured_scope->{'pagi.preferred_content_type'}, 'text/html', 'selects highest q value';
+    is $captured_scope->{'pagi.content_negotiation'}{type}, 'text/html', 'selects highest q value';
 };
 
 subtest 'ContentNegotiation - shares exact exclusions and accepted scope shape' => sub {
@@ -122,9 +122,9 @@ subtest 'ContentNegotiation - shares exact exclusions and accepted scope shape' 
 
     run_async { $wrapped->($scope, async sub { {} }, async sub { }) };
 
-    is $captured_scope->{'pagi.preferred_content_type'}, 'text/html',
+    is $captured_scope->{'pagi.content_negotiation'}{type}, 'text/html',
         'exact q=0 exclusion is not revived by the positive wildcard';
-    is $captured_scope->{'pagi.accepted_types'}, [
+    is $captured_scope->{'pagi.content_negotiation'}{accepted}, [
         { type => 'text/html', q => 0.5 },
         { type => '*/*', q => 0.5 },
         { type => 'application/json', q => 0 },
@@ -148,9 +148,9 @@ subtest 'ContentNegotiation - combines repeated Accept fields' => sub {
 
     run_async { $wrapped->($scope, async sub { {} }, async sub { }) };
 
-    is $captured_scope->{'pagi.preferred_content_type'}, 'text/plain',
+    is $captured_scope->{'pagi.content_negotiation'}{type}, 'text/plain',
         'a later acceptable field participates in selection';
-    is $captured_scope->{'pagi.accepted_types'}, [
+    is $captured_scope->{'pagi.content_negotiation'}{accepted}, [
         { type => 'text/plain', q => 1 },
         { type => 'text/html', q => 0 },
     ], 'accepted metadata contains every repeated field in preference order';
@@ -180,7 +180,7 @@ subtest 'ContentNegotiation - handles wildcard' => sub {
 
     run_async { $wrapped->($scope, $receive, $send) };
 
-    is $captured_scope->{'pagi.preferred_content_type'}, 'application/json', 'wildcard matches first supported';
+    is $captured_scope->{'pagi.content_negotiation'}{type}, 'application/json', 'wildcard matches first supported';
 };
 
 subtest 'ContentNegotiation - handles type wildcard' => sub {
@@ -207,7 +207,7 @@ subtest 'ContentNegotiation - handles type wildcard' => sub {
 
     run_async { $wrapped->($scope, $receive, $send) };
 
-    is $captured_scope->{'pagi.preferred_content_type'}, 'text/html', 'text/* matches text/html';
+    is $captured_scope->{'pagi.content_negotiation'}{type}, 'text/html', 'text/* matches text/html';
 };
 
 sub negotiate {
@@ -259,8 +259,8 @@ subtest 'ContentNegotiation refuse => 0 lets the application decide' => sub {
     my ($events, $seen) = negotiate(PAGI::Middleware::ContentNegotiation->new(
         supported_types => ['application/json', 'text/html'], refuse => 0), 'application/xml');
     is scalar(@$seen), 1, 'the wrapped application runs';
-    is $seen->[0]{'pagi.preferred_content_type'}, undef, 'with no preferred type: nothing matched';
-    ok exists $seen->[0]{'pagi.accepted_types'}, 'and the parsed Accept list';
+    is $seen->[0]{'pagi.content_negotiation'}{type}, undef, 'with no preferred type: nothing matched';
+    ok exists $seen->[0]{'pagi.content_negotiation'}{accepted}, 'and the parsed Accept list';
     is((response_starts($events))[0]{status}, 200, "and the application's own response");
 };
 
@@ -292,6 +292,40 @@ subtest 'ContentNegotiation merges Vary with what the response has' => sub {
         run_async { $wrapped->(make_scope(method => 'GET'), async sub { {} }, async sub { push @events, $_[0] }) };
         is response_header(\@events, 'Vary'), $expected, "Vary: $existing";
     }
+};
+
+subtest 'ContentNegotiation puts one record in the scope' => sub {
+    for my $case ([{}, 1], [{ refuse => 0 }, 0]) {
+        my ($options, $refusing) = @$case;
+        my $captured;
+        my $wrapped = PAGI::Middleware::ContentNegotiation->new(
+            supported_types => ['html', 'json'], %$options)->wrap(async sub { $captured = $_[0] });
+        run_async { $wrapped->(make_scope(method => 'GET', headers => [['Accept', 'application/json']]),
+            async sub { {} }, async sub { }) };
+        is $captured->{'pagi.content_negotiation'}, {
+            type      => 'json',
+            supported => ['html', 'json'],
+            refusing  => $refusing,
+            accepted  => [{ type => 'application/json', q => 1 }],
+        }, "the choice as declared, the declared list, refusing => $refusing, the parsed Accept";
+        ok !exists $captured->{'pagi.preferred_content_type'} && !exists $captured->{'pagi.accepted_types'},
+            'and none of the old keys';
+    }
+};
+
+subtest 'ContentNegotiation checks supported_types when it is built' => sub {
+    like dies { PAGI::Middleware::ContentNegotiation->new(supported_types => ['html', 'htlm']) },
+        qr/\QContentNegotiation: unknown type 'htlm' in supported_types; use a media type (type\/subtype) or a shortcut: atom, css, form, gif, html, jpeg, jpg, js, json, pdf, png, rss, svg, text, txt, xml, zip\E/,
+        'a typo dies, listing the shortcuts';
+    like dies { PAGI::Middleware::ContentNegotiation->new(supported_types => []) },
+        qr/\QContentNegotiation: supported_types must list at least one type\E/,
+        'an empty list dies';
+};
+
+subtest 'the stock 406 names media types' => sub {
+    my ($events) = negotiate(PAGI::Middleware::ContentNegotiation->new(supported_types => ['html', 'json']), 'image/png');
+    is response_body($events), 'Not Acceptable. Supported types: text/html, application/json',
+        'shortcuts are listed as the media types they stand for';
 };
 
 subtest 'ContentNegotiation strict and default_type were removed' => sub {
@@ -354,7 +388,7 @@ subtest 'ContentNegotiation - handles no Accept header' => sub {
 
     run_async { $wrapped->($scope, $receive, $send) };
 
-    is $captured_scope->{'pagi.preferred_content_type'}, 'application/json', 'uses first supported when no Accept';
+    is $captured_scope->{'pagi.content_negotiation'}{type}, 'application/json', 'uses first supported when no Accept';
 };
 
 done_testing;

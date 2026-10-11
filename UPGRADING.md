@@ -33,6 +33,8 @@ in [UPGRADING-REFERENCE.md](UPGRADING-REFERENCE.md).
 | Maintenance `body`, `content_type` | `response => response('HTML', $page, status => 503)`; the default is now plain text; both options now die ([details](UPGRADING-REFERENCE.md#breaking-maintenance-body-and-content_type-are-replaced-by-response)) |
 | ContentNegotiation `strict`, `default_type` | refusing is the default; `refuse => 0` lets the application decide; both options now die ([details](UPGRADING-REFERENCE.md#breaking-contentnegotiation-refuses-by-default-strict-and-default_type-are-removed)) |
 | `PAGI::Request::Negotiate` | `PAGI::ContentNegotiation`: the same class methods |
+| scope keys `pagi.preferred_content_type`, `pagi.accepted_types` | `negotiated_type($request)` (PAGI::ContentNegotiation); the record `pagi.content_negotiation` holds `type`, `supported`, `refusing` and `accepted` |
+| an unknown shortcut in ContentNegotiation `supported_types` became `application/<name>` | it dies when the middleware is built; use a media type or a known shortcut |
 | `Auth::Basic`, `Auth::Bearer` | `Authentication` with a backend, plus `requires` ([details](UPGRADING-REFERENCE.md#breaking-authbasic-and-authbearer-are-replaced-by-authentication)) |
 | `FormBody`, `JSONBody` middleware | `$request->form_params`, `$request->json` ([details](UPGRADING-REFERENCE.md#breaking-pagimiddlewareformbody-and-pagimiddlewarejsonbody-are-removed)) |
 | `PAGI::App::Loader` | `pagi-server --app`, or `do $file` ([details](UPGRADING-REFERENCE.md#breaking-pagiapploader-is-removed)) |
