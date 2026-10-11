@@ -17,7 +17,7 @@ Router object; servers accept anything with `to_app`.
 
 - Perl 5.18+ with `Future::AsyncAwait` for the distribution and most examples;
   `large-application`, `starlette-apples`, `gut-check`, `content-negotiation`, `upload-streaming`, `process-streaming`,
-  `auth-cookie-login`, `auth-extensions`, `auth-notes`, and `auth-jwt-sandbox`
+  `webhook-receiver`, `auth-cookie-login`, `auth-extensions`, `auth-notes`, and `auth-jwt-sandbox`
   require Perl 5.40+
 - A PAGI server to run examples against:
   ```
@@ -47,6 +47,7 @@ Start here:
 HTTP:
 
 - `contact-form` - a POST handler parsing form fields and file uploads
+- `webhook-receiver` - Perl 5.40 whip-it-up GitHub-style webhook receiver: HMAC over the raw body, a JSONL log, a status page and a JSON view, written cold with a clock running; the same program in Flask and Go in `compare/`
 - `upload-streaming` - streaming uploads, bytes or text: a binary file kept exactly as sent, CSV imports decoded by the client's charset with `strict` (cp1252, UTF-8 with a BOM, UTF-16), a lenient transform, a 415 for a charset the stream cannot decode, and `truncated` for a hang-up
 - `content-negotiation` - one notes resource for browsers, htmx and API clients: the ContentNegotiation middleware on a mount picks HTML or JSON from Accept, refuses with the app's own 406 problem and sends Vary; `respond_to` names each representation; htmx gets fragments with `Vary: HX-Request`; a POST reads a form or JSON by Content-Type; `/health` stays outside the negotiation
 - `static-files` - static file serving with `PAGI::App::File`
