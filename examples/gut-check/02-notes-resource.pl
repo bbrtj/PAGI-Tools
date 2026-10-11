@@ -33,13 +33,11 @@ package Notes {
     use Future::AsyncAwait;
     use PAGI::Tools qw(path_for response);
 
-    async sub get ($self, $request)
-    {
+    async sub get ($self, $request) {
         return response('JSON', NoteStore->for_request($request)->all);
     }
 
-    async sub post ($self, $request)
-    {
+    async sub post ($self, $request) {
         my $note = NoteStore->for_request($request)->add(await $request->json);
         return response('JSON', $note,
             status => 201,
@@ -54,15 +52,13 @@ package Note {
     use Future::AsyncAwait;
     use PAGI::Tools qw(response);
 
-    async sub get ($self, $request)
-    {
+    async sub get ($self, $request) {
         my $note = NoteStore->for_request($request)->find($request->path_param('id'))
             or return response('JSON', { error => 'no such note' }, status => 404);
         return response('JSON', $note);
     }
 
-    async sub delete ($self, $request)
-    {
+    async sub delete ($self, $request) {
         NoteStore->for_request($request)->remove($request->path_param('id'))
             or return response('JSON', { error => 'no such note' }, status => 404);
         return response('Empty');
