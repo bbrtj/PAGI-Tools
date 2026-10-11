@@ -19,11 +19,22 @@ sub new {
     # Encode's 'utf8' is its lax variant; UTF-8 is decoded strictly however
     # it is spelt, as $request->text does.
     $encoding = find_encoding('UTF-8') if $encoding->name =~ /\Autf-?8/i;
+    # Encode's UTF-16/32 decoder treats a chunk boundary inside a code unit as
+    # an error under FB_CROAK (Unicode.xs checks it before STOP_AT_PARTIAL),
+    # so strict decoding never hands it one: whole units only, and for UTF-16
+    # the last unit waits too, as it may be the first half of a surrogate pair.
+    my ($unit, $pairs) = (0, 0);
+    if ($strict && $encoding->isa('Encode::Unicode')) {
+        $unit  = $encoding->name =~ /32/ ? 4 : 2;
+        $pairs = $encoding->name =~ /UTF-16/i ? 1 : 0;
+    }
     return bless {
         name     => $name,
         decoder  => $encoding->renew,    # one stateful decoder: a BOM's byte order, a held tail
         check    => ($strict ? FB_CROAK : FB_DEFAULT) | STOP_AT_PARTIAL,
         strict   => $strict ? 1 : 0,
+        unit     => $unit,
+        pairs    => $pairs,
         held     => '',
         finished => 0,
     }, $class;
@@ -35,10 +46,16 @@ sub decode {
     $bytes = '' unless defined $bytes;
     croak 'PAGI::Utils::TextDecoder: expects bytes' if $bytes =~ /[^\x00-\xFF]/;
     my $data = $self->{held} . $bytes;
+    my $wait = '';
+    if (my $unit = $self->{unit}) {
+        my $keep = length($data) % $unit;
+        $keep += $unit if $self->{pairs} && length($data) >= $unit + $keep;
+        $wait = substr($data, length($data) - $keep, $keep, '');
+    }
     my $text;
     eval { $text = $self->{decoder}->decode($data, $self->{check}); 1 }
         or $self->_fail($@);
-    $self->{held} = $data;    # STOP_AT_PARTIAL left only an unfinished character
+    $self->{held} = $data . $wait;    # an unfinished character, and any unit held back
     return $text;
 }
 
@@ -51,6 +68,15 @@ sub finish {
     return '' unless length $held;
     # A renewed decoder never reports a cut-off final character itself, even
     # under FB_CROAK, so the held bytes are judged here.
+    if ($self->{unit}) {
+        # Strict UTF-16/32: the units held back are decoded now; a lone lead
+        # surrogate or an odd final byte dies here.
+        my $text;
+        eval { $text = $self->{decoder}->decode($held, FB_CROAK); 1 }
+            or $self->_fail($@);
+        $self->_fail('the input ends inside a character') if length $held;
+        return $text;
+    }
     $self->_fail('the input ends inside a character') if $self->{strict};
     return "\x{FFFD}";
 }
@@ -156,6 +182,11 @@ WebSocket handler would close with 1007 (invalid frame payload data).
 A UTF-8 byte-order mark is text and arrives as U+FEFF, as in Encode and
 L<PAGI::Request/text>; C<s/\A\x{FEFF}//> on the first chunk removes it. A
 UTF-16 or UTF-32 byte-order mark is consumed: it sets the byte order.
+
+Strict UTF-16 delivers each code unit one call late (it may be the first
+half of a surrogate pair); strict UTF-32 and UCS-2 hold back only an
+incomplete unit. Encode's UTF-16/32 decoder reports a chunk boundary inside
+a code unit as an error, so the decoder never hands it one.
 
 =head1 SEE ALSO
 

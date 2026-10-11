@@ -76,4 +76,35 @@ subtest 'mistakes croak at once' => sub {
         'an unknown option';
 };
 
+subtest 'strict UTF-16/32: a split code unit or surrogate pair waits' => sub {
+    my %cases = (
+        'BOM, then !'            => ['UTF-16',   ["\xFF\xFEh\0i\0", "!\0"],                ['h', 'i', '!']],
+        'an odd trailing byte'   => ['UTF-16',   ["\xFF\xFEh\0i", "\0!\0"],                ['', 'hi', '!']],
+        'surrogate pair split'   => ['UTF-16',   ["\xFF\xFEh\0\x3D\xD8", "\x00\xDE!\0"],    ['h', "\x{1F600}", '!']],
+        'surrogate unit split'   => ['UTF-16',   ["\xFF\xFEh\0\x3D", "\xD8\x00\xDE!\0"],    ['', "h\x{1F600}", '!']],
+        'the BOM split'          => ['UTF-16',   ["\xFF", "\xFEh\0", "i\0"],                ['', '', 'h', 'i']],
+        'UTF-16BE without a BOM' => ['UTF-16BE', ["\0h\0i", "\0!"],                         ['h', 'i', '!']],
+        'UTF-32, split 4 ways'   => ['UTF-32',   ["\xFF\xFE\0", "\0h\0\0\0!", "\0\0\0"],     ['', 'h', '!', '']],
+    );
+    for my $label (sort keys %cases) {
+        my ($name, $in, $out) = @{$cases{$label}};
+        is chunks(decoder($name, strict => 1), @$in), $out, $label;
+    }
+    is join('', @{ chunks(decoder('UTF-16', strict => 1), split //, "\xFF\xFEh\0i\0!\0") }), 'hi!',
+        'byte at a time';
+};
+
+subtest 'strict UTF-16/32: malformed input still dies' => sub {
+    like dies { decoder('UTF-16', strict => 1)->decode("\xFF\xFEa\0\x00\xDCb\0") },
+        qr/\APAGI::Utils::TextDecoder: not valid UTF-16: .*surrogate/, 'a lone low surrogate, on its chunk';
+    my $lead = decoder('UTF-16', strict => 1);
+    is $lead->decode("\xFF\xFEa\0\x3D\xD8"), 'a', 'text before a trailing lead surrogate';
+    like dies { $lead->finish }, qr/not valid UTF-16: .*surrogate/, 'the lone lead dies at finish';
+    my $odd = decoder('UTF-16', strict => 1);
+    $odd->decode("\xFF\xFEa\0b");
+    like dies { $odd->finish }, qr/not valid UTF-16/, 'an odd final byte dies at finish';
+    like dies { decoder('UTF-32', strict => 1)->decode("\xFF\xFE\0\0\x00\xD8\0\0") },
+        qr/not valid UTF-32/, 'a UTF-32 surrogate';
+};
+
 done_testing;
