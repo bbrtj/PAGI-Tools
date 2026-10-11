@@ -372,6 +372,7 @@ sub body_stream {
         limit_name => $limit_name,
         decode     => $opts{decode},
         strict     => $opts{strict},
+        strip_bom  => $opts{strip_bom},
         _scope_type => $scope_type,
     );
     $self->{scope}{'pagi.request.body.stream.created'} = 1;
@@ -979,6 +980,7 @@ a body, form, or upload cache is already present.
         max_bytes => 10 * 1024 * 1024,  # 10MB limit
         decode    => 'UTF-8',            # Decode from UTF-8
         strict    => 1,                  # invalid bytes are a 400
+        strip_bom => 1,                  # drop a leading byte-order mark
     );
 
 Returns a L<PAGI::Request::BodyStream> for streaming body consumption. This is
@@ -998,6 +1000,10 @@ decode is a 415 when it is made.
 
 =item * C<strict> - If true, bytes invalid in the C<decode> encoding throw a
 L<PAGI::Request::BodyError> (400). Default: false (they become U+FFFD).
+
+=item * C<strip_bom> - With C<decode>, drops a byte-order mark (U+FEFF) at
+the very start of the text, as Excel's "CSV UTF-8" sends. Default: false (in
+UTF-8 the mark is text).
 
 =back
 

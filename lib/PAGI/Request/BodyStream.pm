@@ -88,6 +88,7 @@ you cannot use those methods.
         max_bytes  => 10485760,      # Optional: max body size
         decode     => 'UTF-8',       # Optional: decode from UTF-8
         strict     => 1,             # Optional: invalid bytes are a 400
+        strip_bom  => 1,             # Optional: drop a leading byte-order mark
         limit_name => 'body_size',   # Optional: name for limit error message
     );
 
@@ -115,6 +116,11 @@ L<PAGI::Utils::TextDecoder>.
 throw a L<PAGI::Request::BodyError> (400, C<invalid_encoding>), the client's
 error. If false (default), they become U+FFFD.
 
+=item * C<strip_bom> - Optional, with C<decode>. Drops a byte-order mark
+(U+FEFF) at the very start of the text: Excel's "CSV UTF-8" begins with one.
+Off by default, because in UTF-8 the mark is text. See
+L<PAGI::Utils::TextDecoder/new>.
+
 =item * C<limit_name> - Optional. Name to use in error message when max_bytes
 is exceeded (default: 'max_bytes'). It appears in the error's C<cause>, for the
 log; the client sees only the message. C<content-length> marks the limit as
@@ -140,11 +146,15 @@ sub new {
         _truncated    => 0,
     }, $class;
 
+    croak 'strip_bom needs decode: a byte-order mark is text'
+        if $args{strip_bom} && !defined $args{decode};
+
     # The encoding name usually comes from the client's Content-Type, so one
     # this stream cannot decode is the client's 415, as for $request->text.
     if (defined $args{decode}) {
         my $decoder = eval {
-            PAGI::Utils::TextDecoder->new($args{decode}, strict => $args{strict});
+            PAGI::Utils::TextDecoder->new($args{decode},
+                strict => $args{strict}, strip_bom => $args{strip_bom});
         };
         PAGI::Request::BodyError->throw(
             status_code => 415,

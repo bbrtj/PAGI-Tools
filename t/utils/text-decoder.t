@@ -125,4 +125,19 @@ subtest 'strict UTF-16/32: malformed input still dies' => sub {
         qr/not valid UTF-32/, 'a UTF-32 surrogate';
 };
 
+subtest 'strip_bom drops one U+FEFF at the start' => sub {
+    my $d = PAGI::Utils::TextDecoder->new('UTF-8', strip_bom => 1);
+    is $d->decode("\xEF\xBB\xBFname\n\xEF\xBB\xBF"), "name\n\x{FEFF}", 'only the first, only at the start';
+
+    my $split = PAGI::Utils::TextDecoder->new('UTF-8', strip_bom => 1);
+    is $split->decode("\xEF"), '', 'a BOM split after its first byte decodes to nothing yet';
+    is $split->decode("\xBB\xBFname"), 'name', 'and is dropped when it completes';
+
+    my $le = PAGI::Utils::TextDecoder->new('UTF-16LE', strip_bom => 1, strict => 1);
+    is $le->decode("\xFF\xFEa\0"), 'a', 'UTF-16LE keeps a BOM as text; strip_bom drops it';
+
+    my $keep = PAGI::Utils::TextDecoder->new('UTF-8');
+    is $keep->decode("\xEF\xBB\xBFx"), "\x{FEFF}x", 'off by default: the BOM is text';
+};
+
 done_testing;
