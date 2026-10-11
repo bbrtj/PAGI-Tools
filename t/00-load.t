@@ -66,6 +66,7 @@ my @load_modules = qw(
     PAGI::Utils::Middleware
     PAGI::Utils::AppObject
     PAGI::Utils::Scope
+    PAGI::Utils::TextDecoder
     PAGI::Utils::_SendValidation
     PAGI::Test::Client
     PAGI::Test::Response
