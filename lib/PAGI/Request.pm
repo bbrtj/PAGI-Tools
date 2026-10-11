@@ -5,7 +5,7 @@ use Hash::MultiValue;
 use PAGI::Headers ();
 use PAGI::Authority ();
 use PAGI::Utils::Scope ();
-use Encode qw(decode FB_CROAK FB_DEFAULT LEAVE_SRC);
+use Encode qw(decode find_encoding FB_CROAK FB_DEFAULT LEAVE_SRC);
 use Cookie::Baker qw(crush_cookie);
 use Future::AsyncAwait;
 use JSON::MaybeXS qw(decode_json);
@@ -74,6 +74,34 @@ sub _decode_body_utf8 {
     PAGI::Request::BodyError->throw(
         reason => 'invalid_encoding',
         message => 'The request body is not valid UTF-8.',
+        cause => $@,
+    );
+}
+
+# The body as text in the charset the client declared, UTF-8 when it declared
+# none. A charset Encode does not know is a 415; under strict, bytes invalid in
+# the charset are a 400.
+sub _decode_body_text {
+    my ($self, $body, $strict) = @_;
+    my $charset = $self->charset;
+    return _decode_body_utf8($body, $strict) unless defined $charset;
+
+    my $encoding = find_encoding($charset)
+        or PAGI::Request::BodyError->throw(
+            status_code => 415,
+            reason => 'unsupported_charset',
+            message => "The request body's charset is not supported.",
+        );
+    # Encode's 'utf8' is its lax variant; a client's UTF-8 is decoded strictly.
+    return _decode_body_utf8($body, $strict) if $encoding->name =~ /\Autf-?8/i;
+
+    my $text = eval {
+        $encoding->decode($body // '', ($strict ? FB_CROAK : FB_DEFAULT) | LEAVE_SRC);
+    };
+    return $text unless $@;
+    PAGI::Request::BodyError->throw(
+        reason => 'invalid_encoding',
+        message => "The request body is not valid $charset.",
         cause => $@,
     );
 }
@@ -419,14 +447,14 @@ async sub body {
 }
 
 # Read body as decoded UTF-8 text (async)
-# Options: strict => 1 (croak on invalid UTF-8)
+# Options: strict => 1 (bytes invalid in the charset are a 400)
 async sub text {
     my ($self, %opts) = @_;
     my $strict = delete $opts{strict} // 0;
     croak("Unknown options to text: " . join(', ', keys %opts)) if %opts;
 
     my $body = await $self->body;
-    return _decode_body_utf8($body, $strict);
+    return $self->_decode_body_text($body, $strict);
 }
 
 # Parse body as JSON (async; a body that is not JSON is a BodyError, 400)
@@ -1073,10 +1101,13 @@ so they fail the same way.
 =head2 text
 
     my $text = await $req->text;
-    my $text = await $req->text(strict => 1);   # invalid UTF-8 is a 400
+    my $text = await $req->text(strict => 1);   # invalid bytes are a 400
 
-Read body as UTF-8 decoded text. With C<< strict => 1 >>, invalid UTF-8 throws
-a L<PAGI::Request::BodyError> (400); see L</BAD REQUEST BODIES>.
+Read the body as text, decoded with the charset the client declared in
+Content-Type (see L</charset>), or as UTF-8 when it declared none. A charset
+L<Encode> does not know throws a L<PAGI::Request::BodyError> (415). With
+C<< strict => 1 >>, bytes invalid in the charset throw one (400); without it
+they become U+FFFD. See L</BAD REQUEST BODIES>.
 
 =head2 json
 
@@ -1163,11 +1194,12 @@ Get all uploads for a field name.
 
 =head1 BAD REQUEST BODIES
 
-When the body itself is wrong -- not JSON, not valid UTF-8 under C<strict>, a
-multipart body that cannot be parsed or has no boundary, or a part over a
-configured limit -- the buffered helpers (C<json>, C<text>, C<form_params>,
-C<uploads>) throw a L<PAGI::Request::BodyError>. It carries C<status_code>
-(400, or 413 for a limit), C<reason>, a client-safe C<message>, and the
+When the body itself is wrong -- not JSON, not valid in its charset under
+C<strict>, text in a charset Perl does not know, a multipart body that cannot
+be parsed or has no boundary, or a part over a configured limit -- the
+buffered helpers (C<json>, C<text>, C<form_params>, C<uploads>) throw a
+L<PAGI::Request::BodyError>. It carries C<status_code> (400, 413 for a limit,
+or 415 for an unknown charset), C<reason>, a client-safe C<message>, and the
 underlying C<cause>.
 
 Most applications do nothing: every L<PAGI::Compose> application answers with

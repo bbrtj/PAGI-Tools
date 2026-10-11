@@ -2850,10 +2850,12 @@ See C<examples/10-forms-and-uploads/> for complete examples.
 
 =head2 Bad request bodies
 
-A body the client got wrong -- not JSON, not valid UTF-8 under C<strict>, a
-multipart body that cannot be parsed, a part over a limit -- is the client's
-error, not the application's. L<PAGI::Request>'s buffered helpers throw a
-L<PAGI::Request::BodyError> (status 400, or 413 for a limit), and every
+A body the client got wrong -- not JSON, not valid in its charset under
+C<strict>, text in a charset Perl does not know, a multipart body that cannot
+be parsed, a part over a limit -- is the client's error, not the
+application's. L<PAGI::Request>'s buffered helpers throw a
+L<PAGI::Request::BodyError> (status 400, 413 for a limit, or 415 for an
+unknown charset), and every
 Compose application answers with that status. Most handlers need no code for
 it; one that wants its own response catches the error:
 

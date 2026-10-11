@@ -68,12 +68,13 @@ errors keeps working.
 
 400 for a body that cannot be read (C<invalid_json>, C<invalid_encoding>,
 C<invalid_multipart>); 413 for a body over a configured limit
-(C<too_large>).
+(C<too_large>); 415 for text in a charset Perl does not know
+(C<unsupported_charset>).
 
 =head2 reason
 
 One of C<invalid_json>, C<invalid_encoding>, C<invalid_multipart>,
-C<too_large>.
+C<too_large>, C<unsupported_charset>.
 
 =head2 message
 

@@ -25,9 +25,12 @@
     helpers; PAGI::Authority; PAGI::Utils::Headers; PAGI::Utils
     path_from_root, pagi_env and environment predicates.
   - request_uri and raw_path_info on Request, WebSocket and SSE;
-    PAGI::Request::BodyError (bad bodies answer 400 or 413).
+    PAGI::Request::BodyError (bad bodies answer 400, 413 or 415).
   - Request charset: the Content-Type charset parameter, to decode a
     streamed body by (body_stream(decode => $req->charset // 'UTF-8')).
+  - Request text decodes with the declared charset, UTF-8 when none is
+    declared; a charset Perl does not know is a BodyError 415
+    (unsupported_charset).
   - Session warns, once per process, when it falls back to the in-memory
     store because no store was given: those sessions are lost on restart
     and not shared between workers.

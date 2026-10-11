@@ -46,6 +46,7 @@ in [UPGRADING-REFERENCE.md](UPGRADING-REFERENCE.md).
 | `WebSocket::RateLimit`, `SSE::Pubsub`, `WebSocket::Broadcast`/`Chat` | removed; Cookbook recipes ([details](UPGRADING-REFERENCE.md#other-breaking-changes)) |
 | WebSocket `query`, `raw_query`; Request `query`, `raw_query`, `form`, `raw_form` | `query_param`, `raw_query_param`, `form_params`, `raw_form_params`: one set of names on Request, WebSocket and SSE |
 | WebSocket `send_text_if_connected`, `send_bytes_if_connected`, `send_json_if_connected` | `try_send_text`, `try_send_bytes`, `try_send_json`: they send nothing unless connected (before `accept` too) and return false |
+| `$request->text` decoded every body as UTF-8 | it decodes with the Content-Type charset, UTF-8 when none is declared; an unknown charset is a 415 |
 | `each_json` died (a 1011 server error) on a message that is not JSON | it closes 1007 and returns; pass `on_invalid_json`, or override `handle_invalid_json`, to answer otherwise |
 
 Behaviour that changes without a code change: stock refusals and error

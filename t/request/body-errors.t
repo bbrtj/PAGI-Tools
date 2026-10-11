@@ -48,6 +48,8 @@ subtest 'each client mistake is a BodyError with a status, a reason and a safe m
           sub { request_with('{not json')->json } ],
         [ 'invalid UTF-8 text (strict)', 400, 'invalid_encoding',
           sub { request_with("caf\xE9")->text(strict => 1) } ],
+        [ 'text in a charset Perl does not know', 415, 'unsupported_charset',
+          sub { request_with("caf\xC3\xA9", ['Content-Type', 'text/plain; charset=x-bogus'])->text } ],
         [ 'invalid UTF-8 form (strict)', 400, 'invalid_encoding',
           sub { request_with("name=caf%E9", ['Content-Type', 'application/x-www-form-urlencoded'])
               ->form_params(strict => 1) } ],
