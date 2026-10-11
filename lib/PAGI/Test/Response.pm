@@ -133,6 +133,9 @@ sub status { shift->{status} }
 # Raw body bytes
 sub content { shift->{body} }
 
+# The name a request uses for the same thing ($request->body).
+sub body { shift->{body} }
+
 # Decoded text based on Content-Type charset
 sub text {
     my ($self) = @_;
@@ -365,6 +368,12 @@ that stopped short, including one whose client disconnected.
     my $bytes = $res->content;
 
 Returns the raw response body as bytes.
+
+=head2 body
+
+    my $bytes = $res->body;
+
+The same as L</content>, under the name L<PAGI::Request> uses for a body.
 
 =head2 text
 
