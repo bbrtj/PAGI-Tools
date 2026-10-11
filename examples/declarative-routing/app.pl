@@ -4,7 +4,7 @@ use Future::AsyncAwait;
 use PAGI::Compose qw(compose);
 use PAGI::Pages qw(not_found);
 use PAGI::Routing qw(:routes :middleware);
-use PAGI::Utils::Middleware qw(wrap_send);
+use PAGI::Utils::Middleware qw(wrap_response_headers);
 use MyApp::Routes::Home ();
 
 sub api_not_found {
@@ -17,23 +17,17 @@ sub root_not_found {
     return not_found(detail => 'No root route matched');
 }
 
+# A route middleware that adds one response header. wrap_response_headers
+# hands the editor a PAGI::Headers copy of each response's headers and sends
+# a new start event, so the handler's own header list is never changed.
 my $home_header = sub {
     my ($app) = @_;
 
     return async sub {
         my ($scope, $receive, $send) = @_;
-        my $wrapped_send = wrap_send($send, async sub {
-            my ($event, $downstream) = @_;
-            if (($event->{type} // '') eq 'http.response.start') {
-                $event = {
-                    %$event,
-                    headers => [
-                        @{$event->{headers} // []},
-                        ['x-route-demo', 'home'],
-                    ],
-                };
-            }
-            await $downstream->($event);
+        my $wrapped_send = wrap_response_headers($send, sub {
+            my ($headers) = @_;
+            $headers->set('x-route-demo', 'home');
         });
 
         await $app->($scope, $receive, $wrapped_send);
