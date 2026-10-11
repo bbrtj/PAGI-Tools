@@ -19,14 +19,19 @@ sub new {
     # Encode's 'utf8' is its lax variant; UTF-8 is decoded strictly however
     # it is spelt, as $request->text does.
     $encoding = find_encoding('UTF-8') if $encoding->name =~ /\Autf-?8/i;
-    # Encode's UTF-16/32 decoder treats a chunk boundary inside a code unit as
-    # an error under FB_CROAK (Unicode.xs checks it before STOP_AT_PARTIAL),
-    # so strict decoding never hands it one: whole units only, and for UTF-16
-    # the last unit waits too, as it may be the first half of a surrogate pair.
-    my ($unit, $pairs) = (0, 0);
+    # Encode's UTF-16/32 decoder treats a chunk boundary inside a code unit,
+    # or after the first half of a surrogate pair, as an error under FB_CROAK
+    # (Unicode.xs checks it before STOP_AT_PARTIAL), so strict decoding never
+    # hands it one: whole units only, and in UTF-16 a trailing high surrogate
+    # waits for its other half. Its byte order comes from the name, or for
+    # plain UTF-16 from the BOM, big-endian without one (RFC 2781, as Encode).
+    my ($unit, $order) = (0, undef);
     if ($strict && $encoding->isa('Encode::Unicode')) {
         $unit  = $encoding->name =~ /32/ ? 4 : 2;
-        $pairs = $encoding->name =~ /UTF-16/i ? 1 : 0;
+        $order = $encoding->name =~ /\AUTF-16LE\z/i ? 'v'
+               : $encoding->name =~ /\AUTF-16BE\z/i ? 'n'
+               : $encoding->name =~ /\AUTF-16\z/i   ? ''    # from the BOM, below
+               : undef;
     }
     return bless {
         name     => $name,
@@ -34,7 +39,7 @@ sub new {
         check    => ($strict ? FB_CROAK : FB_DEFAULT) | STOP_AT_PARTIAL,
         strict   => $strict ? 1 : 0,
         unit     => $unit,
-        pairs    => $pairs,
+        order    => $order,
         held     => '',
         finished => 0,
     }, $class;
@@ -49,7 +54,14 @@ sub decode {
     my $wait = '';
     if (my $unit = $self->{unit}) {
         my $keep = length($data) % $unit;
-        $keep += $unit if $self->{pairs} && length($data) >= $unit + $keep;
+        if (defined $self->{order} && length($data) - $keep >= 2) {
+            # Nothing has been decoded before the first two bytes arrive, so
+            # $data still starts with the stream's first bytes here.
+            $self->{order} = substr($data, 0, 2) eq "\xFF\xFE" ? 'v' : 'n'
+                if $self->{order} eq '';
+            my $last = unpack $self->{order}, substr($data, length($data) - $keep - 2, 2);
+            $keep += 2 if $last >= 0xD800 && $last <= 0xDBFF;
+        }
         $wait = substr($data, length($data) - $keep, $keep, '');
     }
     my $text;
@@ -183,10 +195,10 @@ A UTF-8 byte-order mark is text and arrives as U+FEFF, as in Encode and
 L<PAGI::Request/text>; C<s/\A\x{FEFF}//> on the first chunk removes it. A
 UTF-16 or UTF-32 byte-order mark is consumed: it sets the byte order.
 
-Strict UTF-16 delivers each code unit one call late (it may be the first
-half of a surrogate pair); strict UTF-32 and UCS-2 hold back only an
-incomplete unit. Encode's UTF-16/32 decoder reports a chunk boundary inside
-a code unit as an error, so the decoder never hands it one.
+Strict UTF-16/32 holds back an incomplete code unit, and in UTF-16 the
+first half of a surrogate pair, until the rest arrives: Encode's UTF-16/32
+decoder reports such a boundary as an error, so the decoder never hands it
+one.
 
 =head1 SEE ALSO
 

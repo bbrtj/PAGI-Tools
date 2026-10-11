@@ -78,12 +78,12 @@ subtest 'mistakes croak at once' => sub {
 
 subtest 'strict UTF-16/32: a split code unit or surrogate pair waits' => sub {
     my %cases = (
-        'BOM, then !'            => ['UTF-16',   ["\xFF\xFEh\0i\0", "!\0"],                ['h', 'i', '!']],
-        'an odd trailing byte'   => ['UTF-16',   ["\xFF\xFEh\0i", "\0!\0"],                ['', 'hi', '!']],
-        'surrogate pair split'   => ['UTF-16',   ["\xFF\xFEh\0\x3D\xD8", "\x00\xDE!\0"],    ['h', "\x{1F600}", '!']],
-        'surrogate unit split'   => ['UTF-16',   ["\xFF\xFEh\0\x3D", "\xD8\x00\xDE!\0"],    ['', "h\x{1F600}", '!']],
-        'the BOM split'          => ['UTF-16',   ["\xFF", "\xFEh\0", "i\0"],                ['', '', 'h', 'i']],
-        'UTF-16BE without a BOM' => ['UTF-16BE', ["\0h\0i", "\0!"],                         ['h', 'i', '!']],
+        'BOM, then !'            => ['UTF-16',   ["\xFF\xFEh\0i\0", "!\0"],                ['hi', '!', '']],
+        'an odd trailing byte'   => ['UTF-16',   ["\xFF\xFEh\0i", "\0!\0"],                ['h', 'i!', '']],
+        'surrogate pair split'   => ['UTF-16',   ["\xFF\xFEh\0\x3D\xD8", "\x00\xDE!\0"],    ['h', "\x{1F600}!", '']],
+        'surrogate unit split'   => ['UTF-16',   ["\xFF\xFEh\0\x3D", "\xD8\x00\xDE!\0"],    ['h', "\x{1F600}!", '']],
+        'the BOM split'          => ['UTF-16',   ["\xFF", "\xFEh\0", "i\0"],                ['', 'h', 'i', '']],
+        'UTF-16BE without a BOM' => ['UTF-16BE', ["\0h\0i", "\0!"],                         ['hi', '!', '']],
         'UTF-32, split 4 ways'   => ['UTF-32',   ["\xFF\xFE\0", "\0h\0\0\0!", "\0\0\0"],     ['', 'h', '!', '']],
     );
     for my $label (sort keys %cases) {
@@ -92,6 +92,19 @@ subtest 'strict UTF-16/32: a split code unit or surrogate pair waits' => sub {
     }
     is join('', @{ chunks(decoder('UTF-16', strict => 1), split //, "\xFF\xFEh\0i\0!\0") }), 'hi!',
         'byte at a time';
+};
+
+subtest 'strict UTF-16: a whole surrogate pair at the end of a chunk is decoded' => sub {
+    is chunks(decoder('UTF-16', strict => 1), "\xFF\xFEh\0i\0 \0\x3D\xD8\x00\xDE"), ["hi \x{1F600}", ''],
+        'a body that ends with an emoji';
+    is chunks(decoder('UTF-16', strict => 1), "\xFF\xFEa\0\x3D\xD8\x00\xDE", "!\0"), ["a\x{1F600}", '!', ''],
+        'a chunk that ends after a pair, more to come';
+    is join('', @{ chunks(decoder('UTF-16', strict => 1), split //, "\xFF\xFEa\0\x3D\xD8\x00\xDE!\0") }),
+        "a\x{1F600}!", 'byte at a time over a pair';
+    is chunks(decoder('UTF-16LE', strict => 1), "a\0\x3D\xD8\x00\xDE"), ["a\x{1F600}", ''], 'UTF-16LE by name';
+    is chunks(decoder('UTF-16BE', strict => 1), "\0a\xD8\x3D\xDE\x00"), ["a\x{1F600}", ''], 'UTF-16BE by name';
+    is chunks(decoder('UTF-16', strict => 1), "\0a\xD8\x3D\xDE\x00"), ["a\x{1F600}", ''],
+        'UTF-16 without a BOM is big-endian, as in Encode';
 };
 
 subtest 'strict UTF-16/32: malformed input still dies' => sub {
