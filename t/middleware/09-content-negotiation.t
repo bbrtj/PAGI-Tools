@@ -320,6 +320,13 @@ subtest 'ContentNegotiation checks supported_types when it is built' => sub {
     like dies { PAGI::Middleware::ContentNegotiation->new(supported_types => []) },
         qr/\QContentNegotiation: supported_types must list at least one type\E/,
         'an empty list dies';
+    like dies { PAGI::Middleware::ContentNegotiation->new(supported_types => 'json') },
+        qr/\QContentNegotiation: supported_types must be an arrayref\E/,
+        'a string dies, saying so';
+    my $error;
+    is warns { $error = dies { PAGI::Middleware::ContentNegotiation->new(supported_types => [undef]) } }, 0,
+        'an undefined entry warns nothing';
+    like $error, qr/\QContentNegotiation: unknown type undef in supported_types\E/, 'and is named';
 };
 
 subtest 'the stock 406 names media types' => sub {

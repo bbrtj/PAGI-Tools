@@ -40,6 +40,17 @@ subtest 'reading the choice' => sub {
     is negotiated_type(scope_with()), 'json', 'negotiated_type';
 };
 
+subtest 'an undefined type name croaks, without warnings' => sub {
+    my $cn = content_negotiation(scope_with());
+    for my $case ([sub { $cn->is(undef) }, 'is'],
+                  [sub { $cn->respond_to(undef, sub {}, html => sub {}, json => sub {}) }, 'respond_to']) {
+        my ($code, $label) = @$case;
+        my $error;
+        is warns { $error = dies { $code->() } }, 0, "$label: no warnings";
+        like $error, qr/\QPAGI::ContentNegotiation: a type name is required\E/, "$label: says why";
+    }
+};
+
 subtest 'respond_to dispatches to the chosen branch only' => sub {
     my %called;
     my $result = respond_to(scope_with(),

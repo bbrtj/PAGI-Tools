@@ -141,11 +141,14 @@ sub _init {
 
     my $supported_types = $config->{supported_types}
         // die "ContentNegotiation requires 'supported_types' option";
+    die 'ContentNegotiation: supported_types must be an arrayref'
+        unless ref($supported_types) eq 'ARRAY';
     die 'ContentNegotiation: supported_types must list at least one type'
-        unless ref($supported_types) eq 'ARRAY' && @$supported_types;
+        unless @$supported_types;
     for my $type (@$supported_types) {
         next if PAGI::ContentNegotiation->is_known_type($type);
-        die "ContentNegotiation: unknown type '$type' in supported_types; use a media type (type/subtype) or a shortcut: "
+        my $shown = defined $type ? "'$type'" : 'undef';
+        die "ContentNegotiation: unknown type $shown in supported_types; use a media type (type/subtype) or a shortcut: "
             . join(', ', PAGI::ContentNegotiation->shortcuts);
     }
     $self->{supported_types} = [ @$supported_types ];

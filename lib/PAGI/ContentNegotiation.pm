@@ -510,7 +510,7 @@ sub respond_to {
     croak 'PAGI::ContentNegotiation: respond_to takes name => code pairs' if @pairs % 2;
     my %branch;
     while (my ($name, $code) = splice @pairs, 0, 2) {
-        $self->_require_declared($name) unless $name eq 'none';
+        $self->_require_declared($name) unless defined($name) && $name eq 'none';
         croak "PAGI::ContentNegotiation: the '$name' branch must be a code reference"
             unless ref $code eq 'CODE';
         $branch{$name} = $code;
@@ -535,6 +535,7 @@ sub respond_to {
 
 sub _require_declared {
     my ($self, $name) = @_;
+    croak 'PAGI::ContentNegotiation: a type name is required' unless defined $name;
     return if grep { $_ eq $name } $self->supported;
     croak "PAGI::ContentNegotiation: '$name' is not one of the declared types ("
         . join(', ', $self->supported) . ')';
