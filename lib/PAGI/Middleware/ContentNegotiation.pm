@@ -16,7 +16,7 @@ PAGI::Middleware::ContentNegotiation - HTTP content negotiation middleware
 
 =head1 SYNOPSIS
 
-    use PAGI::Tools qw(compose middleware response route);
+    use PAGI::Tools qw(compose middleware negotiated_type response route);
 
     # An API that only speaks JSON: anything else is refused with a 406
     # before a handler runs.

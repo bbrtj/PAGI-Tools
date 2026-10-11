@@ -256,7 +256,7 @@ sub is_multipart {
     return $ct eq 'multipart/form-data';
 }
 
-# Accept header check using Negotiate module
+# Accept header check using PAGI::ContentNegotiation
 # Combines multiple Accept headers per RFC 7230 Section 3.2.2
 sub accepts {
     my ($self, $mime_type) = @_;

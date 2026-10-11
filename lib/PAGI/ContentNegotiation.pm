@@ -380,7 +380,8 @@ C<< content_negotiation($request)->type >>.
     );
 
 Calls the branch for the chosen type and returns its result. The same as
-the L</respond_to> method, C<< content_negotiation($request)->respond_to(...) >>.
+the C<respond_to> method under L</METHODS>,
+C<< content_negotiation($request)->respond_to(...) >>.
 
 =cut
 
@@ -586,9 +587,16 @@ sub _require_declared {
 
 =head1 SEE ALSO
 
-L<PAGI::Request>, L<PAGI>
+L<PAGI::Middleware::ContentNegotiation> - chooses, refuses, and writes the
+record this module reads
 
-RFC 7231 Section 5.3 - Content Negotiation
+L<PAGI::Tools> - re-exports C<respond_to>, C<negotiated_type> and
+C<content_negotiation>
+
+L<PAGI::Request/preferred_type> - negotiating by hand where there is no
+middleware
+
+RFC 9110 Section 12 - Content Negotiation
 
 =head1 AUTHOR
 
