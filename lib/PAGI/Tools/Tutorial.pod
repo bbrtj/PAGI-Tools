@@ -471,7 +471,8 @@ of those methods ever sees raw chunks to make that judgment call itself.
 
 Options: C<max_bytes> (a size cap; defaults to the Content-Length header),
 C<decode> (e.g. C<'UTF-8'>, which handles multi-byte sequences split across
-chunk boundaries), and C<strict> (throw on invalid UTF-8).
+chunk boundaries), and C<strict> (invalid bytes are a
+L<PAGI::Request::BodyError>, a 400).
 
 Chunks are bytes unless you pass C<decode>, so a zip or image upload passes
 through untouched. A route that reads its body as text decodes by the

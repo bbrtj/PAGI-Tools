@@ -48,6 +48,8 @@ subtest 'each client mistake is a BodyError with a status, a reason and a safe m
           sub { request_with('{not json')->json } ],
         [ 'invalid UTF-8 text (strict)', 400, 'invalid_encoding',
           sub { request_with("caf\xE9")->text(strict => 1) } ],
+        [ 'invalid UTF-8 stream (strict)', 400, 'invalid_encoding',
+          sub { request_with("caf\xE9")->body_stream(decode => 'UTF-8', strict => 1)->next_chunk } ],
         [ 'text in a charset Perl does not know', 415, 'unsupported_charset',
           sub { request_with("caf\xC3\xA9", ['Content-Type', 'text/plain; charset=x-bogus'])->text } ],
         [ 'invalid UTF-8 form (strict)', 400, 'invalid_encoding',
@@ -83,6 +85,21 @@ subtest 'the existing messages are kept, so code matching them still works' => s
         ->form_params(max_field_size => 10) }), qr/Form field too large \(max 10 bytes\)/);
     like(error_from(sub { request_with('x', ['Content-Type', 'multipart/form-data'])->form_params }),
         qr/No boundary found in Content-Type/);
+};
+
+subtest 'a stream response already started cannot answer 400: it is cut short' => sub {
+    # Stream sends its start before the producer reads the body.
+    my $app = compose(routes => [route('/' => async sub {
+        my ($r) = @_;
+        my $text = $r->body_stream(decode => 'UTF-8', strict => 1);
+        response('Stream', async sub {
+            my ($writer) = @_;
+            while (defined(my $chunk = await $text->next_chunk)) { await $writer->write($chunk) }
+        });
+    }, methods => ['POST'])]);
+    my $res = PAGI::Test::Client->new(app => $app)->post('/', body => "caf\xFF");
+    isa_ok($res->exception, 'PAGI::Request::BodyError');
+    isnt($res->status, 400, 'no 400 can follow a started response');
 };
 
 subtest 'a Compose application answers 400 or 413, and logs nothing' => sub {

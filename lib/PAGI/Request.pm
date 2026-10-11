@@ -969,7 +969,7 @@ a body, form, or upload cache is already present.
     my $stream = $req->body_stream(
         max_bytes => 10 * 1024 * 1024,  # 10MB limit
         decode    => 'UTF-8',            # Decode from UTF-8
-        strict    => 1,                  # Strict UTF-8 decoding
+        strict    => 1,                  # invalid bytes are a 400
     );
 
 Returns a L<PAGI::Request::BodyStream> for streaming body consumption. This is
@@ -986,7 +986,8 @@ B<Options:>
 Without it, chunks are the bytes the client sent. A character split across
 two chunks is held back until it is complete.
 
-=item * C<strict> - If true, throw on invalid UTF-8. Default: false (use replacement chars).
+=item * C<strict> - If true, bytes invalid in the C<decode> encoding throw a
+L<PAGI::Request::BodyError> (400). Default: false (they become U+FFFD).
 
 =back
 
@@ -998,8 +999,9 @@ UTF-8 when it declares none:
     my $stream = $req->body_stream(decode => $req->charset // 'UTF-8');
 
 A route that decodes mangles a binary upload (invalid sequences become
-U+FFFD, or the stream dies with C<strict>), so leave C<decode> off for any
-route that may receive one.
+U+FFFD, or with C<strict> the client gets a 400), so leave C<decode> off for
+any route that may receive one. An encoding Perl does not know croaks when the
+stream is made.
 
 B<Important:> Body streaming is mutually exclusive with buffered body methods
 (C<body>, C<text>, C<json>, C<form_params>). Once you start streaming, you cannot use

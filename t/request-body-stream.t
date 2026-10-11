@@ -218,7 +218,54 @@ subtest 'strict UTF-8 mode' => sub {
         strict => 1,
     );
 
-    like dies { $stream->next_chunk->get }, qr/Failed to decode/, 'strict mode throws on invalid UTF-8';
+    my $error = dies { $stream->next_chunk->get };
+    isa_ok($error, 'PAGI::Request::BodyError');
+    is([$error->status_code, $error->reason, $error->message],
+        [400, 'invalid_encoding', 'The request body is not valid UTF-8.'],
+        "invalid bytes are the client's error, a 400");
+
+    # Invalid bytes held back across a chunk boundary are found the same way.
+    $stream = PAGI::Request::BodyStream->new(
+        receive => mock_receive(
+            { type => 'http.request', body => "caf\xC3", more => 1 },
+            { type => 'http.request', body => "\x28",    more => 0 },
+        ),
+        decode => 'UTF-8',
+        strict => 1,
+    );
+    is($stream->next_chunk->get, 'caf', 'the valid part arrives');
+    isa_ok(dies { $stream->next_chunk->get }, 'PAGI::Request::BodyError');
+
+    # An invalid byte with more data behind it is reported on that chunk,
+    # not held back until the end of the body.
+    $stream = PAGI::Request::BodyStream->new(
+        receive => mock_receive({ type => 'http.request', body => "a\xFFbcd", more => 1 }),
+        decode => 'UTF-8',
+        strict => 1,
+    );
+    isa_ok(dies { $stream->next_chunk->get }, 'PAGI::Request::BodyError');
+};
+
+subtest 'strict mode accepts a valid character split across chunks' => sub {
+    my $stream = PAGI::Request::BodyStream->new(
+        receive => mock_receive(
+            { type => 'http.request', body => "caf\xC3", more => 1 },
+            { type => 'http.request', body => "\xA9!",   more => 0 },
+        ),
+        decode => 'UTF-8',
+        strict => 1,
+    );
+    my @chunks;
+    while (defined(my $chunk = $stream->next_chunk->get)) { push @chunks, $chunk }
+    is(join('', @chunks), "caf\x{E9}!", 'the held-back byte completes with the next chunk');
+};
+
+subtest 'an encoding Encode does not know is refused when the stream is made' => sub {
+    like(
+        dies { PAGI::Request::BodyStream->new(receive => mock_receive(), decode => 'UFT-8') },
+        qr/\APAGI::Request::BodyStream: unknown encoding 'UFT-8'/,
+        'a typo surfaces at once, not on the first chunk',
+    );
 };
 
 subtest 'no receive callback throws' => sub {

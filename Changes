@@ -28,6 +28,10 @@
     PAGI::Request::BodyError (bad bodies answer 400, 413 or 415).
   - Request charset: the Content-Type charset parameter, to decode a
     streamed body by (body_stream(decode => $req->charset // 'UTF-8')).
+  - body_stream with strict: bytes invalid in the encoding are a
+    BodyError 400 (they were a 500), a valid character split across chunks
+    is no longer rejected, and an unknown encoding croaks when the stream
+    is made.
   - Request text decodes with the declared charset, UTF-8 when none is
     declared; a charset Perl does not know is a BodyError 415
     (unsupported_charset).
