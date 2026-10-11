@@ -373,6 +373,7 @@ sub body_stream {
         decode     => $opts{decode},
         strict     => $opts{strict},
         strip_bom  => $opts{strip_bom},
+        max_line_length => $opts{max_line_length},
         _scope_type => $scope_type,
     );
     $self->{scope}{'pagi.request.body.stream.created'} = 1;
@@ -1004,6 +1005,10 @@ L<PAGI::Request::BodyError> (400). Default: false (they become U+FFFD).
 =item * C<strip_bom> - With C<decode>, drops a byte-order mark (U+FEFF) at
 the very start of the text, as Excel's "CSV UTF-8" sends. Default: false (in
 UTF-8 the mark is text).
+
+=item * C<max_line_length> - The longest line
+L<PAGI::Request::BodyStream/next_line> and C<each_line> accept (default
+65536); a longer one is the client's 413.
 
 =back
 
