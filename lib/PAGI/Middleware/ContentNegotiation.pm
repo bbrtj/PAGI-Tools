@@ -76,7 +76,7 @@ C<refuse =E<gt> 0> the application's answer to an unacceptable request. The
 field is merged into any C<Vary> the response already has (C<*> stays C<*>),
 so a shared cache keeps the representations apart.
 
-A response thrown with C<die response(...)>, and a 500 from a bug, are sent
+A response thrown with C<die response('JSON', ...)>, and a 500 from a bug, are sent
 by Compose's error handler, which sits outside declared middleware, so they
 carry no C<Vary> from here. That is right for a fixed answer; a handler that
 picks an error's representation by the negotiated type returns it instead.

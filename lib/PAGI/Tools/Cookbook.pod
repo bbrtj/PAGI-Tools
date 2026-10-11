@@ -1891,7 +1891,7 @@ htmx's documentation also asks you to turn off
 C<htmx.config.historyRestoreAsHxRequest> when the server answers fragments
 by C<HX-Request>, so a history restore is not cached as a fragment.
 
-A response thrown with C<die response(...)> is sent by Compose's error
+A response thrown with C<die response('JSON', ...)> is sent by Compose's error
 handler, outside your route's middleware, so it gets no C<Vary> from there.
 Return an answer that depends on a request header; throw only answers that
 do not.
