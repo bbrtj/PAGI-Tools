@@ -10,7 +10,8 @@ use Digest::SHA qw(sha256_hex);
 use PAGI::Test::Client;
 
 # Bytes or text: a binary upload kept exactly, CSV imports decoded by the
-# client's charset (strict), a lenient transform.
+# client's charset (strict) and parsed as real CSV, NDJSON read by line, a
+# lenient transform.
 
 my $app = do "$Bin/../examples/upload-streaming/app.pl" or die $@ || $!;
 my $client = PAGI::Test::Client->new(app => $app, lifespan => 1);
@@ -27,18 +28,27 @@ is $res->status, 400, 'an empty upload is refused';
 is $client->put('/files/..', body => 'x')->status, 404, 'a name with no letters before a dot never matches';
 
 my %csv = (
-    'cp1252'               => ["name,city\nJos\xE9,M\xFCnchen\nAna,Lisboa\n", 'windows-1252'],
-    'UTF-8 with a BOM'     => ["\xEF\xBB\xBFname\nA\nB", 'utf-8'],
-    'UTF-16LE with a BOM'  => ["\xFF\xFE" . join('', map { "$_\0" } split //, "name\nA\nB\n"), 'utf-16'],
+    'cp1252'               => ["name,city\nJos\xE9,M\xFCnchen\nAna,Lisboa\n", 'windows-1252', ['name', 'city'], 2],
+    'UTF-8 with a BOM'     => ["\xEF\xBB\xBFname\nA\nB", 'utf-8', ['name'], 2],
+    'UTF-16LE with a BOM'  => ["\xFF\xFE" . join('', map { "$_\0" } split //, "name\nA\nB\n"), 'utf-16le', ['name'], 2],
+    'UTF-16 with a BOM'    => ["\xFF\xFE" . join('', map { "$_\0" } split //, "name\nA\nB\n"), 'utf-16',   ['name'], 2],
+    'a quoted newline'     => [qq{name,note\nA,"two\nlines"\nB,x\n}, 'utf-8', ['name', 'note'], 2],
 );
 for my $label (sort keys %csv) {
-    my ($body, $charset) = @{$csv{$label}};
+    my ($body, $charset, $columns, $rows) = @{$csv{$label}};
     $res = $client->post('/import', headers => { 'Content-Type' => "text/csv; charset=$charset" }, body => $body);
-    is [$res->status, $res->json], [200, { rows => 3 }], "$label: three rows";
+    is [$res->status, $res->json], [200, { columns => $columns, rows => $rows }], "$label: the header and the data rows";
 }
 
 $res = $client->post('/import', headers => { 'Content-Type' => 'text/csv; charset=utf-8' }, body => '');
-is [$res->status, $res->json], [200, { rows => 0 }], 'an empty CSV has no rows';
+is [$res->status, $res->json], [200, { columns => [], rows => 0 }], 'an empty CSV has no columns and no rows';
+
+$res = $client->post('/import', headers => { 'Content-Type' => 'text/csv; charset=utf-8' }, body => qq{name\n"unclosed\n});
+is $res->status, 400, 'malformed CSV is the client\'s 400';
+
+$res = $client->post('/events', headers => { 'Content-Type' => 'application/x-ndjson' },
+    body => qq{{"type":"a"}\n\n{"type":"\xC3\xA9"}\r\n});
+is [$res->status, $res->json], [200, { events => 2, types => ['a', "\x{E9}"] }], 'NDJSON: one event per line, blank lines skipped';
 
 $res = $client->post('/import', headers => { 'Content-Type' => 'text/csv; charset=x-bogus' }, body => "a\n");
 is $res->status, 415, 'a charset the stream cannot decode is a 415';

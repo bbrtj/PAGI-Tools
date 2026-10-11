@@ -41,6 +41,8 @@ on 'test' => sub {
     requires 'Type::Tiny';
     # In-process tests drive apps under a real event loop
     requires 'IO::Async', '0.802';
+    # examples/upload-streaming parses CSV with it (pure Perl via Text::CSV_PP)
+    requires 'Text::CSV', '2.00';
     # tutorial.t exercises Future::IO patterns (self-skips when absent,
     # but CI should run it)
     requires 'Future::IO', '0.23';
