@@ -45,7 +45,7 @@ for my $kind (qw(websocket sse)) {
         $conn->_deliver_notifications;
         is(scalar @calls, 1, 'first callback pending');
         ok($weak, 'worker survives connection callback release');
-        like(dies { $weak->on_close(sub {}) }, qr/on_close.*cleanup|cleanup.*on_close/, 'late registration rejected');
+        $weak->on_close(sub { push @calls, ['late'] });
         my $join = $weak->_run_close_callbacks;
         $join->cancel;
         ok(!$gate->is_cancelled, 'observer cannot cancel owned cleanup');
@@ -56,10 +56,30 @@ for my $kind (qw(websocket sse)) {
         @calls = (); # SSE callback arguments themselves retain the helper
         $gate->done;
         ok($join2->is_ready, 'join settles after cleanup');
-        is(\@calls, [['second']], 'registration order maintained');
+        is(\@calls, [['second'], ['late']], 'registration order maintained, a late callback last');
         undef $join; undef $join2;
         ok(!$weak, 'all helper ownership released after cleanup');
         is([map $_->{type}, @sent], ["$kind." . ($kind eq 'websocket' ? 'accept' : 'start'), "$kind.close"], 'only one local close');
+    };
+    subtest "$kind late on_close failures reach finished, or the log once it has resolved" => sub {
+        my $ended = sub {
+            my $conn = PAGI::Test::ConnectionState->new(websocket => $kind eq 'websocket');
+            my $h = $class->new({type => $kind, 'pagi.connection' => $conn}, sub { die 'receive' }, sub { Future->done });
+            ($kind eq 'websocket' ? $h->accept : $h->start)->get;
+            $conn->_mark_disconnected('client_closed');
+            return $h;
+        };
+        my $h = $ended->();
+        $h->on_close(sub { die "late boom\n" });
+        like(dies { $h->finished->get }, qr/late boom/, 'before finished resolves: finished fails with it');
+
+        $h = $ended->();
+        $h->finished->get;
+        like(
+            warning { $h->on_close(sub { die "after\n" }) },
+            qr/\A\Q$class\E on_close callback failed after the handler finished: after/,
+            'after finished: warned, since nothing is left to fail',
+        );
     };
     subtest "$kind constructor terminal and send settlement cannot resurrect" => sub {
         my $conn = PAGI::Test::ConnectionState->new(websocket => $kind eq 'websocket');
@@ -76,7 +96,9 @@ for my $kind (qw(websocket sse)) {
         undef $h;
         $h = $class->new({type => $kind, 'pagi.connection' => $conn}, sub {die 'receive'}, sub {die 'send'});
         ok($h->is_closed, 'constructor observes terminal connection');
-        like(dies {$h->on_close(sub {})}, qr/on_close.*cleanup|cleanup.*on_close/, 'constructor-time end closes registration');
+        my @late;
+        $h->on_close(sub { push @late, 'ran'; return });
+        is(\@late, ['ran'], 'a registration after the end runs at once');
     };
 }
 subtest 'WebSocket concurrent close joins send and rejects every data form while closing' => sub {

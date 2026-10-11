@@ -614,9 +614,35 @@ async sub _trigger_error {
 # Register close callback
 sub on_close {
     my ($self, $callback) = @_;
-    croak 'Cannot register on_close after cleanup begins' if $self->{_close_callbacks_ran};
+    # Once the connection has ended, a callback runs now, after any still
+    # running, as the spec's on_end does.
+    return $self->_run_late_close_callback($callback) if $self->{_close_callbacks_ran};
     push @{$self->{_on_close}}, $callback;
     return $self;
+}
+
+sub _run_late_close_callback {
+    my ($self, $callback) = @_;
+    $self->{_close_chain} = $self->{_owner}->adopt(
+        $self->_late_close_worker($self->{_close_chain}, $callback));
+    return $self;
+}
+
+# A late callback's failure fails finished while the handler can still see
+# it; once finished has resolved there is nothing left to fail, so it warns.
+async sub _late_close_worker {
+    my ($self, $previous, $callback) = @_;
+    # The callbacks before it report their own failures.
+    eval { await $previous->without_cancel };
+    my $ok = eval {
+        my $result = $callback->($self, $self->disconnect_reason, $self->disconnect_detail);
+        await $result if blessed($result) && $result->isa('Future');
+        1;
+    };
+    return if $ok;
+    die $@ unless $self->{_finished};
+    warn ref($self) . " on_close callback failed after the handler finished: $@";
+    return;
 }
 
 # Register error callback
@@ -653,6 +679,7 @@ sub _start_close_callbacks {
     $self->{_close_callbacks_ran} = 1;
     my $completion = $self->{_cleanup_future};
     my $worker = $self->{_owner}->adopt($self->_close_callbacks_worker);
+    $self->{_close_chain} = $worker;
     # The cleanup Future means the callbacks have run; a callback's failure
     # is reported once, through finished.
     $worker->on_ready(sub { $completion->done unless $completion->is_ready });
@@ -685,7 +712,10 @@ async sub finished {
     # A scope never accepted (or started) ends only when the application
     # returns, so waiting for its end would wait for the caller itself.
     await $self->{_ended}->without_cancel if $self->_ends_without_application;
-    await $self->{_owner}->settled;
+    my $settled = eval { await $self->{_owner}->settled; 1 };
+    my $error = $@;
+    $self->{_finished} = 1;
+    die $error unless $settled;
     return $self;
 }
 
@@ -1398,11 +1428,9 @@ still belongs in C<on_close>.
 closing or closed, or after L</decline>, they return without sending, so they
 need no check.
 
-=item * B<Cleanup belongs in C<on_close>.> Register it before the first
-C<await>; it runs however the connection ends. For something you create
-after C<start> (a subscription, a listener), register its cleanup once it
-exists with C<< $sse->connection->on_end >>: it runs at once if the client
-has already gone, so the new thing cannot be left behind (see L</connection>).
+=item * B<Cleanup belongs in C<on_close>.> Register it once the thing it
+cleans up exists, before or after C<start>; it runs however the connection
+ends, and at once if the client has already gone, so nothing is left behind.
 
 =back
 
@@ -1541,11 +1569,8 @@ the connection outcome.
 
     $sse->on_close(sub {
         my ($sse, $reason) = @_;
-        if (!defined $reason) {
-            cleanup_resources();
-        } else {
-            log_error("Unexpected disconnect: $reason");
-        }
+        cleanup_resources();
+        log_error("Unexpected disconnect: $reason") if defined $reason;
     });
 
     # Async callback — return value is awaited automatically
@@ -1554,15 +1579,19 @@ the connection outcome.
         await cleanup_async($reason);
     });
 
-Registers cleanup for the connection's terminal C<on_end> notification.
-Register before awaited I/O. Registration after cleanup has started or
-finished (including constructor-time terminal notification) croaks.
-To clean up something you create after C<start>, use L</connection>'s
-C<on_end> instead.
+Registers cleanup to run once, however the connection ends. Register it
+when the thing it cleans up exists, before or after C<start>: if the
+connection has already ended (a client can leave during C<start>, and it
+still returns), the callback runs at once, after any callbacks still running.
 Callbacks can be regular subs or async subs — async results are
 automatically awaited. Multiple callbacks run in registration order. A
 callback that dies does not stop the others; once all have run, the first
-failure is reported through L</finished>.
+failure is reported through L</finished>. A callback that runs after
+C<finished> has already resolved has nowhere to report, so its failure is
+warned.
+
+Its arguments differ from L<PAGI::WebSocket>'s C<on_close>, which receives
+the peer's close code and reason instead of the helper.
 
 Callbacks receive three arguments:
 
@@ -1604,22 +1633,9 @@ Returns the server-supplied object under C<pagi.connection>. Its interface is
 defined by the PAGI specification (L<PAGI::Spec::Www>); callers use those
 public methods rather than requiring a particular server's connection class.
 
-Its C<on_end> is the cleanup for something you create after the handshake,
-registered once that thing exists:
-
-    use Scalar::Util qw(refaddr);
-
-    await $sse->start;
-    my $id = refaddr $sse;
-    $listeners{$id} = $sse;
-    $sse->connection->on_end(sub { delete $listeners{$id} });
-
-C<on_end> runs once, however the connection ends, and at once if it has
-already ended: a client can leave during the handshake, and C<start>
-still returns. Registered after the resource exists, it cannot miss it, so no
-C<is_closed> check is needed. L</on_close> is for cleanup you register before
-the handshake; registering it afterwards croaks if the client has already
-left.
+For cleanup, use L</on_close>, which runs whenever you register it. The
+connection object is there for what the helper does not wrap: the spec's
+C<end_future>, C<abort>, and the rest of its interface.
 
 =head2 finished
 

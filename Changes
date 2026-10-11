@@ -39,8 +39,8 @@
     store because no store was given: those sessions are lost on restart
     and not shared between workers.
   - WebSocket and SSE connection, as Request has: the scope's
-    pagi.connection. Its on_end cleans up what a handler creates after the
-    handshake, at once if the client has already gone.
+    pagi.connection, for the parts of the spec interface the helpers do
+    not wrap.
   - Session's session_state and session_store constructors.
   - PAGI::Test::Client root_path; PAGI::Middleware::BufferedResponse;
     App::File from_app_path; the process-streaming example.
@@ -147,6 +147,11 @@
     shutting-down PAGI::Server waits for that cleanup. Every
     on_close callback runs; the first failure fails the call (the server
     logs it) instead of being warned.
+  - on_close registered after the connection has ended runs at once,
+    after any callbacks still running, so cleanup registered once its
+    resource exists is never missed, whenever the client leaves. A late
+    callback's failure fails finished, or is warned once finished has
+    resolved.
   - PAGI::App::WrapCGI: a refused request completes once its script has
     been reaped.
   - Nothing in PAGI-Tools uses ->retain; the cookbook and the
