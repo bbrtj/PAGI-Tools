@@ -39,25 +39,21 @@ use PAGI::Tools qw(compose error_context middleware response route);
 my %NOTES = (1 => { id => 1, text => 'buy milk' });
 
 # Deep in the "model": say what went wrong, not how it looks.
-sub find_note ($id)
-{
+sub find_note ($id) {
     return $NOTES{$id} // PAGI::Exception::HTTP->throw(404, "no such note: $id");
 }
 
-async sub show ($request)
-{
+async sub show ($request) {
     return response('JSON', find_note($request->path_param('id')));
 }
 
-async sub boom ($request)
-{
+async sub boom ($request) {
     die "an ordinary bug\n";
 }
 
 # The exception handler: errors the app expects become JSON; bugs keep the
 # stock 500. A response with no status of its own takes the error's.
-sub json_errors ($request)
-{
+sub json_errors ($request) {
     my $error = error_context($request);
     return $error->default if $error->is_server_error;
     return response('JSON', { error => $error->message });

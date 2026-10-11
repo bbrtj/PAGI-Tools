@@ -33,8 +33,7 @@ use Time::HiRes qw(time);
 use PAGI::Tools qw(compose middleware response route wrap_response_headers);
 
 # Server-Timing: how long the application took to start its response.
-sub timing ($app)
-{
+sub timing ($app) {
     return async sub ($scope, $receive, $send) {
         my $started = time;
         my $timed_send = wrap_response_headers($send, sub ($headers, $event) {
@@ -47,8 +46,7 @@ sub timing ($app)
 # Maintenance mode: every HTTP request but /health gets a 503 page.
 my $back_soon = response('Text', 'back soon', status => 503, headers => ['Retry-After' => 60]);
 
-sub maintenance ($app)
-{
+sub maintenance ($app) {
     return $app unless $ENV{MAINTENANCE};
     return async sub ($scope, $receive, $send) {
         return await $app->($scope, $receive, $send)

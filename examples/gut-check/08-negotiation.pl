@@ -26,8 +26,7 @@ my $note = { id => 1, text => 'buy milk' };
 
 # The middleware picks the type, answers 406 when nothing fits, and sends
 # Vary: Accept on every answer, so a shared cache keeps HTML and JSON apart.
-async sub show ($request)
-{
+async sub show ($request) {
     return respond_to($request,
         html => sub { response('HTML', "<h1>$note->{text}</h1>") },
         json => sub { response('JSON', $note) },

@@ -42,8 +42,7 @@ use Types::Standard qw(Int);
 
 sub esc ($text) { $text =~ s/([&<>"'])/'&#' . ord($1) . ';'/ger }
 
-sub page ($title, $body, %opts)
-{
+sub page ($title, $body, %opts) {
     return response('HTML', join('',
         '<!doctype html><title>', esc($title), '</title>',
         '<script src="https://unpkg.com/htmx.org@2.0.4"></script>',
@@ -51,8 +50,7 @@ sub page ($title, $body, %opts)
     ), %opts);
 }
 
-sub note_list ($request, $notes)
-{
+sub note_list ($request, $notes) {
     return join '', '<ul id="notes">',
         (map { '<li><a href="' . path_for($request, 'note', { id => $_->{id} }) . '">'
             . esc($_->{text}) . '</a></li>' } @$notes),
@@ -62,8 +60,7 @@ sub note_list ($request, $notes)
 # The list's HTML depends on HX-Request as well as Accept: htmx swaps in the
 # list alone, a browser gets the whole page. Both say so, so a cache keeps
 # them apart (the middleware adds Accept to this Vary).
-sub list_html ($request, $notes)
-{
+sub list_html ($request, $notes) {
     my @vary = (headers => [Vary => 'HX-Request']);
     return response('HTML', note_list($request, $notes), @vary) if $request->header('HX-Request');
     my $form = '<form method="post" action="' . path_for($request, 'notes') . '"'
@@ -72,8 +69,7 @@ sub list_html ($request, $notes)
     return page('Notes', note_list($request, $notes) . $form, @vary);
 }
 
-async sub list ($request)
-{
+async sub list ($request) {
     my $notes = NoteStore->for_request($request)->all;
     return respond_to($request,
         html => sub { list_html($request, $notes) },
@@ -81,8 +77,7 @@ async sub list ($request)
     );
 }
 
-async sub show ($request)
-{
+async sub show ($request) {
     # The same choice, read directly, where an if reads better than branches.
     # The 404 is returned, not thrown: a returned answer gets the middleware's
     # Vary: Accept, a thrown one goes straight to the error handler.
@@ -97,8 +92,7 @@ async sub show ($request)
     );
 }
 
-async sub create ($request)
-{
+async sub create ($request) {
     # The body's type decides how to read it (input); Accept decides the
     # answer (output). They are separate questions.
     # Anything but JSON or a form is the client's 415, answered like any other

@@ -34,8 +34,7 @@ package Report::TSV {
 
     sub default_content_type { 'text/tab-separated-values; charset=utf-8' }
 
-    sub format_item ($self, $row)
-    {
+    sub format_item ($self, $row) {
         return encode('UTF-8', join("\t", map { $_ // '' } @$row) . "\n");
     }
 }
@@ -44,8 +43,7 @@ package main;
 
 use PAGI::Tools qw(compose response route);
 
-async sub ticks ($request)
-{
+async sub ticks ($request) {
     return response('NDJSON', async sub ($writer) {
         for my $n (0 .. 4) {
             last if $writer->is_disconnected;
@@ -55,8 +53,7 @@ async sub ticks ($request)
     });
 }
 
-async sub report ($request)
-{
+async sub report ($request) {
     my @rows = (['city', 'population'], ['Lisbon', 545_000], ['Kraków', 800_000]);
     return Report::TSV->new(async sub ($writer) {
         for my $row (@rows) {

@@ -27,8 +27,7 @@ use PAGI::Tools qw(compose response route);
 
 # Bytes: stored exactly as sent, checksummed, size-capped. The name allows
 # letters, digits, '-', '_' and single dots between them: no '/', no '..'.
-async sub store_file ($request)
-{
+async sub store_file ($request) {
     my $name = $request->path_param('name');
     my $path = $request->state->get('uploads') . "/$name";
     my $body = $request->body_stream(max_bytes => 50 * 1024 * 1024);
@@ -43,8 +42,7 @@ async sub store_file ($request)
 }
 
 # Text, strict: every row is stored, so bad bytes are the client's 400.
-async sub import_csv ($request)
-{
+async sub import_csv ($request) {
     my $text = $request->body_stream(decode => $request->charset // 'UTF-8', strict => 1);
     my ($rows, $tail, $started) = (0, '', 0);
     while (defined(my $chunk = await $text->next_chunk)) {
@@ -61,8 +59,7 @@ async sub import_csv ($request)
 }
 
 # Text, lenient: a transformation where a stray U+FFFD does no harm.
-async sub shout ($request)
-{
+async sub shout ($request) {
     my $text = $request->body_stream(decode => $request->charset // 'UTF-8');
     return response('Stream', async sub ($writer) {
         while (defined(my $chunk = await $text->next_chunk)) {

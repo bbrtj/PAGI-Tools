@@ -29,16 +29,14 @@ sub listen_to ($id, $deliver) { $listeners{$id} = $deliver }
 sub stop_listening ($id) { delete $listeners{$id} }
 
 # Best-effort fan-out: one slow or vanished listener must not stop the rest.
-sub publish ($from, $text)
-{
+sub publish ($from, $text) {
     $_->("$from: $text") for values %listeners;
     return scalar keys %listeners;
 }
 
 # Each handler listens once its handshake is done, and on_close stops it
 # however the connection ends: at once if the client has already left.
-async sub chat ($ws)
-{
+async sub chat ($ws) {
     await $ws->accept;
     my $id = refaddr $ws;
     listen_to($id, sub ($line) { $ws->try_send_text($line) });
@@ -47,8 +45,7 @@ async sub chat ($ws)
     await $ws->each_text(async sub ($text) { publish('chat', $text) });
 }
 
-async sub watch ($sse)
-{
+async sub watch ($sse) {
     await $sse->start;
     my $id = refaddr $sse;
     listen_to($id, sub ($line) { $sse->try_send_event(event => 'line', data => $line) });
@@ -57,8 +54,7 @@ async sub watch ($sse)
     await $sse->run;
 }
 
-async sub announce ($request)
-{
+async sub announce ($request) {
     my $count = publish('announce', await $request->text);
     return response('JSON', { delivered_to => $count }, status => 202);
 }

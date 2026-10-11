@@ -28,8 +28,7 @@ use v5.40;
 use Future::AsyncAwait;
 use PAGI::Tools qw(compose middleware response route session);
 
-async sub visits ($request)
-{
+async sub visits ($request) {
     my $session = session($request);
     $session->set(visits => $session->get('visits', 0) + 1);
     return response('JSON', {
@@ -38,14 +37,12 @@ async sub visits ($request)
     });
 }
 
-async sub name ($request)
-{
+async sub name ($request) {
     session($request)->set(name => await $request->text);
     return response('Empty');
 }
 
-async sub strict ($request)
-{
+async sub strict ($request) {
     return response('Text', session($request)->get('nmae'));    # a typo
 }
 

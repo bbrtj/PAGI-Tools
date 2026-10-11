@@ -32,14 +32,12 @@ use Digest::SHA;
 use Encode qw(encode);
 use PAGI::Tools qw(compose response route);
 
-async sub relay ($request)
-{
+async sub relay ($request) {
     my $body = $request->body_stream;
     return response('Stream', async sub ($writer) { await $writer->pipe_from($body) });
 }
 
-async sub shout ($request)
-{
+async sub shout ($request) {
     my $text = $request->body_stream(decode => $request->charset // 'UTF-8');
     return response('Stream', async sub ($writer) {
         while (defined(my $chunk = await $text->next_chunk)) {
@@ -48,8 +46,7 @@ async sub shout ($request)
     }, content_type => 'text/plain; charset=utf-8');
 }
 
-async sub sha256 ($request)
-{
+async sub sha256 ($request) {
     my ($body, $sha) = ($request->body_stream, Digest::SHA->new(256));
     while (defined(my $chunk = await $body->next_chunk)) {
         $sha->add($chunk);
