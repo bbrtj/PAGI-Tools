@@ -264,6 +264,36 @@ subtest 'ContentNegotiation refuse => 0 lets the application decide' => sub {
     is((response_starts($events))[0]{status}, 200, "and the application's own response");
 };
 
+subtest 'ContentNegotiation sends Vary: Accept on every answer' => sub {
+    my $json_only = PAGI::Middleware::ContentNegotiation->new(supported_types => ['application/json']);
+    my ($events) = negotiate($json_only, 'application/json');
+    is response_header($events, 'Vary'), 'Accept', "the application's answer";
+    ($events) = negotiate($json_only, 'image/png');
+    is response_header($events, 'Vary'), 'Accept', 'the stock 406';
+    ($events) = negotiate(PAGI::Middleware::ContentNegotiation->new(
+        supported_types => ['application/json'],
+        refuse => PAGI::Response::JSON->new({ detail => 'JSON only' }, status => 406)), 'image/png');
+    is response_header($events, 'Vary'), 'Accept', 'a refuse replacement';
+    ($events) = negotiate(PAGI::Middleware::ContentNegotiation->new(
+        supported_types => ['application/json'], refuse => 0), 'image/png');
+    is response_header($events, 'Vary'), 'Accept', "the application's answer with refuse => 0";
+};
+
+subtest 'ContentNegotiation merges Vary with what the response has' => sub {
+    for my $case (['Origin', 'Origin, Accept'], ['*', '*']) {
+        my ($existing, $expected) = @$case;
+        my @events;
+        my $wrapped = PAGI::Middleware::ContentNegotiation->new(supported_types => ['application/json'])
+            ->wrap(async sub {
+                my ($scope, $receive, $send) = @_;
+                await $send->({ type => 'http.response.start', status => 200, headers => [['Vary', $existing]] });
+                await $send->({ type => 'http.response.body', body => 'OK', more => 0 });
+            });
+        run_async { $wrapped->(make_scope(method => 'GET'), async sub { {} }, async sub { push @events, $_[0] }) };
+        is response_header(\@events, 'Vary'), $expected, "Vary: $existing";
+    }
+};
+
 subtest 'ContentNegotiation strict and default_type were removed' => sub {
     like dies { PAGI::Middleware::ContentNegotiation->new(supported_types => ['a/b'], strict => 1) },
         qr/\QContentNegotiation 'strict' was removed\E/, 'strict dies with its replacement';

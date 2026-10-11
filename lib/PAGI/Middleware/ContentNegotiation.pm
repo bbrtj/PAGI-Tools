@@ -8,6 +8,7 @@ use Future::AsyncAwait;
 use PAGI::Response::Text ();
 use PAGI::Request::Negotiate;
 use PAGI::Utils ();
+use PAGI::Utils::Middleware ();
 
 =head1 NAME
 
@@ -67,6 +68,17 @@ A request that accepts none of them is refused with C<406 text/plain>,
 C<Not Acceptable. Supported types: ...> -- the list RFC 9110 suggests a 406
 carry -- and the wrapped application does not run. C<refuse> replaces the
 refusal, or with C<0> lets the application decide.
+
+Every HTTP answer that passes through it carries C<Vary: Accept>: the
+application's, the stock 406, a C<refuse> replacement, and with
+C<refuse =E<gt> 0> the application's answer to an unacceptable request. The
+field is merged into any C<Vary> the response already has (C<*> stays C<*>),
+so a shared cache keeps the representations apart.
+
+A response thrown with C<die response(...)>, and a 500 from a bug, are sent
+by Compose's error handler, which sits outside declared middleware, so they
+carry no C<Vary> from here. That is right for a fixed answer; a handler that
+picks an error's representation by the negotiated type returns it instead.
 
 To negotiate inside one handler without a middleware, use
 L<PAGI::Request/preferred_type>.
@@ -156,8 +168,14 @@ sub wrap {
             'pagi.accepted_types' => \@accepted,
         });
 
+        # Every answer from here depends on Accept, the refusal included. The
+        # header goes on a copy: the response's own list belongs to whoever
+        # built it, who may send it again.
+        my $vary_send = PAGI::Utils::Middleware::wrap_response_headers($send, sub {
+            $_[0]->add_vary('Accept');
+        });
         my $target = !defined($preferred) && $self->{refuse} ? $self->{refuse} : $app;
-        await $target->($new_scope, $receive, $send);
+        await $target->($new_scope, $receive, $vary_send);
     };
 }
 

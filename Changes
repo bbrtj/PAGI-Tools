@@ -75,6 +75,8 @@
     t/example-gut-check.t.
 
   [Changed]
+  - ContentNegotiation sends Vary: Accept on every answer, its 406 and
+    refusals included, merged into any Vary the response has.
   - raw_path is the full requested path at every mount level; AccessLog
     logs, and HTTPSRedirect redirects to, the encoded request URI.
   - Stock error responses from first-party components are plain text, each
