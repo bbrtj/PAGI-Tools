@@ -277,6 +277,14 @@ subtest 'Linking to static files recipe executes as published' => sub {
     );
 };
 
+subtest 'Constraint Forms recipe shows the route its typed-text example names' => sub {
+    my $heading = '=head2 Constraint Forms and Wildcard Safety';
+    like first_code_block($cookbook, $heading), qr{route\('/typed/\{id:&Int\}'},
+        'the /typed route is the first example';
+    like pod_section($cookbook, $heading), qr{C</typed/09> matches},
+        'and the typed-text paragraph that names it is kept';
+};
+
 subtest 'Declaring what a route requires recipe executes as published' => sub {
     my $recipe = first_code_block($cookbook, '=head2 Declaring what a route requires');
     perl_script_runs(
