@@ -41,13 +41,6 @@ sub page ($request, $template, %vars) {
 
 sub flash ($request, $message) { session($request)->set(flash => $message) }
 
-# The CSRF middleware runs with refuse => 0 because the token is a form
-# field, which it does not read; each POST checks the parsed field.
-sub refused ($request, $form) {
-    return undef if csrf($request)->verify($form->get('csrf_token') // '');
-    return response('Text', 'CSRF token validation failed', status => 403);
-}
-
 sub tasks ($request) { app_state($request)->get('board') }
 
 sub validate ($form) {
@@ -67,7 +60,6 @@ async sub index ($request) {
 
 async sub create ($request) {
     my $form = await $request->form_params;
-    if (my $refusal = refused($request, $form)) { return $refusal }
     my ($values, $errors) = validate($form);
     return page($request, 'index.tt', tasks => tasks($request)->{list},
         form => $values, errors => $errors, status => 422)
@@ -80,8 +72,6 @@ async sub create ($request) {
 }
 
 async sub toggle ($request) {
-    my $form = await $request->form_params;
-    if (my $refusal = refused($request, $form)) { return $refusal }
     my $id = $request->path_param('id');
     my ($task) = grep { $_->{id} == $id } @{ tasks($request)->{list} };
     return response('Text', 'No such task', status => 404) unless $task;
@@ -91,8 +81,6 @@ async sub toggle ($request) {
 }
 
 async sub remove ($request) {
-    my $form = await $request->form_params;
-    if (my $refusal = refused($request, $form)) { return $refusal }
     my $id    = $request->path_param('id');
     my $board = tasks($request);
     my $before = @{ $board->{list} };
@@ -112,7 +100,9 @@ compose(
     ],
     middleware => [
         middleware('Session'),
-        middleware('CSRF', session => 1, refuse => 0),
+        # Every POST is a form carrying csrf_token, which the middleware reads:
+        # a missing or wrong token is refused with a 403.
+        middleware('CSRF', session => 1),
     ],
     lifespan => {
         startup => sub ($state, $scope) { $state->{board} = { next => 1, list => [] } },

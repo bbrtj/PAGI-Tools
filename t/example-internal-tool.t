@@ -58,6 +58,10 @@ like($res->text, qr/Rotate the on-call key/, 'and the task');
 like($res->text, qr/2026-10-20/, 'with its due date');
 unlike($client->get('/')->text, qr/class="flash"/, 'the flash is shown once');
 
+is($client->post('/tasks/1/toggle', form => {})->status, 403, 'a toggle without the token is refused');
+is($client->post('/tasks/1/delete', form => { csrf_token => 'forged' })->status, 403,
+    'a delete with a wrong token is refused');
+
 $res = $client->post('/tasks/1/toggle', form => { csrf_token => $token });
 is($res->status, 303, 'toggling redirects');
 like($client->get('/')->text, qr/class="done".*Done: Rotate the on-call key\.|Done: Rotate the on-call key\..*class="done"/s,
