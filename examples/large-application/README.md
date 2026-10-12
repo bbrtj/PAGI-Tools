@@ -52,16 +52,18 @@ lib/MyApp/
 - Root mounts Person with `app =>` and name `person`; Person mounts Blogs with
   `app =>` and name `blog`. The application values are immutable Router
   objects, so these mounts form one inspectable reverse-routing graph.
-- Root mounts `PAGI::App::File` with `app =>` at `/static`. That mount stays an
-  opaque application boundary: the resolver knows its prefix but does not
-  inspect named routes below it.
+- Root mounts `PAGI::App::File` with `app =>` at `/static`, named `static`.
+  That mount stays an opaque application boundary: the resolver knows its
+  prefix but does not inspect routes below it. Its name is a link target, so
+  `MyApp::View` links the stylesheet with `path_for($request, '/static', {
+  path => 'app.css' })` and the link keeps a proxy prefix.
 - Root uses `PAGI::App::File->from_app_path('static')`, a component constructor that
   derives application home from the calling `lib/MyApp/Root.pm`, appends the
   platform-aware static component, and can be mounted directly. `PAGI_HOME`
   remains the override for nonstandard deployments.
 - `MyApp::Data` is created during startup and shared through
   `$request->state->get('data')`. `MyApp::View` renders the shared HTML
-  document shell without introducing a template engine.
+  document shell from the request without introducing a template engine.
 - Root and Blogs place direct source-free `not_found(...)` applications in
   their Router `http_default` values. The details identify which selected
   Router owns an unmatched path without turning a wildcard into a normal
@@ -87,8 +89,11 @@ paths. The mount names contribute `person` and `blog`:
 |---|---|---|
 | `/home` | `/` | `MyApp::Root` |
 | `/pagi` | `/pagi` | `MyApp::Root` |
+| `/static` | `/static` | `MyApp::Root` (mount) |
+| `/person` | `/person` | `MyApp::Root` (mount) |
 | `/person/index` | `/person/` | `MyApp::Person` |
 | `/person/show` | `/person/{person_id}` | `MyApp::Person` |
+| `/person/blog` | `/person/{person_id}/blog` | `MyApp::Person` (mount) |
 | `/person/blog/index` | `/person/{person_id}/blog/` | `MyApp::Person::Blogs` |
 | `/person/blog/show` | `/person/{person_id}/blog/{blog_id}` | `MyApp::Person::Blogs` |
 
@@ -258,6 +263,8 @@ class AppState(TypedDict):
 ```python
 from html import escape
 
+from starlette.requests import Request
+
 
 def html_text(value: object) -> str:
     return escape(str(value))
@@ -267,14 +274,14 @@ def html_href(value: object) -> str:
     return escape(str(value), quote=True)
 
 
-def document(title: str, body: str) -> str:
+def document(request: Request, title: str, body: str) -> str:
     return f"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{html_text(title)}</title>
-  <link rel="stylesheet" href="/static/app.css">
+  <link rel="stylesheet" href="{html_href(request.url_for('static', path='app.css'))}">
 </head>
 <body>
   <main class="page">
@@ -303,7 +310,7 @@ async def list_blogs(request: Request[AppState]) -> HTMLResponse:
 
     if person is None:
         return HTMLResponse(
-            document("Blogs not found", "    <h1>Blogs not found</h1>"),
+            document(request, "Blogs not found", "    <h1>Blogs not found</h1>"),
             status_code=404,
         )
 
@@ -328,7 +335,7 @@ async def list_blogs(request: Request[AppState]) -> HTMLResponse:
         + "\n    </ul>"
     )
     return HTMLResponse(
-        document(f'Blogs by {person["name"]}', body)
+        document(request, f'Blogs by {person["name"]}', body)
     )
 
 
@@ -344,6 +351,7 @@ async def show_blog(request: Request[AppState]) -> HTMLResponse:
         )
         return HTMLResponse(
             document(
+                request,
                 "Blog not found",
                 f'    <a href="{html_href(blogs_path)}">Blogs</a>\n'
                 "    <h1>Blog not found</h1>",
@@ -375,7 +383,7 @@ async def show_blog(request: Request[AppState]) -> HTMLResponse:
         f'<p>{html_text(blog["body"])}</p></article>\n'
         f'    <a href="{html_href(canonical)}">Comments view</a>'
     )
-    return HTMLResponse(document(str(blog["title"]), body))
+    return HTMLResponse(document(request, str(blog["title"]), body))
 
 
 async def blogs_not_found(request: Request[AppState]) -> HTMLResponse:
@@ -386,6 +394,7 @@ async def blogs_not_found(request: Request[AppState]) -> HTMLResponse:
     )
     return HTMLResponse(
         document(
+            request,
             "Blogs section not found",
             f'    <a href="{html_href(blogs_path)}">Blogs</a>\n'
             "    <h1>Blogs section not found</h1>",
@@ -427,7 +436,7 @@ async def list_people(request: Request[AppState]) -> HTMLResponse:
         + "\n".join(items)
         + "\n    </ul>"
     )
-    return HTMLResponse(document("People", body))
+    return HTMLResponse(document(request, "People", body))
 
 
 async def show_person(request: Request[AppState]) -> HTMLResponse:
@@ -438,6 +447,7 @@ async def show_person(request: Request[AppState]) -> HTMLResponse:
         people_path = request.url_for("person:index")
         return HTMLResponse(
             document(
+                request,
                 "Person not found",
                 f'    <a href="{html_href(people_path)}">People</a>\n'
                 "    <h1>Person not found</h1>",
@@ -456,7 +466,7 @@ async def show_person(request: Request[AppState]) -> HTMLResponse:
         f'    <p>{html_text(person["summary"])}</p>\n'
         f'    <a href="{html_href(blogs_path)}">Read blogs</a>'
     )
-    return HTMLResponse(document(str(person["name"]), body))
+    return HTMLResponse(document(request, str(person["name"]), body))
 
 
 routes = [
@@ -505,12 +515,13 @@ async def home(request: Request[AppState]) -> HTMLResponse:
         f'    <p><a href="{html_href(people_path)}">'
         "Browse people</a></p>"
     )
-    return HTMLResponse(document("My PAGI People", body))
+    return HTMLResponse(document(request, "My PAGI People", body))
 
 
 async def root_not_found(request: Request[AppState]) -> HTMLResponse:
     return HTMLResponse(
         document(
+            request,
             "Root page not found",
             "    <h1>Root page not found</h1>\n"
             "    <p>No root route matched this path.</p>",
@@ -550,6 +561,8 @@ The comparison highlights a few deliberate differences:
 - Starlette URL generation requires every path parameter explicitly. PAGI's
   Request-bound URL helper may inherit matched parameters, which enables calls
   such as `path_for('show')` and `path_for('../show')`.
+- Starlette's mount name requires `path`; PAGI gives the mount's prefix without
+  it.
 - Starlette's `int` converter both validates and converts the value to a
   Python integer. PAGI's `&Int` provider obtains a Type::Tiny constraint once
   during route construction; it validates without coercing the decoded scalar
