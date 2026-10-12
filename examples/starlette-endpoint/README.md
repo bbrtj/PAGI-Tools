@@ -74,6 +74,51 @@ plays uvicorn's part.
 pagi-server --app examples/starlette-endpoint/app.pl --port 5000
 ```
 
+```text
+$ curl -i localhost:5000/httpp
+HTTP/1.1 200 OK
+Content-Type: application/json
+content-length: 41
+date: Mon, 12 Oct 2026 16:54:34 GMT
+Server: PAGI::Server/0.003000
+
+{"message":"This handled a GET request!"}
+
+$ curl -i -X POST localhost:5000/httpp
+HTTP/1.1 200 OK
+Content-Type: application/json
+content-length: 42
+date: Mon, 12 Oct 2026 16:54:34 GMT
+Server: PAGI::Server/0.003000
+
+{"message":"This handled a POST request!"}
+
+$ curl -i -X PUT localhost:5000/httpp
+HTTP/1.1 405 Method Not Allowed
+Content-Type: text/plain; charset=utf-8
+content-length: 18
+allow: GET, HEAD, OPTIONS, POST
+date: Mon, 12 Oct 2026 16:54:34 GMT
+Server: PAGI::Server/0.003000
+
+Method Not Allowed
+
+$ curl -I localhost:5000/httpp
+HTTP/1.1 200 OK
+Content-Type: application/json
+content-length: 41
+date: Mon, 12 Oct 2026 16:54:34 GMT
+Server: PAGI::Server/0.003000
+
+
+$ curl -i -X OPTIONS localhost:5000/httpp
+HTTP/1.1 204 No Content
+Allow: GET, HEAD, OPTIONS, POST
+date: Mon, 12 Oct 2026 16:54:34 GMT
+Server: PAGI::Server/0.003000
+
+```
+
 ## What differs
 
 | | Starlette | PAGI |

@@ -62,6 +62,65 @@ endpoint, which answers 204 with `Allow`; `HEAD` is answered by `get`.
 pagi-server --app examples/endpoint-lifecycle/app.pl --port 5000
 ```
 
+```text
+$ curl -i -H 'X-User: alice' -H 'Content-Type: application/json' -d '{"text":"buy milk"}' localhost:5000/notes
+HTTP/1.1 201 Created
+Location: /notes/1
+Content-Type: application/json
+content-length: 43
+date: Mon, 12 Oct 2026 16:55:19 GMT
+Server: PAGI::Server/0.003000
+
+{"author":"alice","id":1,"text":"buy milk"}
+
+$ curl -i localhost:5000/notes
+HTTP/1.1 200 OK
+X-Page-Size: 50
+Content-Type: application/json
+content-length: 45
+date: Mon, 12 Oct 2026 16:55:19 GMT
+Server: PAGI::Server/0.003000
+
+[{"author":"alice","id":1,"text":"buy milk"}]
+
+$ curl -i localhost:5000/notes/1
+HTTP/1.1 200 OK
+Content-Type: application/json
+content-length: 43
+date: Mon, 12 Oct 2026 16:55:19 GMT
+Server: PAGI::Server/0.003000
+
+{"author":"alice","id":1,"text":"buy milk"}
+
+$ curl -i -X PUT localhost:5000/notes
+HTTP/1.1 405 Method Not Allowed
+Content-Type: text/plain; charset=utf-8
+content-length: 18
+allow: GET, HEAD, OPTIONS, POST
+date: Mon, 12 Oct 2026 16:55:19 GMT
+Server: PAGI::Server/0.003000
+
+Method Not Allowed
+
+$ curl -i localhost:5000/health
+HTTP/1.1 200 OK
+Content-Type: application/json
+content-length: 40
+date: Mon, 12 Oct 2026 16:55:19 GMT
+Server: PAGI::Server/0.003000
+
+{"hits":1,"status":"ok","version":"1.0"}
+
+$ curl -i localhost:5000/health
+HTTP/1.1 200 OK
+Content-Type: application/json
+content-length: 40
+date: Mon, 12 Oct 2026 16:55:19 GMT
+Server: PAGI::Server/0.003000
+
+{"status":"ok","version":"1.0","hits":2}
+```
+
 The curl lines are in app.pl's header. `t/example-endpoint-lifecycle.t`
 proves the three lifecycles, including two overlapping POSTs that each answer
 with their own user.
