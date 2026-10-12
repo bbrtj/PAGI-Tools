@@ -100,7 +100,7 @@ sub code_block_containing {
 
 sub perl_script_runs {
     my ($label, $source) = @_;
-    my ($handle, $path) = tempfile(SUFFIX => '.pl');
+    my ($handle, $path) = tempfile(SUFFIX => '.pl', UNLINK => 1);
     print {$handle} $source or die "Cannot write $path: $!";
     close $handle or die "Cannot close $path: $!";
 
