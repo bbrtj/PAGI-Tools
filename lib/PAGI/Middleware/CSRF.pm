@@ -149,20 +149,20 @@ C<Origin>. The token check still applies.
 
 =item * form_field (default: 'csrf_token')
 
-The form field holding the token when a request sends no header; the
-default is the name of the default cookie and of the session key. It is
-read only from a form body of an unsafe request that passed the origin
-check and has a token to match, and a missing or wrong value is refused
-like a header. The parse uses L<PAGI::Request>'s default limits (for
-multipart, 1MB a field, 10MB a file, 20 files, 1000 fields), and limits
-that the application later passes to C<form_params> or C<uploads> do not
-apply, because the parse is cached. A body the parse rejects throws the
-same L<PAGI::Request::BodyError> (a 400 or 413) as when the application
-reads it, and it is answered by an ErrorHandler outside this middleware:
-list your own C<ErrorHandler> before CSRF to answer it yourself, or
-Compose's answers it in plain text. A bare C<wrap> without Compose
-propagates it. C<undef> reads only the header, so the middleware never
-reads a body; anything else but a non-empty string dies.
+The form field holding the token when a request sends no header; the default is
+the name of the default cookie and of the session key. It is read only from a
+form body of an unsafe request that passed the origin check and has a token to
+match, and a missing or wrong value is refused like a header. The parse uses
+L<PAGI::Request>'s default limits (for multipart, 1MB a field, 10MB a file, 20
+files, 1000 fields; a urlencoded body has no cap of its own, so the server's
+C<max_body_size> bounds it), and limits that the application later passes to
+C<form_params> or C<uploads> do not apply, because the parse is cached. A body
+the parse rejects throws the same L<PAGI::Request::BodyError> (a 400 or 413) as
+when the application reads it, and it is answered by an ErrorHandler outside
+this middleware: list your own C<ErrorHandler> before CSRF to answer it
+yourself, or Compose's answers it in plain text. A bare C<wrap> without Compose
+propagates it. C<undef> reads only the header, so the middleware never reads a
+body; anything else but a non-empty string dies.
 
 =item * refuse (default: a 403 text response)
 

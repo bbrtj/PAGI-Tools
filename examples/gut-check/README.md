@@ -157,13 +157,13 @@ Most important first, as found; each now says what PAGI-Tools 0.003000 does.
    "Can't call method".
 
 7. **Links: names inside mounts use a slash.** Kept, and a correction:
-   `PAGI::Routing` documented the scheme fully (its "REVERSE ROUTING AND
-   INSPECTION" section); only `PAGI::Routing::URL`'s `path_for` lacked a mount
-   example, which it now has, with the Cookbook recipe "Linking inside a
-   mounted app". Names are logical addresses, not URL paths: `api/note` is the
-   route `note` in the mount `api`, and a handler inside that mount reaches a
-   sibling as plain `note`, wherever the mount is placed, which Starlette's
-   `api:note` cannot do.
+   `PAGI::Routing` documented the scheme fully (the complete rules are now in
+   `PAGI::Routing::URL`'s "REFERENCES" section); only `PAGI::Routing::URL`'s
+   `path_for` lacked a mount example, which it now has, with the Cookbook
+   recipe "Linking inside a mounted app". Names are logical addresses, not URL
+   paths: `api/note` is the route `note` in the mount `api`, and a handler
+   inside that mount reaches a sibling as plain `note`, wherever the mount is
+   placed, which Starlette's `api:note` cannot do.
 
 8. **Route constraints name a Perl function inside a string.** Kept:
    `{id:&Int}` is the compact form, and the docs now lead with the explicit

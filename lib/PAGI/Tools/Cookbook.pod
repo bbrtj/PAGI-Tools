@@ -6,10 +6,6 @@
 
 PAGI::Tools::Cookbook - Recipes for Common PAGI Tasks
 
-Route matches a complete URL leaf. Mount composes an application under a
-prefix. Router selects and owns routing outcomes. Middleware wraps behavior.
-Compose owns the application root and lifespan.
-
 =head1 DESCRIPTION
 
 This cookbook provides ready-to-use solutions for common web development tasks
@@ -35,7 +31,8 @@ position.
 
 =head2 HTTP Defaults: Pages, Request Handlers, and Native Applications
 
-Put a source-free Pages application directly in C<http_default> for the
+Without C<http_default> the Router answers HTTP NONE and PARTIAL in plain
+text. Put a source-free Pages application directly in C<http_default> for the
 ordinary custom 404:
 
   use PAGI::Pages qw(not_found);
@@ -46,9 +43,9 @@ ordinary custom 404:
       http_default => not_found(detail => 'No route matched.'),
   );
 
-Router owns HTTP NONE and PARTIAL, answering both in plain text. Supply a Pages
-endpoint through C<http_default> for a branded, negotiated NONE; PARTIAL remains
-the Router's plain-text 405 with authoritative C<Allow>:
+For the application's own presentation, give C<http_default> a page from a
+configured Pages instance instead of the function; PARTIAL remains the
+Router's plain-text 405 with authoritative C<Allow>:
 
   use PAGI::Compose qw(compose);
   use PAGI::Pages;

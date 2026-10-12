@@ -188,7 +188,7 @@ The selected base application remains the routing boundary after its prefix
 matches. A child Router renders its own NONE as a custom or stock 404 and its
 own PARTIAL as the built-in 405. Those responses unwind through Mount and
 parent Router middleware, but the parent does not resume sibling scanning or
-union methods after selecting the Mount. An opaque application is equally
+union methods after selecting the Mount. An application mount is equally
 authoritative; silence there is an application lifecycle error, not a parent
 routing miss.
 

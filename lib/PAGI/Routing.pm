@@ -266,9 +266,8 @@ and application-defined methods uniformly.
 
 C<routes> is the ordered list of Route and Mount descriptions; C<middleware>
 holds L</middleware> descriptions; C<desc> is a human note. C<http_default>
-answers an HTTP request that no child matched: a Pages value, a one-Request
-handler, or an app object (L</HANDLERS>). Construction validates it but does
-not compile it.
+is a Pages value, a one-Request handler, or an app object (L</HANDLERS>);
+construction validates it but does not compile it.
 
 When no child matches, the Router calls C<http_default>, or answers a
 plain-text C<404 Not Found> without one. When a path matches but its method
@@ -505,11 +504,8 @@ matched-route metadata are installed before the matching mount/route wrapper.
 Mount middleware can therefore read dynamic mount captures.
 A child-owned 404/405 response unwinds through the selected child Router and
 Mount middleware without resuming the parent scan. The response crosses the
-remaining enclosing middleware but no route middleware. The one outermost
-L<PAGI::Routing::HeadBoundary> removes the final HEAD body, including sendfile
-events, only after every Router/mount/route middleware has observed the
-unsuppressed GET representation. WebSocket and SSE retain their existing
-protocol ownership; Mounts do not adapt their events.
+remaining enclosing middleware but no route middleware. WebSocket and SSE
+retain their existing protocol ownership; Mounts do not adapt their events.
 See L<PAGI::Utils::Middleware> for small channel wrappers that keep this
 contract explicit.
 
@@ -517,7 +513,9 @@ The compiled router owns the HEAD wire boundary. Handlers and router
 middleware still see C<method =E<gt> 'HEAD'> and the full response stream;
 response starts and calculated headers are preserved, while body, sendfile,
 streaming, and trailer events are suppressed and one empty terminal body is
-sent.
+sent. The one outermost L<PAGI::Routing::HeadBoundary> suppresses them, only
+after every Router, mount and route middleware has observed the unsuppressed
+GET representation.
 
 Separately compiled declarative routers coordinate through a private
 request-local scope marker. Only the outermost participating router suppresses
