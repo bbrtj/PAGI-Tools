@@ -38,6 +38,7 @@ my @load_modules = qw(
     PAGI::Request
     PAGI::Request::BodyStream
     PAGI::Request::MultipartStream
+    PAGI::Request::_Factory
     PAGI::State
     PAGI::CSRF
     PAGI::Transport
