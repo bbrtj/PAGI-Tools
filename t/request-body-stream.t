@@ -407,4 +407,20 @@ subtest 'a disconnect inside a character ends the text; truncated says why' => s
     }
 };
 
+subtest 'strip_bom on a body stream' => sub {
+    my $stream = PAGI::Request::BodyStream->new(
+        receive => mock_receive(
+            { type => 'http.request', body => "\xEF\xBB", more => 1 },
+            { type => 'http.request', body => "\xBFid\n", more => 0 },
+        ),
+        decode => 'UTF-8', strip_bom => 1,
+    );
+    my $text = '';
+    while (defined(my $chunk = $stream->next_chunk->get)) { $text .= $chunk }
+    is $text, "id\n", 'the BOM is dropped across a chunk boundary';
+
+    like dies { PAGI::Request::BodyStream->new(receive => mock_receive(), strip_bom => 1) },
+        qr/strip_bom needs decode: a byte-order mark is text/, 'strip_bom on raw bytes is a mistake';
+};
+
 done_testing;

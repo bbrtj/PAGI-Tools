@@ -88,6 +88,8 @@ you cannot use those methods.
         max_bytes  => 10485760,      # Optional: max body size
         decode     => 'UTF-8',       # Optional: decode from UTF-8
         strict     => 1,             # Optional: invalid bytes are a 400
+        strip_bom  => 1,             # Optional: drop a leading byte-order mark
+        max_line_length => 65536,    # Optional: the longest line next_line takes
         limit_name => 'body_size',   # Optional: name for limit error message
     );
 
@@ -115,6 +117,15 @@ L<PAGI::Utils::TextDecoder>.
 throw a L<PAGI::Request::BodyError> (400, C<invalid_encoding>), the client's
 error. If false (default), they become U+FFFD.
 
+=item * C<strip_bom> - Optional, with C<decode>. Drops a byte-order mark
+(U+FEFF) at the very start of the text: Excel's "CSV UTF-8" begins with one.
+Off by default, because in UTF-8 the mark is text. See
+L<PAGI::Utils::TextDecoder/new>.
+
+=item * C<max_line_length> - Optional. The longest line L</next_line>
+accepts, in characters when decoding and bytes otherwise (default 65536). A
+longer line is a L<PAGI::Request::BodyError> 413 (C<too_large>).
+
 =item * C<limit_name> - Optional. Name to use in error message when max_bytes
 is exceeded (default: 'max_bytes'). It appears in the error's C<cause>, for the
 log; the client sees only the message. C<content-length> marks the limit as
@@ -138,13 +149,19 @@ sub new {
         _done         => 0,
         _error        => undef,
         _truncated    => 0,
+        max_line_length => $args{max_line_length} // 65536,
+        _lines        => undef,    # the partial line next_line holds
     }, $class;
+
+    croak 'strip_bom needs decode: a byte-order mark is text'
+        if $args{strip_bom} && !defined $args{decode};
 
     # The encoding name usually comes from the client's Content-Type, so one
     # this stream cannot decode is the client's 415, as for $request->text.
     if (defined $args{decode}) {
         my $decoder = eval {
-            PAGI::Utils::TextDecoder->new($args{decode}, strict => $args{strict});
+            PAGI::Utils::TextDecoder->new($args{decode},
+                strict => $args{strict}, strip_bom => $args{strip_bom});
         };
         PAGI::Request::BodyError->throw(
             status_code => 415,
@@ -183,6 +200,14 @@ C<max_bytes> is exceeded.
 =cut
 
 async sub next_chunk {
+    my ($self) = @_;
+    # A line reader holds a partial line; chunks read past it would lose it.
+    croak 'next_chunk: line reading has started; use next_line'
+        if defined $self->{_lines};
+    return await $self->_read_chunk;
+}
+
+async sub _read_chunk {
     my ($self) = @_;
     return undef if $self->{_done};
     return undef if $self->{_error};
@@ -405,6 +430,88 @@ async sub stream_to {
     return $bytes_processed;
 }
 
+=head2 next_line
+
+    while (defined(my $line = await $stream->next_line)) { ... }
+
+Resolves to the next line, without its C<\n> and without a C<\r> before it;
+a last line without a newline is delivered; undef at the end. A client that
+hangs up partway through a line ends the lines there, and C<truncated> is
+true. After a body error (invalid bytes, C<max_bytes>, a line too long) the
+lines end: C<next_line> resolves to undef and C<error> says why. A line longer than C<max_line_length> is a
+L<PAGI::Request::BodyError> 413 (C<too_large>).
+
+Once line reading starts, C<next_chunk>, C<stream_to> and C<stream_to_file>
+die: the partial line held for C<next_line> would be lost.
+
+=cut
+
+async sub next_line {
+    my ($self) = @_;
+    # After a body error the lines end: a held fragment is not a line.
+    return undef if $self->{_error};
+    my $buffer = \($self->{_lines} //= '');
+    while (1) {
+        my $at = index $$buffer, "\n";
+        if ($at >= 0) {
+            my $line = substr $$buffer, 0, $at + 1, '';
+            $line =~ s/\r?\n\z//;
+            $self->_line_too_long if length $line > $self->{max_line_length};
+            return $line;
+        }
+        # No newline yet: a line already longer than the limit never fits
+        # (the one extra character may be the \r of a CRLF).
+        $self->_line_too_long if length $$buffer > $self->{max_line_length} + 1;
+        my $chunk = await $self->_read_chunk;
+        if (!defined $chunk) {
+            # A hang-up cut the last line short: it is dropped, as a partial
+            # character is, and truncated says so.
+            return undef if $self->{_truncated} || !length $$buffer;
+            my $line = $$buffer;
+            $$buffer = '';
+            $line =~ s/\r\z//;
+            $self->_line_too_long if length $line > $self->{max_line_length};
+            return $line;
+        }
+        $$buffer .= $chunk;
+    }
+}
+
+=head2 each_line
+
+    my $count = await $stream->each_line(async sub ($line) { ... });
+
+Calls the callback with each line (as L</next_line> reads them), awaiting a
+Future it returns, and resolves to the number of lines. Empty lines are
+delivered; skip them in the callback where the format allows them (NDJSON).
+
+=cut
+
+async sub each_line {
+    my ($self, $callback) = @_;
+    croak 'each_line: a callback is required' unless ref $callback eq 'CODE';
+    my $count = 0;
+    while (defined(my $line = await $self->next_line)) {
+        # Future->wrap: a plain return settles now; a Future keeps backpressure.
+        await Future->wrap($callback->($line));
+        $count++;
+    }
+    return $count;
+}
+
+sub _line_too_long {
+    my ($self) = @_;
+    $self->{_error} = "line longer than max_line_length ($self->{max_line_length})";
+    $self->{_done} = 1;
+    $self->{_lines} = '';
+    PAGI::Request::BodyError->throw(
+        status_code => 413,
+        reason      => 'too_large',
+        message     => 'A line in the request body is longer than this route accepts.',
+        cause       => $self->{_error},
+    );
+}
+
 =head1 INTERNAL METHODS
 
 =head2 _decode_chunk
@@ -465,34 +572,23 @@ __END__
 
 =head2 Line-by-Line Processing
 
-    async sub process_csv ($scope, $receive, $send) {
-        my $stream = PAGI::Request::BodyStream->new(
-            receive => $receive,
-            decode  => 'UTF-8',
-        );
+NDJSON, one JSON document per line, read without holding the body:
 
-        my $line_buffer = '';
-        my $line_count = 0;
-
-        while (!$stream->is_done) {
-            my $chunk = await $stream->next_chunk;
-            last unless defined $chunk;
-
-            $line_buffer .= $chunk;
-
-            # Process complete lines
-            while ($line_buffer =~ s/^(.*?)\n//) {
-                my $line = $1;
-                $line_count++;
-                # Process $line...
-            }
-        }
-
-        # Process final line if no trailing newline
-        $line_count++ if length($line_buffer);
-
-        # Send response...
+    async sub import_events ($request) {
+        my $stream = $request->body_stream(decode => 'UTF-8', strict => 1);
+        my $json   = JSON::PP->new;    # decoded text in, so not decode_json
+        my $events = 0;
+        await $stream->each_line(sub ($line) {
+            return unless length $line;    # NDJSON allows blank lines
+            store_event($json->decode($line));
+            $events++;
+        });
+        # each_line resolves to the count of all lines, blank ones included.
+        return response('JSON', { events => $events });
     }
+
+C<next_line> is the same one line at a time. A line ends at C<\n> (a C<\r>
+before it is dropped); C<max_line_length> caps how much one line may buffer.
 
 =head2 Custom Processing with Backpressure
 

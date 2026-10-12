@@ -372,6 +372,8 @@ sub body_stream {
         limit_name => $limit_name,
         decode     => $opts{decode},
         strict     => $opts{strict},
+        strip_bom  => $opts{strip_bom},
+        max_line_length => $opts{max_line_length},
         _scope_type => $scope_type,
     );
     $self->{scope}{'pagi.request.body.stream.created'} = 1;
@@ -413,8 +415,13 @@ async sub body {
     croak "Body streaming already started; buffered helpers unavailable"
         if $self->{scope}{'pagi.request.body.stream.created'};
 
-    # Return cached body if already read
-    return $self->{scope}{'pagi.request.body'} if $self->{scope}{'pagi.request.body.read'};
+    # Return cached body if already read. A multipart parse streams the body
+    # to its parts and keeps no copy of it.
+    if ($self->{scope}{'pagi.request.body.read'}) {
+        croak 'The raw body of a multipart request is not kept; read it with form_params and uploads'
+            unless exists $self->{scope}{'pagi.request.body'};
+        return $self->{scope}{'pagi.request.body'};
+    }
 
     # A prior call already hit a mid-body disconnect: fail identically instead
     # of re-awaiting a receive that will never resolve normally again.
@@ -974,6 +981,7 @@ a body, form, or upload cache is already present.
         max_bytes => 10 * 1024 * 1024,  # 10MB limit
         decode    => 'UTF-8',            # Decode from UTF-8
         strict    => 1,                  # invalid bytes are a 400
+        strip_bom => 1,                  # drop a leading byte-order mark
     );
 
 Returns a L<PAGI::Request::BodyStream> for streaming body consumption. This is
@@ -993,6 +1001,14 @@ decode is a 415 when it is made.
 
 =item * C<strict> - If true, bytes invalid in the C<decode> encoding throw a
 L<PAGI::Request::BodyError> (400). Default: false (they become U+FFFD).
+
+=item * C<strip_bom> - With C<decode>, drops a byte-order mark (U+FEFF) at
+the very start of the text, as Excel's "CSV UTF-8" sends. Default: false (in
+UTF-8 the mark is text).
+
+=item * C<max_line_length> - The longest line
+L<PAGI::Request::BodyStream/next_line> and C<each_line> accept (default
+65536); a longer one is the client's 413.
 
 =back
 
@@ -1104,8 +1120,9 @@ See L<PAGI::Request::MultipartStream> for full documentation.
 Read raw body bytes. Cached after first read, and C<text>, C<json> and a
 URL-encoded C<form_params> all read through it, so the exact bytes are still
 here after they have parsed the body -- what a webhook signature check needs.
-A multipart C<form_params> streams its parts to disk instead and keeps no raw
-copy.
+A multipart C<form_params> (or C<uploads>) streams its parts to disk instead
+and keeps no raw copy; C<body> after it dies with C<The raw body of a
+multipart request is not kept; read it with form_params and uploads>.
 
 B<Important:> Cannot be used after C<body_stream()> has been called.
 

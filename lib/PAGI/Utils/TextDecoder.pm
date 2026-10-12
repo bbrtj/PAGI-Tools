@@ -8,6 +8,7 @@ use Encode qw(find_encoding FB_CROAK FB_DEFAULT STOP_AT_PARTIAL);
 sub new {
     my ($class, $name, %opts) = @_;
     my $strict = delete $opts{strict};
+    my $strip_bom = delete $opts{strip_bom};
     croak 'PAGI::Utils::TextDecoder: unknown option ' . join(', ', map { "'$_'" } sort keys %opts)
         if %opts;
     croak 'PAGI::Utils::TextDecoder: expects an encoding name' unless defined $name;
@@ -38,6 +39,7 @@ sub new {
         decoder  => $encoding->renew,    # one stateful decoder: a BOM's byte order, a held tail
         check    => ($strict ? FB_CROAK : FB_DEFAULT) | STOP_AT_PARTIAL,
         strict   => $strict ? 1 : 0,
+        strip_bom => $strip_bom ? 1 : 0,
         unit     => $unit,
         order    => $order,
         held     => '',
@@ -68,7 +70,7 @@ sub decode {
     eval { $text = $self->{decoder}->decode($data, $self->{check}); 1 }
         or $self->_fail($@);
     $self->{held} = $data . $wait;    # an unfinished character, and any unit held back
-    return $text;
+    return $self->_strip_bom($text);
 }
 
 sub finish {
@@ -87,10 +89,21 @@ sub finish {
         eval { $text = $self->{decoder}->decode($held, FB_CROAK); 1 }
             or $self->_fail($@);
         $self->_fail('the input ends inside a character') if length $held;
-        return $text;
+        return $self->_strip_bom($text);
     }
     $self->_fail('the input ends inside a character') if $self->{strict};
     return "\x{FFFD}";
+}
+
+# A byte-order mark is dropped once, from the first text decoded: the first
+# call may complete no character yet (a BOM split across chunks).
+sub _strip_bom {
+    my ($self, $text) = @_;
+    if ($self->{strip_bom} && length $text) {
+        $text =~ s/\A\x{FEFF}//;
+        $self->{strip_bom} = 0;
+    }
+    return $text;
 }
 
 sub _fail {
@@ -136,7 +149,7 @@ WebSocket upload, a pipe. It knows nothing about HTTP.
 
 =head2 new
 
-    my $decoder = PAGI::Utils::TextDecoder->new($encoding, strict => 1);
+    my $decoder = PAGI::Utils::TextDecoder->new($encoding, strict => 1, strip_bom => 1);
 
 C<$encoding> is any name L<Encode> knows. UTF-8 is decoded strictly however
 it is spelt (C<utf8>, C<UTF-8>), as L<PAGI::Request/text> does: Encode's
@@ -147,7 +160,13 @@ off (the default) replaces them with U+FFFD; on makes C<decode> or C<finish>
 die. Use strict where you store or act on the text; leave it off where a
 garbled character does no harm.
 
-Dies at once for an option other than C<strict>, for an encoding Encode does
+C<strip_bom> drops a single byte-order mark (U+FEFF) at the very start of
+the text. Off by default: in UTF-8, and in UTF-16LE/BE named as such, the
+mark is text. Plain C<UTF-16> and C<UTF-32> consume it to choose the byte
+order, with or without this option. Python calls this decoding
+C<utf-8-sig>.
+
+Dies at once for an option other than C<strict> and C<strip_bom>, for an encoding Encode does
 not know, and for one Encode decodes only line by line (ISO-2022-JP and -KR,
 UTF-7, HZ): decode those whole, or line by line with PerlIO's C<:encoding>.
 

@@ -22,7 +22,7 @@ sub _new_from {
 
     my %opts = @args;
     my %allowed = map { $_ => 1 }
-        qw(app routes name desc constraints middleware);
+        qw(app routes name desc constraints middleware declaration_package);
     for my $key (keys %opts) {
         croak "unknown mount option '$key'" unless $allowed{$key};
     }
@@ -54,7 +54,9 @@ sub _new_from {
         path => $path,
         mode => 'mount',
         constraints => $constraints,
-        declaration_package => $declaration_package,
+        declaration_package => exists $opts{declaration_package}
+            ? $opts{declaration_package}
+            : $declaration_package,
     );
 
     return bless {
@@ -178,7 +180,10 @@ An inline provider such as C<{id:&Int}> is resolved in the package that
 directly called C<mount> or C<new>. Re-exporting C<mount> preserves the
 consuming package as that caller; wrapping it in another sub makes the wrapper
 package the declaration package. A constructor called from a role method
-likewise resolves providers in the role package.
+likewise resolves providers in the role package. The C<declaration_package>
+option names the package instead: a wrapper passes
+C<< declaration_package => scalar caller >> so providers resolve in the
+application that called it. It names one package; lookup never falls back.
 
 Provider-backed and explicit prefix constraints run before mount middleware
 and the base application are selected. Named descendants reuse the same
