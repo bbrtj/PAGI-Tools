@@ -1,0 +1,42 @@
+#!/usr/bin/env perl
+#
+# Notes: class-based endpoints, and who decides how they are built.
+#
+# The caller names each class with endpoint() and gives it arguments. The
+# class decides how it is built:
+#   - a class without BUILD_APP is built once, with ->new(%args), and that
+#     object answers every request;
+#   - a class whose BUILD_APP returns a coderef gets it called once per
+#     request (or per WebSocket connection) with the request, to build the
+#     object that answers it.
+# endpoint() loads each class itself.
+# The route looks the same either way. The request or connection is never
+# stored on the object: every handler receives it as an argument.
+#
+# Run:  pagi-server --app examples/endpoint-lifecycle/app.pl --port 5000
+# Try:  curl -i -H 'X-User: alice' -H 'Content-Type: application/json' \
+#            -d '{"text":"buy milk"}' localhost:5000/notes
+#       curl -i localhost:5000/notes
+#       curl -i localhost:5000/notes/1
+#       curl -i -X PUT localhost:5000/notes          # 405, Allow from the class
+#       curl -i localhost:5000/health                # hits counts up: one shared object
+
+use v5.40;
+use File::Basename qw(dirname);
+use lib dirname(__FILE__) . '/lib';
+
+use NotesApp::Store;
+use PAGI::Tools qw(compose endpoint route websocket);
+use Types::Standard qw(Int);
+
+compose(
+    routes => [
+        route('/notes'      => endpoint('NotesApp::Notes', page_size => 50), name => 'notes'),
+        route('/notes/{id}' => endpoint('NotesApp::Note'), name => 'note', constraints => { id => Int }),
+        websocket('/watch'  => endpoint('NotesApp::Watch', greeting => 'welcome')),
+        route('/health'     => endpoint('NotesApp::Health', version => '1.0')),
+    ],
+    lifespan => {
+        startup => sub ($state, $scope) { $state->{notes} = NotesApp::Store->new },
+    },
+);

@@ -17,7 +17,7 @@ Router object; servers accept anything with `to_app`.
 
 - Perl 5.18+ with `Future::AsyncAwait` for the distribution and most examples;
   `large-application`, `starlette-apples`, `gut-check`, `content-negotiation`, `upload-streaming`, `process-streaming`,
-  `webhook-receiver`, `framework-on-tools`, `request-class`, `starlette-endpoint`, `escape-hatches`, `internal-tool`, `auth-cookie-login`, `auth-extensions`, `auth-notes`, and `auth-jwt-sandbox`
+  `webhook-receiver`, `framework-on-tools`, `request-class`, `starlette-endpoint`, `endpoint-lifecycle`, `escape-hatches`, `internal-tool`, `auth-cookie-login`, `auth-extensions`, `auth-notes`, and `auth-jwt-sandbox`
   require Perl 5.40+
 - A PAGI server to run examples against:
   ```
@@ -73,6 +73,7 @@ Structuring applications:
 - `endpoint-demo` - HTTP, WebSocket, and SSE endpoint classes as route leaves, with per-route middleware
 - `endpoint-class-demo` - ordinary modular objects returning immutable Router subtrees, with configured exact-leaf endpoint classes
 - `starlette-endpoint` - Perl 5.40 Starlette's class-based HTTPEndpoint example, ported line for line: `endpoint('MyHttpRoute')` at a route; the Python beside it in the README, with both curl transcripts (PUT 405 with Allow, HEAD, OPTIONS 204)
+- `endpoint-lifecycle` - Perl 5.40 one `endpoint()` spelling for three lifecycles: a per-request Moo HTTP endpoint with a required per-request attribute and shared route config, a per-connection WebSocket endpoint keeping state on `$self`, and a singleton whose sharing is the point
 - `framework-on-tools` - Perl 5.40 small Sinatra/FastAPI-shaped framework (`lib/Tiny.pm`) built on Tools, and a notes app on it: a Request subclass, plain-value returns, `before` and `around` (call_next) hooks, startup services, typed path parameters, exception mapping, a plugin, a raw escape hatch and an OpenAPI document from the Router; the README lists each seam and its cost
 - `request-class` - Perl 5.40 an application's own Request subclass with two helpers, set once by `middleware('RequestClass')` and received by a plain route, an Endpoint::HTTP method and a route inside a mount, with no handler wrapped
 - `escape-hatches` - Perl 5.40 the easy way, then each step down to raw PAGI in one app: a handler returning a response, one reading the raw scope and connection, one answering with a hand-written application mid-request, a raw application mounted at a route, and raw middleware editing events
