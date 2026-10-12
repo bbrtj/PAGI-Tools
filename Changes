@@ -89,6 +89,8 @@
     listed after it, Authentication backends) that Request class instead
     of PAGI::Request, through the scope key pagi.request.factory;
     request_response's request_factory still wins for its one handler.
+  - examples/request-class: an application's Request class set once by
+    middleware.
 
   [Changed]
   - Request is_json is true for every +json media type
