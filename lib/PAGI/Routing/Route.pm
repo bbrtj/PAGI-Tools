@@ -252,25 +252,6 @@ constructor validation performs no request I/O. The description never stores
 a request match, protocol object, or handler result. Collection and hash
 accessors return shallow copies.
 
-Its C<middleware> list contains only explicit
-L<PAGI::Routing::Middleware> descriptions, normally created with
-C<middleware(...)>. A factory or C<wrap> result may be native CODE or an object
-with C<to_app>; the resulting native app runs at request time and returns the
-protocol completion.
-
-Route and Mount have deliberately different path ownership:
-
-    Route('/x')       exact complete path leaf
-    Route('/*path')   explicit real catchall leaf
-    Mount('/x')       selected owner of /x and its complete subtree
-
-Target shape never changes that rule. A Response or another instantiated
-C<to_app> component is still an exact, method-aware Route endpoint with normal
-constraints, middleware, naming, FULL/PARTIAL scanning, 405/Allow behavior,
-and GET-supplied automatic HEAD. A coderef is a Request handler unless the
-C<as_app_object> wrapper explicitly gives it the native triplet contract. Package-
-name strings are not application values.
-
 Finite explicit HTTP C<methods> must be advertised by an application's
 C<allowed_methods> capability, when it has one; that capability is called once
 in list context at construction. Otherwise the Route defaults to GET plus
@@ -281,13 +262,8 @@ therefore contributes its advertised verbs and OPTIONS to Router selection;
 the Router owns unsupported-method 405 and C<Allow> outcomes.
 
 An inline provider such as C<{id:&Int}> is resolved in the package that
-directly called C<route>, C<websocket>, C<sse>, or C<new>. Re-exporting a
-constructor preserves the consuming package as that caller; wrapping it in
-another sub makes the wrapper package the declaration package. A constructor
-called from a role method likewise resolves providers in the role package.
-The C<declaration_package> option names the package instead: a wrapper passes
-C<< declaration_package => scalar caller >> so providers resolve in the
-application that called it. It names one package; lookup never falls back.
+directly called C<route>, C<websocket>, C<sse>, or C<new>, or in the package
+C<declaration_package> names (L<PAGI::Routing/Inline constraint providers>).
 
 =head1 ACCESSORS
 
@@ -329,12 +305,5 @@ delivery. Lifespan completes inertly without reading or sending events.
 This direct routing boundary does not install Compose's lifespan orchestration,
 ErrorHandler, or response-completion guard. Deploy through Compose when those
 outer application guarantees are required.
-
-A dynamically returned object's C<to_app> runs once per handler invocation.
-It receives the unchanged scope and remaining body stream, with no body or
-lifespan replay, and remains opaque to the outer Router's reverse and schema
-metadata. Expensive static objects belong directly in Route or another native
-application position. Synchronous handlers run inline and can block the event
-loop.
 
 =cut
