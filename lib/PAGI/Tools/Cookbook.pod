@@ -112,11 +112,44 @@ Router's stock/custom 404 and built-in 405, but has no root ErrorHandler,
 response guard, or lifespan. Compile once for the application instance; do not
 call C<to_app> inside a request.
 
+=head2 An Application's Request Class
+
+Give every handler the application's own Request subclass with one
+middleware:
+
+  use v5.40;
+  use PAGI::Tools qw(compose middleware response route);
+
+  package MyCompany::Request {
+      use parent 'PAGI::Request';
+
+      sub company_name($self) { return 'Example Corp' }
+  }
+
+  package main;
+
+  my $app = compose(
+      middleware => [middleware('RequestClass', class => 'MyCompany::Request')],
+      routes     => [route('/reports' => sub ($request) {
+          return response('Text', $request->company_name . ' reports');
+      })],
+  );
+
+Route handlers, Endpoint::HTTP methods, C<refuse> handlers, WebSocket
+C<deny> / SSE C<decline> handlers, an ErrorHandler C<handler> listed after
+the middleware, and Authentication C<backend>s below it all receive a
+C<MyCompany::Request>, in mounted applications too. The class's C<new> must
+accept WebSocket and SSE scopes, and should be cheap and leave the body
+unread. For one or two helpers, a function that takes the request is
+simpler. See L<PAGI::Middleware::RequestClass> for the order, the costs, and
+the hand-written equivalent.
+
 =head2 Custom Request Route Helpers
 
-A project or higher-level framework can standardize a Request subclass without
-adding another routing engine. Build a named helper from C<request_response>
-and return an ordinary Route:
+A project or higher-level framework can give some routes a different Request
+class than the application's. Build a named helper from C<request_response>,
+whose C<request_factory> wins over the scope's class, and return an ordinary
+Route:
 
   use v5.40;
   use PAGI::Response qw(response);

@@ -219,6 +219,17 @@ PERL
     perl_script_runs('protocol refusal application forms', $recipe . $checks);
 };
 
+subtest "An Application's Request Class recipe executes as published" => sub {
+    my $recipe = first_code_block($cookbook, "=head2 An Application's Request Class");
+    perl_script_runs(
+        'application Request class recipe',
+        $recipe
+            . "use PAGI::Test::Client;\n"
+            . "my \$response = PAGI::Test::Client->new(app => \$app)->get('/reports');\n"
+            . "die 'expected the class helper' unless \$response->status == 200 && \$response->text eq 'Example Corp reports';\n",
+    );
+};
+
 subtest 'custom Request route helper recipe executes as published' => sub {
     my $recipe = first_code_block(
         $cookbook, '=head2 Custom Request Route Helpers');
