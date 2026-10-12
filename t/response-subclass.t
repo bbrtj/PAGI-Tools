@@ -47,7 +47,7 @@ isa_ok $res, ['PAGI::Response'], 'subclass inherits the base value contract';
 is $res->content_type, 'application/x-identity', 'subclass default applies';
 is $res->body, 'bytes', 'subclass render supplies the body';
 
-my ($fh, $path) = tempfile();
+my ($fh, $path) = tempfile(UNLINK => 1);
 print {$fh} 'selected file' or die "cannot write selected file: $!";
 close $fh or die "cannot close selected file: $!";
 

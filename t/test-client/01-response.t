@@ -48,7 +48,7 @@ subtest 'decodes captured response start, headers, and body events' => sub {
 };
 
 subtest 'decodes captured file events with offset and length' => sub {
-    my ($fh, $path) = tempfile();
+    my ($fh, $path) = tempfile(UNLINK => 1);
     print {$fh} '0123456789';
     close $fh;
 

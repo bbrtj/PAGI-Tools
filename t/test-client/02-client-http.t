@@ -67,7 +67,7 @@ subtest 'captures filehandle response bodies' => sub {
 };
 
 subtest 'captures file response bodies' => sub {
-    my ($fh, $path) = tempfile();
+    my ($fh, $path) = tempfile(UNLINK => 1);
     print {$fh} 'Hello from file';
     close $fh;
 
@@ -123,7 +123,7 @@ subtest 'captures filehandle response offset and length' => sub {
 };
 
 subtest 'captures file response offset and length' => sub {
-    my ($fh, $path) = tempfile();
+    my ($fh, $path) = tempfile(UNLINK => 1);
     print {$fh} 'abcdefghij';
     close $fh;
 

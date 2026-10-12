@@ -180,7 +180,7 @@ subtest 'decline adapts the complete concrete Response matrix exactly' => sub {
 };
 
 subtest 'decline emits File directly with an ordinary HTTP file body' => sub {
-    my ($fh, $path) = tempfile();
+    my ($fh, $path) = tempfile(UNLINK => 1);
     print {$fh} 'file refusal';
     close $fh;
     my @sent;
