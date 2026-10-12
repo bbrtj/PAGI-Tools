@@ -52,13 +52,13 @@ tiny;
 | Tiny feature | Built on | Cost |
 |---|---|---|
 | verbs with one-Request handlers | `route($path => $endpoint, methods => [...])` | none; two routes on one path merge their `Allow` |
-| the framework's own Request (`param`, `svc`) | `PAGI::Request` subclass, handed to handlers by `request_response(..., request_factory => ...)` | one indirection: a bare coderef at a Route always gets a plain `PAGI::Request`, so every handler is wrapped |
-| plain-value returns (hashref is JSON, string is HTML) | the same wrapper, `response('JSON'...)`/`response('HTML'...)` | 5 lines |
+| the framework's own Request (`param`, `svc`) | a `PAGI::Request` subclass; `middleware('RequestClass', class => 'Tiny::Request')` puts it in the scope, and every handler below it gets one | one middleware line |
+| plain-value returns (hashref is JSON, string is HTML) | `request_response` wrapping each handler, `response('JSON'...)`/`response('HTML'...)` | 5 lines |
 | `before` hooks | the same wrapper | 4 lines |
 | `around` with Starlette's `call_next` | a native middleware wrapping `$send`: `$next` starts the inner app and resolves on `http.response.start`; the start event is held until the hook returns | 38 lines of raw-protocol code, the only such code in Tiny, and the delicate part: replacing the response has to fail the held send to unwind the handler |
 | services built at startup | Compose `lifespan => { startup }`, read with `$request->state` | none |
 | typed path parameters | `constraints => { id => Int }`, or the compact `{id:&Int}` | `route()` looks a compact provider up in its caller, which is Tiny, so Tiny passes `declaration_package` (the application's package). The app keeps the explicit form because the OpenAPI document reads `Route->constraints`, which holds only explicit constraints |
-| `on_error` class-to-response mapping | one `ErrorHandler` handler reading `error_context($req)->exception` | none; the handler sees a plain `PAGI::Request`, not Tiny's |
+| `on_error` class-to-response mapping | one `ErrorHandler` handler reading `error_context($req)->exception` | none; the handler gets a `Tiny::Request`, because RequestClass is listed before the ErrorHandler |
 | plugins | a package with `register($app)` using the same hooks | none |
 | the raw escape hatch | `route($path => as_app_object($code), methods => '*')` | none |
 | an OpenAPI document | `Compose->router->routes`, then `Route->path/methods/parameters/constraints/name/desc` and `Mount->app` | none; a `Types::Standard` type names its OpenAPI type through `display_name` |
@@ -67,6 +67,8 @@ Order matters and Tools leaves it to the framework: the `around` hooks wrap
 the ErrorHandler, as Starlette's user middleware wraps its
 ExceptionMiddleware, so a mapped error response passes through them too.
 Written the other way round, `/notes/9` lost its `X-Powered-By`.
+RequestClass comes first, so everything inside it, the ErrorHandler
+included, gets a `Tiny::Request`.
 
 Tiny is 175 code lines; the plugin 13; the application 47.
 
@@ -89,8 +91,9 @@ curl -s localhost:5000/openapi.json | python3 -m json.tool
 
 - `PAGI::Routing`, "CONSTRUCTORS AND CODE POSITION" and "REVERSE ROUTING AND
   INSPECTION"
-- `PAGI::Routing::RequestResponse`, the `request_factory` seam
+- `PAGI::Middleware::RequestClass`, how the Request subclass reaches every
+  handler
 - `PAGI::Middleware::ErrorHandler` and `PAGI::ErrorContext`
-- `PAGI::Tools::Cookbook`, "Custom Request Route Helpers"
+- `PAGI::Tools::Cookbook`, "An Application's Request Class"
 - `examples/gut-check/04-everyday-middleware.pl`, middleware as plain
   functions without a `call_next`

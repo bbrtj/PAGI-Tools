@@ -29,8 +29,8 @@ use PAGI::Utils qw(as_app_object);
 
 # ----------------------------------------------------------------------
 # The framework's own Request. Seam: PAGI::Request is a plain class, so a
-# subclass is one `parent` line; the only way to get it into a handler is
-# request_response's request_factory (see _endpoint below).
+# subclass is one `parent` line; middleware('RequestClass') puts it in the
+# scope, and every handler below that middleware gets one (see to_compose).
 
 package Tiny::Request {
     use v5.40;
@@ -141,8 +141,8 @@ sub add_raw ($self, $path, $code) {
 
 # One handler, framework style: it gets a Tiny::Request, may return a
 # plain value, and runs after the `before` hooks. Seam: request_response
-# with request_factory is the only way a Route handler receives a Request
-# subclass; a bare coderef at a Route always gets PAGI::Request.
+# wraps the handler for the hooks and the plain values; the Request it
+# hands over is the scope's class, Tiny::Request.
 sub _endpoint ($self, $code) {
     my $before = $self->{before};
     return request_response(
@@ -153,7 +153,6 @@ sub _endpoint ($self, $code) {
             }
             return _coerce(await Future->wrap($code->($req)));
         },
-        request_factory => sub ($scope, $receive) { Tiny::Request->new($scope, $receive) },
     );
 }
 
@@ -235,8 +234,9 @@ sub _around_middleware ($hook) {
 # ----------------------------------------------------------------------
 # Errors. Seam: ErrorHandler's handler gets the thrown value through
 # error_context, so mapping exception classes to responses is one handler.
-# The handler sees the request as that layer sees it (a PAGI::Request, not
-# Tiny::Request, and no path_params), which Starlette's handlers also lack.
+# The handler sees the request as that layer sees it: a Tiny::Request,
+# because RequestClass is outside it, but no path_params, which Starlette's
+# handlers also lack.
 
 sub _error_handler ($self) {
     my @map = @{ $self->{on_error} };
@@ -264,6 +264,7 @@ sub to_compose ($self) {
         # through them too. An error in a hook itself reaches Compose's own
         # last-resort ErrorHandler.
         middleware => [
+            middleware('RequestClass', class => 'Tiny::Request'),
             (map { middleware(_around_middleware($_)) } @{ $self->{around} }),
             middleware('ErrorHandler', handler => $self->_error_handler),
         ],
