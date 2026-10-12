@@ -3536,7 +3536,7 @@ See L<PAGI::Test::Client> for the full API including WebSocket and SSE testing.
 
 =item * L<PAGI::Tools::Tutorial> - Guide to middleware, helpers, and built-in apps
 
-=item * L<PAGI::Routing> - Immutable declarative routing reference
+=item * L<PAGI::Routing> - Declarative routes for PAGI applications
 
 =item * L<PAGI::Pages> - Negotiated conventional HTTP responses and endpoints
 

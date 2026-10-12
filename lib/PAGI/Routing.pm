@@ -72,61 +72,68 @@ __END__
 
 =head1 NAME
 
-PAGI::Routing - Immutable declarative routing with direct protocol handlers
+PAGI::Routing - Declarative routes for PAGI applications
+
+=head1 SYNOPSIS
+
+    use Future::AsyncAwait;
+    use PAGI::Compose qw(compose);
+    use PAGI::Response qw(response);
+    use PAGI::Routing qw(:routes :middleware);
+    use PAGI::Routing::URL qw(path_for);
+
+    async sub list_notes {
+        my ($request) = @_;
+        return response('JSON', {
+            notes => [],
+            first => path_for($request, 'note', { id => 1 }),
+        });
+    }
+
+    async sub show_note {
+        my ($request) = @_;
+        return response('JSON', { id => $request->path_param('id') });
+    }
+
+    async sub create_note {
+        my ($request) = @_;
+        my $note = await $request->json;
+        return response('JSON', $note, status => 201);
+    }
+
+    async sub echo {
+        my ($ws) = @_;
+        await $ws->accept;
+        await $ws->each_text(async sub {
+            my ($text) = @_;
+            await $ws->send_text("echo: $text");
+        });
+    }
+
+    my $notes = router(
+        routes => [
+            route('/'          => \&list_notes,  name => 'list'),
+            route('/'          => \&create_note, methods => ['POST']),
+            route('/{id:\d+}'  => \&show_note,   name => 'note'),
+        ],
+        middleware => [middleware('RequestId')],
+    );
+
+    my $app = compose(routes => [
+        mount('/notes', app => $notes, name => 'notes'),
+        websocket('/echo' => \&echo),
+    ]);
+
+C<GET /notes/7> answers C<{"id":"7"}>, C<GET /notes/x> answers 404 and
+C<PATCH /notes> answers 405 with C<Allow: GET, HEAD, POST>. Inside the
+mount, C<path_for($request, 'note', ...)> names the sibling route and
+gives C</notes/1>. Pass C<$app> to a PAGI server.
+
+=head1 DESCRIPTION
 
 Route matches a complete URL leaf. Mount composes an application under a
 prefix. Router selects and owns routing outcomes. Middleware wraps behavior.
 Compose owns the application root and lifespan.
-
-=head1 SYNOPSIS
-
-    use PAGI::Routing qw(:routes :middleware);
-    use PAGI::Compose qw(compose);
-    use PAGI::Response qw(response);
-
-    use Future::AsyncAwait;
-    use MyApp::Routes::Home ();
-
-    my $logging = sub {
-        my ($app) = @_;
-        return $app;
-    };
-
-    my $routing = router(
-        routes => [
-            route('/' => \&MyApp::Routes::Home::home,
-                name => 'home',
-                desc => 'HTML landing page',
-            ),
-            mount('/api',
-                routes => [
-                    route('/users/{id}' => async sub {
-                        my ($request) = @_;
-                        return response('JSON', {
-                            id => $request->path_param('id'),
-                        });
-                    },
-                        name        => 'user',
-                        constraints => { id => qr/\d+/ },
-                    ),
-                ],
-                name => 'api',
-            ),
-        ],
-        middleware => [
-            middleware($logging),
-            middleware('RequestId', header => 'X-Request-ID'),
-        ],
-    );
-
-    my $app = compose(
-        routes => [mount('/' => app => $routing)],
-    )->to_app;
-
-The root Mount preserves C<$routing> by identity, including its middleware and
-Resolver, while Compose constructs and owns a distinct outer root Router.
-
-=head1 DESCRIPTION
 
 This module is the immutable functional frontend for PAGI's shared routing
 engine. Constructor functions build an immutable, inspectable route tree.

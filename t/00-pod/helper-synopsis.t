@@ -138,4 +138,29 @@ subtest 'PAGI::SSE: a client that leaves as the stream starts' => sub {
     is \%PAGITest::SSESynopsisLeaving::subscribers, {}, 'and leaves no subscriber';
 };
 
+subtest 'PAGI::Routing' => sub {
+    my $app = synopsis_app('Routing', 'PAGITest::RoutingSynopsis') or return;
+    my $client = PAGI::Test::Client->new(app => $app);
+
+    my $list = $client->get('/notes');
+    is $list->status, 200, 'GET /notes answers';
+    is $list->json, { notes => [], first => '/notes/1' },
+        'and links the first note through its sibling name';
+    ok $list->header('X-Request-ID'), 'the Router middleware ran';
+    is $client->get('/notes/7')->json, { id => '7' }, 'GET /notes/7 answers its id';
+    is $client->get('/notes/x')->status, 404, 'a constraint miss is 404';
+    my $created = $client->post('/notes', json => { title => 'x' });
+    is [$created->status, $created->json], [201, { title => 'x' }], 'POST /notes creates';
+    my $patch = $client->patch('/notes');
+    is [$patch->status, $patch->header('Allow')], [405, 'GET, HEAD, POST'],
+        'PATCH /notes is 405 with the Allow union';
+    is $app->path_for('/notes/note', { id => 3 }), '/notes/3',
+        'the composed application resolves the mounted name';
+    $client->websocket('/echo', sub {
+        my ($ws) = @_;
+        $ws->send_text('hi');
+        is $ws->receive_text, 'echo: hi', '/echo echoes';
+    });
+};
+
 done_testing;
