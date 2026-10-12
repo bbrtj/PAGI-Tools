@@ -106,18 +106,7 @@ PAGI::Routing::RequestResponse - Adapt one Request handler to a PAGI application
 
 =head1 DESCRIPTION
 
-Callable position selects one of these contracts:
-
-    Position                            Meaning
-    ----------------------------------  --------------------------------
-    HTTP Route endpoint / http_default CODE  one Request handler
-    HTTP Route endpoint / http_default object app object via to_app
-    WebSocket Route endpoint CODE             one WebSocket handler
-    WebSocket Route endpoint object           app object via to_app
-    SSE Route endpoint CODE                   one SSE handler
-    SSE Route endpoint object                 app object via to_app
-    Mount app CODE                       native PAGI application
-    Mount app object                     app object via to_app
+L<PAGI::Routing/HANDLERS> says what a coderef means in each position.
 
 This component adapts a one-Request handler into an app object, commonly for
 Mount C<app>, for a custom Route helper, or for a bare handler passed to
@@ -159,18 +148,9 @@ invocation. Unknown, duplicate, and odd constructor options fail at
 construction. The functional C<request_response> helper accepts the handler
 positionally followed by the same optional C<request_factory> pair.
 
-Arbitrary returned applications are advanced delegation. They receive the
-unchanged HTTP, WebSocket, or SSE scope and remaining receive stream; body
-events already consumed through Request are not replayed. No lifespan startup
-or shutdown is replayed.
-The returned app's routes, constraints, reverse names, and schema metadata are
-opaque to the outer Router, and a nested app may apply another method/routing
-policy or emit invalid events. Static or expensive app objects belong directly
-in Route or another native application position.
-
-Immediate synchronous handlers run inline. C<Future-E<gt>wrap> normalizes the
-return value but does not offload CPU-heavy or blocking work from the event
-loop.
+A returned application is delegation;
+L<PAGI::Routing/Compilation and request lifecycle> says what it receives and
+why a static one belongs in a route.
 
 =head1 SEE ALSO
 
