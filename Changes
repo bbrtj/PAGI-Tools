@@ -91,6 +91,8 @@
     request_response's request_factory still wins for its one handler.
   - examples/request-class: an application's Request class set once by
     middleware.
+  - Endpoint::HTTP answers QUERY with a query method. A query helper method
+    on an existing subclass now answers QUERY too.
   - PAGI::Test::Client has a query method for the QUERY verb.
 
   [Changed]

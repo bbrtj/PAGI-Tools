@@ -74,6 +74,19 @@ package HelperEndpoint {
     }
 }
 
+package QueryEndpoint {
+    use parent 'PAGI::Endpoint::HTTP';
+    use Future::AsyncAwait;
+
+    sub get { PAGI::Response::Text->new('GET response') }
+
+    async sub query {
+        my ($self, $request) = @_;
+        my $text = await $request->text;
+        return PAGI::Response::Text->new("QUERY: $text");
+    }
+}
+
 my $make_request = sub {
     my ($method, $headers) = @_;
     my $receive = sub { Future->done({ type => 'http.request', body => '' }) };
@@ -193,5 +206,33 @@ subtest 'Route owns 405 only for its snapshotted method set' => sub {
     is($mounted_405->status, 405,
         'an opaque mounted endpoint retains its own method handling');
 };
+
+subtest 'QUERY is a method an endpoint answers with query' => sub {
+    is([QueryEndpoint->new->allowed_methods], [qw(GET HEAD OPTIONS QUERY)],
+        'a query method advertises QUERY');
+    is([TestEndpoint->new->allowed_methods], [qw(GET HEAD OPTIONS POST)],
+        'without one, QUERY is not advertised');
+
+    my $response = QueryEndpoint->new->dispatch($make_request->('QUERY'))->get;
+    isa_ok($response, ['PAGI::Response::Text'], 'dispatch calls query for a QUERY request');
+
+    my $route = PAGI::Routing::Route->new(
+        path => '/search', endpoint => QueryEndpoint->new,
+    );
+    is($route->methods, [qw(GET HEAD OPTIONS QUERY)],
+        'Route snapshots QUERY from the endpoint');
+    my $routed = PAGI::Test::Client->new(app => $route->to_app)
+        ->query('/search', body => 'title');
+    is([$routed->status, $routed->text], [200, 'QUERY: title'],
+        'a routed QUERY reaches query with its body');
+
+    my $mounted = PAGI::Routing::Router->new(routes => [
+        PAGI::Routing::Mount->new('/mounted', app => TestEndpoint->new),
+    ]);
+    my $refused = PAGI::Test::Client->new(app => $mounted->to_app)->query('/mounted');
+    is([$refused->status, $refused->header('Allow')], [405, 'GET, HEAD, OPTIONS, POST'],
+        'an endpoint without query answers QUERY with its 405, and Allow lacks QUERY');
+};
+
 
 done_testing;

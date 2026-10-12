@@ -19,7 +19,7 @@ sub new {
 }
 
 # HTTP methods we support
-our @HTTP_METHODS = qw(get post put patch delete head options);
+our @HTTP_METHODS = qw(get post put patch delete head options query);
 
 sub allowed_methods {
     my ($self) = @_;
@@ -152,8 +152,8 @@ PAGI::Endpoint::HTTP - Class-based HTTP endpoint handler
 
 PAGI::Endpoint::HTTP provides a Starlette-inspired class-based approach
 to handling HTTP requests. Define methods named after HTTP verbs (get,
-post, put, patch, delete, head, options) and the endpoint automatically
-dispatches to them.
+post, put, patch, delete, head, options, query) and the endpoint
+automatically dispatches to them.
 
 When no method handler exists, L</method_not_allowed> answers -- by default a
 plain-text C<405 Method Not Allowed> -- and the endpoint sets C<Allow> to its
@@ -199,6 +199,7 @@ Define any of these async methods to handle requests:
     async sub delete { my ($self, $request) = @_; ... }
     async sub head { my ($self, $request) = @_; ... }
     async sub options { my ($self, $request) = @_; ... }
+    async sub query { my ($self, $request) = @_; ... }
 
 Each receives:
 
