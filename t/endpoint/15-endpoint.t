@@ -364,6 +364,10 @@ package main;
 # fully qualified call to a package nobody declared does.
 sub never_called { return Local::Misspelt::helper() }
 
+# Compiling these reads puts a symbol in each package's stash before its file
+# is written and loaded below: endpoint() must still require the file.
+sub never_reads { no warnings 'once'; return ($PAGITestTmp::Mentioned::DEBUG, $PAGITestTmp::MentionedBroken::DEBUG) }
+
 my $lib = tempdir(CLEANUP => 1);
 sub write_module {
     my ($path, $source) = @_;
@@ -499,6 +503,23 @@ subtest 'a class that cannot be loaded' => sub {
     like(dies { endpoint('PAGITestTmp::Broken') },
         qr/\Aendpoint class PAGITestTmp::Broken could not be loaded: .*Compilation failed in require/s,
         'a file that does not compile');
+};
+
+subtest 'a class with a file loads even if compiled code named one of its symbols' => sub {
+    write_module('PAGITestTmp/Mentioned.pm', <<'PERL');
+package PAGITestTmp::Mentioned;
+use parent 'PAGI::Endpoint::HTTP';
+sub get { return PAGI::Response::Text->new('mentioned') }
+1;
+PERL
+    my $app;
+    ok(lives { $app = endpoint('PAGITestTmp::Mentioned') }, 'the file is required');
+    isa_ok($app, ['PAGITestTmp::Mentioned'], 'and built');
+
+    write_module('PAGITestTmp/MentionedBroken.pm', "package PAGITestTmp::MentionedBroken;\nsub new {\n1;\n");
+    like(dies { endpoint('PAGITestTmp::MentionedBroken') },
+        qr/\Aendpoint class PAGITestTmp::MentionedBroken could not be loaded: /,
+        'a file that does not compile is a load error, not "has neither"');
 };
 
 subtest 'a class with neither new nor BUILD_APP' => sub {

@@ -31,6 +31,10 @@ use PAGI::Middleware::RequestClass;
     }
 }
 
+# Compiling this read puts a symbol in the package's stash before its file
+# is loaded: RequestClass must still require it.
+sub never_reads { no warnings 'once'; return $PAGITest::RequestClass::Mentioned::DEBUG }
+
 # A route handler that answers with the class of the Request it received.
 my $class_of = sub { my ($request) = @_; return response('Text', ref $request) };
 
@@ -86,6 +90,11 @@ subtest 'a file-backed class is required at build' => sub {
         qr/\ARequestClass PAGITest::RequestClass::NotRequest is not a PAGI::Request at /,
         'a file-backed class that is not a Request is loaded, then refused');
     ok(exists $INC{'PAGITest/RequestClass/NotRequest.pm'}, 'it was loaded');
+};
+
+subtest 'a file-backed class is required even if compiled code named one of its symbols' => sub {
+    is(get_text(with_class('PAGITest::RequestClass::Mentioned')),
+        'PAGITest::RequestClass::Mentioned', 'required, and the handler gets it');
 };
 
 subtest 'a class that is neither defined nor loadable dies when the application is built' => sub {

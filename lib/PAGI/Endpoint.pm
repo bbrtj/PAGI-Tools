@@ -30,22 +30,32 @@ sub endpoint {
 sub load_class {
     my ($self) = @_;
     my $class = $self->class;
-    # A package already defined (inline in app.pl, or loaded) is not
-    # required: it may have no file.
-    unless (PAGI::Utils::_package_is_defined($class)) {
+    # A package already defined with new or BUILD_APP (inline in app.pl, or
+    # loaded) is not required: it may have no file. A package that is only
+    # named, because compiled code mentioned one of its symbols, is still
+    # required; when it has no file, the check below reports it.
+    my $named = PAGI::Utils::_package_is_defined($class);
+    unless ($named && _has_constructor($class)) {
         croak "invalid endpoint class name '$class'"
             unless $class =~ /\A[A-Za-z_]\w*(?:::[A-Za-z_]\w*)*\z/;
         (my $file = "$class.pm") =~ s{::}{/}g;
         eval { require $file; 1 } or do {
             # require's own "at FILE line N." would precede croak's.
             (my $error = $@) =~ s/ at \S+ line \d+\.\n\z//;
-            croak "endpoint class $class could not be loaded: $error";
+            my $no_file = $error =~ /\ACan't locate \Q$file\E in \@INC/;
+            croak "endpoint class $class could not be loaded: $error"
+                unless $named && $no_file;
         };
     }
     croak "endpoint class $class has neither new nor BUILD_APP"
-        unless $class->can('new') || $class->can('BUILD_APP');
+        unless _has_constructor($class);
     _check_moose_constructor($class);
     return;
+}
+
+sub _has_constructor {
+    my ($class) = @_;
+    return $class->can('new') || $class->can('BUILD_APP');
 }
 
 sub build {
@@ -309,9 +319,10 @@ request" is a 500 for that request, with the error re-raised to the server.
 
 Load errors name the line that called C<endpoint>.
 
-A misspelt class name that compiled code already uses as a package, as in
-C<Misspelt::Name::helper()>, reads as defined and is not required, so it dies
-"has neither new nor BUILD_APP" rather than "could not be loaded".
+A class that compiled code has already named, as in C<$MyApp::Notes::DEBUG>
+or C<MyApp::Notes::helper()>, is still required when it has no C<new> or
+C<BUILD_APP> yet. If no file is found, as for a misspelt name, it dies "has
+neither new nor BUILD_APP" rather than "could not be loaded".
 
 =head1 METHODS
 
