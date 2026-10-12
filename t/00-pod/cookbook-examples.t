@@ -128,12 +128,12 @@ subtest 'Cookbook publishes the complete declarative topology' => sub {
     like $cookbook,
         qr/Endpoint::HTTP\/WebSocket\/SSE.*?one exact route.*?Route.*?exact path.*?Mount.*?prefix.*?Router.*?ordered children.*?Compose.*?lifespan/is,
         'the five-layer topology appears in the Cookbook';
-    like $cookbook, qr/route\('\/messages'\s*=>\s*MessageAPI->new/,
-        'HTTP endpoint object is placed at one exact Route';
-    like $cookbook, qr/websocket\('\/chat'\s*=>\s*ChatEndpoint->new/,
-        'WebSocket endpoint object is placed at one exact Route';
-    like $cookbook, qr/sse\('\/events'\s*=>\s*EventEndpoint->new/,
-        'SSE endpoint object is placed at one exact Route';
+    like $cookbook, qr/route\('\/messages'\s*=>\s*endpoint\('MessageAPI'/,
+        'HTTP endpoint class is named at one exact Route';
+    like $cookbook, qr/websocket\('\/chat'\s*=>\s*endpoint\('ChatEndpoint'/,
+        'WebSocket endpoint class is named at one exact Route';
+    like $cookbook, qr/sse\('\/events'\s*=>\s*endpoint\('EventEndpoint'/,
+        'SSE endpoint class is named at one exact Route';
     like $cookbook, qr/sub routing.*?return router\(/s,
         'ordinary object assembly returns an immutable Router';
     like $cookbook, qr/compose\(\s*routes\s*=>\s*\[/s,

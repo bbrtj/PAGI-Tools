@@ -1285,7 +1285,7 @@ Router grammar. This complete shape keeps topology declarative:
   }
 
   package MyApp::API;
-  use PAGI::Routing qw(route router sse websocket);
+  use PAGI::Routing qw(endpoint route router sse websocket);
 
   sub new {
       my ($class, %args) = @_;
@@ -1297,11 +1297,11 @@ Router grammar. This complete shape keeps topology declarative:
       return router(
           desc => 'API routes',
           routes => [
-              route('/messages' => MessageAPI->new(store => $self->{store}),
+              route('/messages' => endpoint('MessageAPI', store => $self->{store}),
                   name => 'messages'),
-              websocket('/chat' => ChatEndpoint->new(hub => $self->{hub}),
+              websocket('/chat' => endpoint('ChatEndpoint', hub => $self->{hub}),
                   name => 'chat'),
-              sse('/events' => EventEndpoint->new(bus => $self->{bus}),
+              sse('/events' => endpoint('EventEndpoint', bus => $self->{bus}),
                   name => 'events'),
           ],
       );
@@ -1344,14 +1344,16 @@ Router grammar. This complete shape keeps topology declarative:
       bus   => bless({}, 'Example::Bus'),
   })->application;
 
-Each configured Endpoint object is resolved once and may serve concurrent
-work. Keep shared services and configuration on C<$self>; keep request and
-connection state on the Request, WebSocket, or SSE object. HTTP
-C<allowed_methods> is consulted once when the Route is built. A finite
-C<methods> declaration must be a restriction of that snapshot. Only scalar
-C<< methods => '*' >> bypasses the capability and lets the Endpoint own method dispatch.
-The Router otherwise owns OPTIONS participation, PARTIAL, and the final
-C<Allow> union.
+C<endpoint> loads each class and builds it once, so one object serves
+every request or connection on its route, concurrently. Keep shared
+services and configuration on C<$self>; keep request and connection state
+on the Request, WebSocket, or SSE object. A class whose C<BUILD_APP>
+returns a builder gets a fresh object per request or connection instead
+(L<PAGI::Endpoint>). HTTP C<allowed_methods> is consulted once when the
+Route is built. A finite C<methods> declaration must be a restriction of
+that snapshot. Only scalar C<< methods => '*' >> bypasses the capability
+and lets the Endpoint own method dispatch. The Router otherwise owns
+OPTIONS participation, PARTIAL, and the final C<Allow> union.
 
 The asset-owning module calls C<app_path> directly. The helper returns a path
 string; it does not construct a file application.
