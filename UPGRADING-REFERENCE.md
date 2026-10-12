@@ -875,7 +875,7 @@ its own buckets.
 | 0.002002 | Now |
 |---|---|
 | `enforce => 'header'` (the default) | the default; remove the option |
-| `enforce => 'app'` | `refuse => 0`; the handler still calls `csrf($request)->verify($token)` |
+| `enforce => 'app'` | remove it: the middleware reads the token from the form's `csrf_token` field (`form_field` names another) and refuses like a header; drop the handler's `verify` |
 
 Passing `enforce` dies, so a form application that relied on
 `enforce => 'app'` cannot silently start refusing its posts. The default
@@ -886,6 +886,20 @@ it with any application:
 middleware('CSRF',
     refuse => response('JSON', { detail => 'CSRF token validation failed' }, status => 403));
 ```
+
+The middleware now reads a form body (urlencoded or multipart) whenever an
+unsafe request sends no `X-CSRF-Token` header. The handler's `form_params`,
+`uploads` and `body` return that parse, but `body_stream` and
+`multipart_stream` on such a request die "Body already consumed". A route
+that streams a form upload gets its own `middleware('CSRF', form_field =>
+undef, refuse => 0)` and checks the token it streams with
+`csrf($request)->verify`, and it must sit outside every CSRF that reads the
+body: not under Compose's `middleware`, and not inside a mount or Router
+whose `middleware` carries one, because route middleware runs inside both.
+An application with CSRF in Compose's `middleware` moves it onto the form
+routes' mounts first. See "CSRF on a streamed upload" in
+`PAGI::Tools::Cookbook`. A client that sends the header never has its body
+read.
 
 ## Breaking: CSRF secret removed, cookie readable, origin checked
 
