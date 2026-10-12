@@ -67,7 +67,7 @@ subtest 'class to_app constructs its endpoint immediately and only once' => sub 
     }
 
     $Local::ConstructionCountingWebSocket::NEW_CALLS = 0;
-    my $app = Local::ConstructionCountingWebSocket->to_app;
+    my $app = Local::ConstructionCountingWebSocket->new->to_app;
 
     is $Local::ConstructionCountingWebSocket::NEW_CALLS, 1,
         'class to_app constructs the endpoint immediately';

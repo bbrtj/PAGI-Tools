@@ -728,6 +728,16 @@ subtest 'load errors name the line that called endpoint' => sub {
         'without it the error names the framework\'s line instead');
 };
 
+subtest 'to_app is called on an endpoint object, not on a class name' => sub {
+    for my $class (qw(Local::Greeter Local::Echo Local::Ticker)) {
+        my $line = __LINE__ + 1;
+        like(dies { $class->to_app },
+            qr/\Ato_app is called on an endpoint object; use endpoint\('\Q$class\E'\) or \Q$class\E->new->to_app at \Q$this_file\E line $line\.$/,
+            "$class->to_app dies");
+        is(ref($class->new->to_app), 'CODE', "$class->new->to_app is the application");
+    }
+};
+
 subtest 'the steps are methods a subclass may override' => sub {
     my $endpoint = PAGI::Endpoint->new('Local::Greeter', greeting => 'hi');
     is($endpoint->class, 'Local::Greeter', 'class');

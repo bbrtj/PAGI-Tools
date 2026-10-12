@@ -315,6 +315,9 @@
     otherwise. The loop also ends once the socket is no longer connected,
     so nothing the peer sends after our Close reaches the callback.
     receive_json still dies on invalid JSON.
+  - Endpoint::HTTP, ::WebSocket and ::SSE to_app is an instance method: on a
+    class name it dies, pointing to endpoint('Class') or Class->new->to_app.
+    It used to build the class with new and no arguments, ignoring BUILD_APP.
 
   [Fixed]
   - PAGI::Test::Client drives the event loop while a request waits on real

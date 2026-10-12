@@ -43,7 +43,7 @@ package KeepaliveEndpoint {
 # caller.
 sub spy_wrap {
     my ($endpoint_class) = @_;
-    my $real_app = $endpoint_class->to_app;
+    my $real_app = $endpoint_class->new->to_app;
     my @observed;
     my $wrapped = async sub {
         my ($scope, $receive, $send) = @_;

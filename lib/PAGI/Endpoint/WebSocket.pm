@@ -14,8 +14,9 @@ use PAGI::WebSocket;
 sub encoding { 'text' }
 
 sub to_app {
-    my ($invocant) = @_;
-    my $endpoint = blessed($invocant) ? $invocant : $invocant->new;
+    my ($endpoint) = @_;
+    croak "to_app is called on an endpoint object; use endpoint('$endpoint') or $endpoint->new->to_app"
+        unless blessed($endpoint);
 
     return async sub {
         my ($scope, $receive, $send) = @_;
@@ -133,8 +134,8 @@ PAGI::Endpoint::WebSocket - Class-based WebSocket endpoint handler
 PAGI::Endpoint::WebSocket provides a Starlette-inspired class-based
 approach to handling WebSocket connections with lifecycle hooks.
 
-C<to_app> constructs a class receiver once immediately, or retains an
-instance receiver exactly as supplied. Configuration and long-lived
+Named at a route with C<endpoint>, the class is built once by default, and
+that one object serves every connection. Configuration and long-lived
 dependencies may therefore live on the endpoint object. Each
 C<PAGI::WebSocket> protocol object and all connection-local state must stay
 local to C<handle>, because one endpoint instance can serve concurrent
@@ -177,7 +178,7 @@ Called at terminal connection notification. The hook may return a Future;
 cleanup awaits it and retains the endpoint until it settles. Arguments are
 C<($self, $websocket, $peer_code, $peer_reason, $disconnect_detail)>.
 
-=head1 CLASS METHODS
+=head1 METHODS
 
 =head2 encoding
 
@@ -231,14 +232,15 @@ This follows the same pattern as L<Starlette's WebSocketEndpoint|https://www.sta
 
 =head2 to_app
 
-    my $app = MyEndpoint->to_app;
+    my $app = endpoint('MyEndpoint', hub => $hub)->to_app;  # built as the class decides
+    my $app = MyEndpoint->new(hub => $hub)->to_app;         # this one object
 
-    my $endpoint = MyEndpoint->new(hub => $hub);
-    my $app = $endpoint->to_app;
-
-Returns a PAGI-compatible async coderef. Calling it on a class constructs one
-endpoint immediately; calling it on an instance retains that exact instance
-for every connection.
+Returns a PAGI-compatible async coderef. C<to_app> is an instance
+method: called on an endpoint object, it retains that exact object for
+every connection. Calling it on a class name dies with "to_app is
+called on an endpoint object; use endpoint('MyEndpoint') or
+MyEndpoint->new->to_app". C<endpoint> builds the class as it decides,
+once or per connection (L<PAGI::Endpoint>).
 
 =head1 SEE ALSO
 

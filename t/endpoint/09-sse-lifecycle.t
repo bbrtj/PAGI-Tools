@@ -85,7 +85,7 @@ subtest 'lifecycle via to_app' => sub {
     @MetricsEndpoint::log = ();
     ($MetricsEndpoint::seen_connect, $MetricsEndpoint::seen_disconnect) = ();
 
-    my $app = MetricsEndpoint->to_app;
+    my $app = MetricsEndpoint->new->to_app;
     my @sent;
     my $send = sub { push @sent, $_[0]; Future->done };
     my $scope = sse_scope(path => '/events');
@@ -166,7 +166,7 @@ subtest 'overlapping streams retain the endpoint and isolate stream objects' => 
 subtest 'events are sent' => sub {
     @MetricsEndpoint::log = ();
 
-    my $app = MetricsEndpoint->to_app;
+    my $app = MetricsEndpoint->new->to_app;
     my @sent;
     my $send = sub { push @sent, $_[0]; Future->done };
 
@@ -181,7 +181,7 @@ subtest 'events are sent' => sub {
 };
 
 subtest 'default lifecycle starts the stream without an on_connect hook' => sub {
-    my $app = PAGI::Endpoint::SSE->to_app;
+    my $app = PAGI::Endpoint::SSE->new->to_app;
     my @sent;
     my $send = sub { push @sent, $_[0]; Future->done };
 
@@ -231,7 +231,7 @@ subtest 'immediate on_connect results are normalized' => sub {
         }
     }
 
-    my $app = ImmediateSSEEndpoint->to_app;
+    my $app = ImmediateSSEEndpoint->new->to_app;
     my @sent;
     my $send = sub { push @sent, $_[0]; Future->done };
 
@@ -251,7 +251,7 @@ subtest 'failed on_connect Future propagates through the endpoint app' => sub {
 
     my $scope = sse_scope(path => '/events');
     like(dies {
-        FailingSSEEndpoint->to_app->(
+        FailingSSEEndpoint->new->to_app->(
             $scope,
             receive_from($scope),
             sub { Future->done },
@@ -276,7 +276,7 @@ subtest 'on_disconnect Future is awaited by cleanup' => sub {
     $SynchronousDisconnectEndpoint::returned = Future->new;
     $SynchronousDisconnectEndpoint::called = 0;
     my $scope = sse_scope(path => '/events');
-    my $running = SynchronousDisconnectEndpoint->to_app->(
+    my $running = SynchronousDisconnectEndpoint->new->to_app->(
         $scope, receive_from($scope), sub { Future->done },
     );
     $scope->{'pagi.connection'}->_mark_disconnected('client_closed');
@@ -289,7 +289,7 @@ subtest 'on_disconnect Future is awaited by cleanup' => sub {
 };
 
 subtest 'to_app returns PAGI-compatible coderef' => sub {
-    my $app = MetricsEndpoint->to_app;
+    my $app = MetricsEndpoint->new->to_app;
     ref_ok($app, 'CODE', 'to_app returns coderef');
 };
 

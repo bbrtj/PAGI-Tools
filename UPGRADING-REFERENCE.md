@@ -314,11 +314,11 @@ websocket('/chat' => MyApp::Chat->new(hub => $hub));
 sse('/events' => MyApp::Events->new(bus => $bus));
 ```
 
-Calling `to_app` on a class constructs one receiver immediately. Calling it
-on an instance retains that same object. No receiver is reconstructed for each
-connection. The configured WebSocket and SSE instance may serve concurrent
-connections, so store configuration and long-lived services on it and keep
-connection-local state on each `PAGI::WebSocket` or `PAGI::SSE` object.
+`to_app` is called on an instance and retains that same object; calling it
+on a class name dies. No receiver is reconstructed for each connection. The
+configured WebSocket and SSE instance may serve concurrent connections, so
+store configuration and long-lived services on it and keep connection-local
+state on each `PAGI::WebSocket` or `PAGI::SSE` object.
 
 In 0.003000 the taught spelling names the class:
 `endpoint('MyApp::Chat', hub => $hub)`; see PAGI::Endpoint.

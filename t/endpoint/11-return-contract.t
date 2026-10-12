@@ -47,7 +47,7 @@ use PAGI::Utils qw(as_app_object);
 sub recorder { my @e; my $s = sub { push @e, $_[0]; Future->done }; return ($s, \@e) }
 
 subtest 'HTTP endpoint sends the returned response value' => sub {
-    my $app = T::Ep->to_app;
+    my $app = T::Ep->new->to_app;
     my ($send, $events) = recorder();
     $app->({ type => 'http', method => 'GET' }, sub { Future->done }, $send)->get;
     is $events->[0]{status}, 200, 'returned value was sent';
@@ -127,7 +127,7 @@ subtest 'respond-only objects remain invalid application values' => sub {
 };
 
 subtest '405 for unhandled method, with Allow' => sub {
-    my $app = T::Ep->to_app;
+    my $app = T::Ep->new->to_app;
     my ($send, $events) = recorder();
     $app->({ type => 'http', method => 'POST' }, sub { Future->done }, $send)->get;
     is $events->[0]{status}, 405, '405 method not allowed';
@@ -136,7 +136,7 @@ subtest '405 for unhandled method, with Allow' => sub {
 };
 
 subtest 'OPTIONS auto Allow' => sub {
-    my $app = T::Ep->to_app;
+    my $app = T::Ep->new->to_app;
     my ($send, $events) = recorder();
     $app->({ type => 'http', method => 'OPTIONS' }, sub { Future->done }, $send)->get;
     my %h = map { lc($_->[0]) => $_->[1] } @{$events->[0]{headers}};
@@ -144,7 +144,7 @@ subtest 'OPTIONS auto Allow' => sub {
 };
 
 subtest 'singleton instance persists across requests' => sub {
-    my $app = T::Count->to_app;
+    my $app = T::Count->new->to_app;
     my ($s1, $e1) = recorder();
     $app->({ type => 'http', method => 'GET' }, sub { Future->done }, $s1)->get;
     my ($s2, $e2) = recorder();

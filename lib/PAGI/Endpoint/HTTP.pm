@@ -94,8 +94,9 @@ sub _with_allow {
 }
 
 sub to_app {
-    my ($invocant) = @_;
-    my $endpoint = blessed($invocant) ? $invocant : $invocant->new;
+    my ($endpoint) = @_;
+    croak "to_app is called on an endpoint object; use endpoint('$endpoint') or $endpoint->new->to_app"
+        unless blessed($endpoint);
 
     return async sub {
         my ($scope, $receive, $send) = @_;
@@ -236,24 +237,23 @@ C<$request> or scope-bound helpers. A class that wants a fresh object for
 every request says so with C<BUILD_APP> (L<PAGI::Endpoint>); C<$self> then
 belongs to that one request.
 
-=head1 CLASS METHODS
+=head1 INSTANCE METHODS
 
 =head2 to_app
 
-    my $app = MyEndpoint->to_app;
+    my $app = endpoint('MyEndpoint')->to_app;
 
-Returns a PAGI-compatible async coderef that can be used directly
-with PAGI::Server or composed with middleware. Creates a single endpoint
-instance at construction time; that instance is reused for every request
-(singleton).
+Returns a PAGI-compatible async coderef that can be used directly with
+PAGI::Server or composed with middleware. C<to_app> is an instance
+method: called on an endpoint object, it retains that exact object for
+the returned application's lifetime. Calling it on a class name dies
+with "to_app is called on an endpoint object; use
+endpoint('MyEndpoint') or MyEndpoint->new->to_app". To place a class at
+a route, name it with L<PAGI::Routing/endpoint>, which builds it as the
+class decides (L<PAGI::Endpoint>).
 
 The returned application accepts HTTP scopes only. Other protocol scopes are
 rejected before a handler runs or either I/O callback is invoked.
-
-Calling C<to_app> on an already configured endpoint instance retains that
-exact instance and reuses it for the returned application's lifetime.
-
-=head1 INSTANCE METHODS
 
 =head2 dispatch
 

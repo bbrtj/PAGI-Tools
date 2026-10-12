@@ -46,13 +46,13 @@ package Local::AppRequest {
 }
 
 subtest 'to_app returns PAGI-compatible coderef' => sub {
-    my $app = HelloEndpoint->to_app;
+    my $app = HelloEndpoint->new->to_app;
 
     ref_ok($app, 'CODE', 'to_app returns coderef');
 };
 
 subtest 'app handles full request cycle' => sub {
-    my $app = HelloEndpoint->to_app;
+    my $app = HelloEndpoint->new->to_app;
 
     my @sent;
     my $scope = {
@@ -75,7 +75,7 @@ subtest 'app handles full request cycle' => sub {
 };
 
 subtest 'invalid scopes fail before a handler runs' => sub {
-    my $app = ScopeValidationEndpoint->to_app;
+    my $app = ScopeValidationEndpoint->new->to_app;
     $ScopeValidationEndpoint::calls = 0;
     my $receive_calls = 0;
     my $send_calls = 0;
@@ -101,7 +101,7 @@ subtest 'invalid scopes fail before a handler runs' => sub {
 };
 
 subtest 'a method receives the class the scope key builds' => sub {
-    my $app = ClassReportingEndpoint->to_app;
+    my $app = ClassReportingEndpoint->new->to_app;
     my $class_for = sub {
         my (%extra) = @_;
         my @sent;
