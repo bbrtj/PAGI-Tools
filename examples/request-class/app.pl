@@ -77,7 +77,7 @@ package NotesApp::Note {
 
 package main;
 
-use PAGI::Tools qw(compose middleware mount path_for response route);
+use PAGI::Tools qw(compose endpoint middleware mount path_for response route);
 use Types::Standard qw(Int);
 
 my $PER_PAGE = 2;
@@ -109,7 +109,7 @@ compose(
     routes => [
         route('/notes' => \&list_notes, methods => 'GET'),
         route('/notes' => \&add_note,   methods => 'POST'),
-        route('/notes/{id}' => NotesApp::Note->new, name => 'note', constraints => { id => Int }),
+        route('/notes/{id}' => endpoint('NotesApp::Note'), name => 'note', constraints => { id => Int }),
         mount('/admin', routes => [
             route('/stats' => \&stats),
         ]),
