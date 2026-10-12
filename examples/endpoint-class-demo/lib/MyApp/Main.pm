@@ -3,10 +3,9 @@ use strict;
 use warnings;
 use Future::AsyncAwait;
 
-use MyApp::StatusSocket;
 use PAGI::App::File;
 use PAGI::Response qw(response);
-use PAGI::Routing qw(mount route websocket);
+use PAGI::Routing qw(endpoint mount route websocket);
 use PAGI::Routing::URL qw(path_for);
 use PAGI::State qw(app_state);
 use PAGI::Utils qw(app_path);
@@ -27,7 +26,7 @@ sub routes {
     return [
         route('/' => sub { return $self->home(@_) }, name => 'home'),
         mount('/api', app => $self->{api}->routing, name => 'api'),
-        websocket('/status' => MyApp::StatusSocket->new,
+        websocket('/status' => endpoint('MyApp::StatusSocket'),
             name => 'status_socket'),
         # HTTP-only catch-all: WebSocket and SSE misses get the Router's
         # refusal instead of reaching the file application.

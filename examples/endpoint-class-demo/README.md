@@ -17,16 +17,15 @@ lib/MyApp/StatusSocket.pm
 public/
 ```
 
-`app.pl` constructs dependencies and the root route list explicitly:
+`app.pl` constructs the application's data and the root route list explicitly:
 
 ```perl
 my @users = (
     { id => 1, name => 'Alice' },
     { id => 2, name => 'Bob' },
 );
-my $events = MyApp::API::Events->new;
-my $api    = MyApp::API->new(events => $events, users => \@users);
-my $main   = MyApp::Main->new(api => $api);
+my $api  = MyApp::API->new(users => \@users);
+my $main = MyApp::Main->new(api => $api);
 
 my $app = compose(
     routes => $main->routes,
@@ -58,7 +57,7 @@ return router(
             name => 'index',
             middleware => [$demo_token_middleware]),
         route('/show/{user_id:&Int}' =>
-            MyApp::API::User->new(users => $self->{users}),
+            endpoint('MyApp::API::User', users => $self->{users}),
             name => 'show',
             middleware => [$demo_token_middleware]),
         mount('/tools', routes => [
@@ -66,7 +65,7 @@ return router(
                 name => 'status'),
         ], name => 'tools'),
         mount('/events', routes => [
-            sse('/stream' => $self->{events}, name => 'stream'),
+            sse('/stream' => endpoint('MyApp::API::Events'), name => 'stream'),
         ], name => 'events'),
     ],
 );
@@ -126,22 +125,24 @@ mismatches and their `Allow` header.
 
 ## Endpoint classes and middleware
 
-`MyApp::API::User` subclasses `PAGI::Endpoint::HTTP`. Its configured instance
-holds the shared user collection, advertises its `get` capability when the
-route is constructed, and handles the exact `/show/{user_id}` leaf. Request
-state stays on the `PAGI::Request`; the singleton endpoint holds only its
-long-lived dependency.
+`MyApp::API::User` subclasses `PAGI::Endpoint::HTTP`. The route names it
+with `endpoint('MyApp::API::User', users => $self->{users})`, which loads
+the class and builds it once with that shared user collection. It
+advertises its `get` capability when the route is constructed and handles
+the exact `/show/{user_id}` leaf. Request state stays on the
+`PAGI::Request`; the one endpoint object holds only its long-lived
+dependency.
 
-`MyApp::StatusSocket` subclasses `PAGI::Endpoint::WebSocket` and selects JSON
-input. `on_connect` accepts the connection and sends resource status;
-`on_receive` increments the shared metric and echoes the decoded message. The
-`PAGI::WebSocket` argument owns connection-local state.
+`MyApp::StatusSocket` subclasses `PAGI::Endpoint::WebSocket` and selects
+JSON input. `on_connect` accepts the connection and sends resource
+status; `on_receive` increments the shared metric and echoes the decoded
+message. The `PAGI::WebSocket` argument owns connection-local state.
 
-`MyApp::API::Events` subclasses `PAGI::Endpoint::SSE`. The configured object is
-the exact endpoint of the named `/events` child and named `/stream` leaf, so
-both its effective path and logical address are `/api/events/stream`.
-`on_connect` sends the initial event, and the base endpoint waits for
-disconnect on that connection's `PAGI::SSE` object.
+`MyApp::API::Events` subclasses `PAGI::Endpoint::SSE` and is named with
+`endpoint('MyApp::API::Events')` at the named `/stream` leaf of the named
+`/events` child, so both its effective path and logical address are
+`/api/events/stream`. `on_connect` sends the initial event, and the base
+endpoint waits for disconnect on that connection's `PAGI::SSE` object.
 
 API authentication remains native PAGI middleware. Each protected route owns
 an explicit middleware description whose factory receives the inner native

@@ -50,8 +50,7 @@ subtest 'ordinary assemblers expose immutable configured endpoint leaves' => sub
             "$class does not inherit Endpoint Router");
     }
 
-    my $events = MyApp::API::Events->new;
-    my $api = MyApp::API->new(events => $events, users => \@users);
+    my $api = MyApp::API->new(users => \@users);
     my $main = MyApp::Main->new(api => $api);
 
     ok($main->can('routes'), 'Main exposes ordinary route declarations');
@@ -107,8 +106,6 @@ subtest 'ordinary assemblers expose immutable configured endpoint leaves' => sub
 
     my $stream = $event_mount->app->routes->[0];
     isa_ok($stream->endpoint, 'MyApp::API::Events');
-    is(refaddr($stream->endpoint), refaddr($events),
-        'configured SSE endpoint is retained as the exact leaf object');
 
     for my $leaf ($home, $status_socket, $index, $show,
         $tools->app->routes->[0], $stream) {
