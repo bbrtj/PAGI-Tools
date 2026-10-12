@@ -379,6 +379,49 @@ subtest 'Thrown pages recipe executes as published' => sub {
     );
 };
 
+subtest 'CSRF on a streamed upload recipe executes as published' => sub {
+    my $recipe = first_code_block($cookbook, '=head2 CSRF on a streamed upload');
+    my $checks = <<'PERL';
+use PAGI::Test::Client;
+my $client = PAGI::Test::Client->new(app => $app);
+my ($token) = $client->get('/notes/')->text =~ /name="csrf_token" value="([^"]+)"/;
+die 'no token on the page' unless $token;
+my $boundary = 'XyZ';
+my %multipart = ('Content-Type' => "multipart/form-data; boundary=$boundary");
+sub part {
+    my ($name, $content, $is_file) = @_;
+    return ("--$boundary",
+        qq{Content-Disposition: form-data; name="$name"} . ($is_file ? q{; filename="a.bin"} : ''),
+        ($is_file ? ('Content-Type: application/octet-stream') : ()), '', $content);
+}
+sub multipart_body { join "\r\n", @_, "--$boundary--", '' }
+my $file = 'x' x 5000;
+my @cases = (
+    ['script, right header, file first', 200,
+        multipart_body(part(file => $file, 1)), { %multipart, 'X-CSRF-Token' => $token }],
+    ['script, wrong header, file first', 403,
+        multipart_body(part(file => $file, 1)), { %multipart, 'X-CSRF-Token' => 'forged' }],
+    ['form, token first', 200,
+        multipart_body(part(csrf_token => $token), part(file => $file, 1)), \%multipart],
+    ['form, token after the file', 403,
+        multipart_body(part(file => $file, 1), part(csrf_token => $token)), \%multipart],
+    ['form, no token', 403,
+        multipart_body(part(file => $file, 1)), \%multipart],
+    ['form, token first, cross-site', 403,
+        multipart_body(part(csrf_token => $token), part(file => $file, 1)), { %multipart, 'Sec-Fetch-Site' => 'cross-site' }],
+    ['wrong header, right token field first', 403,
+        multipart_body(part(csrf_token => $token), part(file => $file, 1)), { %multipart, 'X-CSRF-Token' => 'forged' }],
+);
+for my $case (@cases) {
+    my ($label, $want, $body, $headers) = @$case;
+    my $res = $client->post('/upload', body => $body, headers => $headers);
+    die "$label: expected $want, got " . $res->status . ' ' . $res->text . "\n" unless $res->status == $want;
+    die "$label: expected the stored size\n" if $want == 200 && $res->text ne 'Stored 5000 bytes';
+}
+PERL
+    perl_script_runs('CSRF on a streamed upload recipe', $recipe . $checks);
+};
+
 subtest 'Tutorial routing object example executes exactly as published' => sub {
     my $source = code_block_containing(
         $tutorial,

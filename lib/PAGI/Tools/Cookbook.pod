@@ -2751,6 +2751,89 @@ without naming an event loop.
 
 See C<examples/10-forms-and-uploads/> for complete examples.
 
+=head2 CSRF on a streamed upload
+
+L<PAGI::Middleware::CSRF> reads the token from a form's C<csrf_token>
+field, and that read consumes the body. A route that streams a plain HTML
+form's upload with C<multipart_stream> runs its own CSRF middleware, which
+never reads the body or refuses, and checks the token itself:
+
+  use v5.40;
+  use Future::AsyncAwait;
+  use File::Temp qw(tempdir);
+  use PAGI::CSRF qw(csrf);
+  use PAGI::Tools qw(compose middleware mount response route);
+
+  my $uploads = tempdir(CLEANUP => 1);
+  my $files   = 0;
+
+  # The page's upload form puts its csrf_token field before the file, and
+  # browsers send fields in document order, so the token arrives first.
+  async sub notes ($request) {
+      my $token = csrf($request)->token;
+      return response('HTML', <<"HTML");
+  <form method="post" action="/upload" enctype="multipart/form-data">
+  <input type="hidden" name="csrf_token" value="$token">
+  <input type="file" name="file"> <button>Upload</button>
+  </form>
+  HTML
+  }
+
+  # A script whose X-CSRF-Token header matched has passed (valid), and one
+  # whose header did not match is refused. A request without the header must
+  # send the token as the first part, checked before any file.
+  async sub upload ($request) {
+      my $stream = $request->multipart_stream;
+      my $check  = csrf($request);
+      unless ($check->valid) {
+          return response('Text', 'CSRF token validation failed', status => 403)
+              unless ($check->failure // '') eq 'missing_token';
+          my $first = await $stream->next;
+          return response('Text', 'CSRF token validation failed', status => 403)
+              unless defined($first) && $first->name eq 'csrf_token' && !$first->is_file
+                  && $check->verify(await $first->value);
+      }
+      my $bytes = 0;
+      while (defined(my $part = await $stream->next)) {
+          next unless $part->is_file;
+          $bytes += await $part->stream_to_file("$uploads/upload-" . ++$files);
+      }
+      return response('Text', "Stored $bytes bytes");
+  }
+
+  my $app = compose(
+      routes => [
+          # The page and the app's form routes, under the default CSRF, which
+          # reads their csrf_token field.
+          mount('/notes', routes => [
+              route('/' => \&notes, methods => ['GET']),
+          ], middleware => [middleware('CSRF')]),
+          # The streamed upload: outside every middleware list that carries a
+          # body-reading CSRF, with its own that only records the check.
+          route('/upload' => \&upload, methods => ['POST'],
+              middleware => [middleware('CSRF', form_field => undef, refuse => 0)]),
+      ],
+  );
+
+=over 4
+
+=item * The route sits outside every CSRF that reads the body: not under
+Compose's C<middleware>, and not inside a mount or Router whose
+C<middleware> carries one, because route middleware runs inside both (the order is in
+L<PAGI::Routing/MIDDLEWARE AND HEAD>, and Compose's C<middleware> wraps
+the whole router). Under either, the outer CSRF reads the upload first and
+C<multipart_stream> dies "Body already consumed".
+
+=item * The two middlewares share the token: the same cookie, or under
+C<< session => 1 >> the same session key.
+
+=item * C<valid> is true when the route's own middleware matched an
+C<X-CSRF-Token> header, so a script that sends the header uploads in any
+part order. C<verify> also fails a request the middleware found to be
+cross-origin.
+
+=back
+
 =head2 A huge upload in a legacy encoding
 
 C<body_stream(decode =E<gt> ...)> decodes as the body arrives. For the
