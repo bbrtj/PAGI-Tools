@@ -1088,9 +1088,10 @@ Includes:
 
 Protect against Cross-Site Request Forgery:
 
-  middleware('CSRF', cookie_name => '_csrf_token'),
+  middleware('CSRF'),
 
-Validates CSRF tokens on POST/PUT/PATCH/DELETE requests.
+Checks a token on unsafe requests (POST, PUT, PATCH, DELETE): the
+X-CSRF-Token header, or a plain form's C<csrf_token> field.
 
 =back
 
