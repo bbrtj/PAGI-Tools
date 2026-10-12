@@ -163,7 +163,7 @@ application rule its own name and semantics:
 
 Use a short inline regex for a short path-local rule and the explicit
 C<constraints> hash for dynamic, subclass-dependent, or complex rules. See
-L<PAGI::Routing/Path parameters, wildcards, and constraints> for provider
+L<PAGI::Routing/Inline constraint providers> for provider
 lookup, escaping, and reverse-routing behavior.
 
 GET includes HEAD automatically. Paths are exact, with no slash redirect or

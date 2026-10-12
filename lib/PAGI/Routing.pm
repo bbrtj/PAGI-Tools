@@ -492,42 +492,6 @@ The class decides how it is built: once with C<new>, or through its
 C<BUILD_APP>. There is no default namespace and no leading C<+>, unlike
 C<middleware>. See L<PAGI::Endpoint>.
 
-=head1 COMPILATION AND REQUEST LIFECYCLE
-
-C<< $routing->to_app >> resolves native components, middleware
-classes/factories, and executable match structures synchronously. Router
-construction has already validated composed logical addresses, parameters,
-and Router ancestry. Each
-call builds a fresh wrapper graph; it does not mutate or cache on the source
-description. Call it once for each intended application instance, retain the
-coderef, and reuse that app for requests.
-
-Middleware factories run once per compiled graph, not per request. Two
-C<to_app> calls therefore get ordinary independent middleware instances.
-Explicitly reused objects and closures still share the state their caller
-chose to share. One compiled app safely keeps request paths, method unions,
-Request/protocol objects, routing metadata, and outcome state in request-local
-scope or lexicals during concurrent requests.
-
-At request time a normal HTTP handler returns a native CODE or instantiated
-C<to_app> object, immediately or through a Future. Routing validates and
-invokes that application once against the original triplet. The handler
-receives neither C<$receive> nor C<$send>; return a Response or Pages
-application for the ordinary case. Use C<as_app_object> at declaration time when an
-endpoint itself must call C<$receive> or C<$send> and own event emission.
-
-Returning an arbitrary application is advanced delegation. It receives the
-unchanged HTTP scope and remaining body stream; body events already consumed by
-the handler are not replayed. It receives no lifespan replay, and its routes,
-names, constraints, and schema metadata are opaque to the outer Router. A
-returned object's C<to_app> is called once per handler invocation, so static or
-expensive applications belong directly in Route, Mount, C<http_default>, or
-Compose.
-
-Synchronous handlers run in the server's current execution context. Routing
-never moves them into a worker or thread pool; blocking work blocks that event-
-loop thread.
-
 =head1 MATCHING
 
 Nodes are scanned strictly in declaration order; there is no specificity sort.
@@ -618,117 +582,16 @@ spelling per number, such as C<{id:[1-9][0-9]*}> for positive integers
 (C</notes/09>, C</notes/0> and C</notes/-3> do not match; use
 C<{id:0|[1-9][0-9]*}> when zero is allowed).
 
-=head3 Inline constraint providers
-
-An inline source beginning with an unescaped C<&> declares a provider, not a
-regex. The complete source must be C<&> followed by an optional Perl package
-prefix and a terminal function name beginning with ASCII C<A> through C<Z>:
-
-    '/{id:&Int}'
-    '/{id:&PersonId}'
-    '/{id:&MyApp::Types::PersonId}'
-
-Lowercase terminal names, whitespace, expressions, arguments, methods, and
-partial regex/provider mixtures are invalid and croak during construction.
-The entire unescaped-leading-C<&> space is reserved so spellings such as
-C<&int>, C<&Int >, C<&[A-Z]+>, and C<&Foo::lower> never silently fall back to
-regexes.
-
-To match a literal leading ampersand, use the canonical regex spelling
-C<[&]Int> or C<[&][A-Z]+>. A backslashed alternative works only when the Perl
-string preserves it:
-
-    route('/{value:[&]Int}' => \&show);  # recommended
-    route('/{value:\&Int}'  => \&show);  # single-quoted string
-
-In a double-quoted Perl string, C<< "\&Int" >> becomes C<&Int> and therefore
-requests the provider.
-
-An unqualified provider resolves to the exact symbol-table CODE slot in the
-package that directly called C<route>, C<websocket>, C<sse>, or C<mount>.
-An ordinary Exporter alias leaves the consuming package as the caller. A real
-wrapper sub and a role-defined method make their own defining package the
-declaration boundary; invoking such code through a subclass does not rebind
-it. Use a fully qualified spelling when reusable declarations must name an
-external provider exactly.
-
-A framework that wraps C<route>, C<websocket>, C<sse> or C<mount> in its own
-sugar is that wrapper package, so an application's C<{id:&Int}> would be
-looked up in the framework. The wrapper names the application instead:
-
-    sub get {
-        my ($path, $handler, @options) = @_;
-        return route($path => $handler, @options,
-            declaration_package => scalar caller);
-    }
-
-C<declaration_package> names one package; lookup still never falls back to
-another.
-
-Qualified packages must already be loaded. Lookup never searches C<@ISA>,
-dispatches methods, invokes C<AUTOLOAD>, loads a module, consults
-C<Type::Registry>, evaluates the spelling, or falls back after a miss.
-
-Construction invokes each provider occurrence once with no arguments or
-invocant. It must return a regex, predicate coderef, or blessed C<check>
-object; an exception, Future, or other value fails construction. If a provider
-returns a coderef, that returned coderef is the per-value predicate: the
-provider itself is not passed path values and never runs during matching,
-C<path_for>, or C<url_for>. Providers should therefore be deterministic and
-free of request-specific side effects.
-
-All three returned shapes and all explicit constraints normalize once to a
-private predicate coderef with an optional error explainer. Composed Mounts and
-Router base applications preserve those exact predicates rather than reparsing paths,
-calling providers again, or applying explicit constraints twice.
-
-=head3 Validation semantics and Type::Tiny
-
-Regexes and inline patterns match the complete decoded value with C<\A> and
-C<\z>. Predicates receive only that scalar. Constraints validate but never
-coerce; false means no match, exceptions propagate, and a Future predicate is
-rejected. Matching, C<path_for>, and C<url_for> enforce the same normalized
-predicates for HTTP, WebSocket, and SSE names.
-
-C<Types::Standard> works without a registry because an imported function such
-as C<Int> returns a C<check>-compatible object when called with no arguments.
-Its own semantics apply: C<Int> accepts a leading minus sign, and PAGI still
-passes the original decoded string to the handler. Applications needing a
-positive identifier can expose a local capitalized zero-argument provider:
-
-    sub PersonId {
-        my $int = Int;
-        return sub {
-            my ($value) = @_;
-            return $int->check($value) && $value > 0;
-        };
-    }
-
-    route('/people/{id:&PersonId}' => \&show);
-
-Type::Tiny is not a PAGI::Tools runtime dependency.
-
-Inline patterns support ordinary regex comments C<(?#...)>, but their route
-tokenizer is intentionally not a complete Perl regex parser. Put complex
-patterns, especially extended-mode comments, in the explicit
-C<constraints =E<gt> { name =E<gt> qr/.../ }> form.
-
-Inline provider references are specific to L<PAGI::Routing>. A leading
-C<&> names a constraint provider and is not a literal regex ampersand; use
-C<[&]> or C<\&> when a regex must match a literal ampersand.
-
 A wildcard is one terminal whole segment:
 
     route('/files/*path' => \&files)
 
-It may capture an empty remainder and may contain internal slashes. C</files/*path>
-matches C</files/> but not C</files>; C</*path> is a real root catch-all.
-Captured values are decoded, unsanitized input. Values such as C<..>, repeated
-separators, and backslashes must never be concatenated with a document root.
-File code must canonicalize, enforce containment at a component boundary, and
-choose an explicit symlink policy; route matching is not filesystem security.
-Prefer L<PAGI::App::File> or L<PAGI::Middleware::Static> to using a wildcard
-capture as a filesystem path.
+It may capture an empty remainder and may contain internal slashes.
+C</files/*path> matches C</files/> but not C</files>; C</*path> is a real root
+catch-all. Captured values are decoded, unsanitized input: never join one to a
+document root. Prefer L<PAGI::App::File> or L<PAGI::Middleware::Static>;
+L<PAGI::Tools::Cookbook/Constraint Forms and Wildcard Safety> shows a native
+handler with its own file policy.
 
 =head1 ROUTER OUTCOMES, APPLICATION ERRORS, AND CATCH-ALLS
 
@@ -972,91 +835,6 @@ middleware, C<http_default>, C<desc>, identity, or Resolver. Put the Router
 behind C<< mount('/' => app => $routing) >> when those belong to the deployed
 application.
 
-=head1 MATCHED-ROUTE SCOPE CONVENTION
-
-The compiled router reserves C<pagi.routing> and leaves the older
-C<pagi.router> key untouched. The value is a read-only, versioned convention:
-
-    {
-        version => 1,
-        frames  => [{
-            resolver          => $resolver,
-            root_path         => '/proxy', # optional additive v1 field
-            logical_namespace => '/',
-            captures          => {},       # private reverse-routing snapshot
-            mounts            => [],
-            match             => undef,
-        }],
-    }
-
-Each compiled router installs a fresh request-local frame before Router
-middleware. C<root_path> records that router's entry boundary so known mount
-prefixes are not added twice during reverse generation. Older/manual v1 frames
-may omit it, in which case scope-bound reverse routing falls back to the current
-scope C<root_path>. C<logical_namespace> is the active containing namespace;
-C<captures> is a fresh, unaliased working snapshot used only for relative
-scope-bound reverse routing. Nested Mounts append this public record to
-C<mounts>:
-
-    {
-        path      => '/tenants/{tenant_id}', # declared mount path
-        name      => 'tenant',                # declared value or undef
-        desc      => 'Tenant routes',         # declared value or undef
-    }
-
-All three keys are present. Nested Mounts append these records in
-outer-to-inner match order. The exact C<match> record for a selected leaf is:
-
-    {
-        kind              => 'route', # or websocket / sse
-        route             => '/tenants/{tenant_id}/users/{user_id}',
-        name              => '/tenant/show',
-        logical_namespace => '/tenant',
-        desc              => 'Display one tenant user',
-    }
-
-C<route> is the complete effective mounted route. C<name> is the complete
-absolute logical address, or undef for an unnamed leaf.
-C<logical_namespace> is available even when C<name> is undef. The declaration
-object's C<< Route->name >> remains only its local final segment, such as
-C<show>; matched metadata C<name> is absolute. C<desc> is that leaf's declared
-description, or undef.
-
-A selected application mount uses the same match shape:
-
-    {
-        kind              => 'mount',
-        route             => '/admin/{tenant_id}', # complete effective mount path
-        name              => undef,
-        logical_namespace => '/',
-        desc              => 'Tenant admin app',   # declared value or undef
-    }
-
-C<match> is the selected mount's terminal record. Router NONE/PARTIAL outcomes
-leave C<match> undefined while retaining the namespace and consumed-prefix
-capture snapshot of their owning placement. The Router renders the resulting
-404 or 405 without inventing a selected leaf.
-
-Entering an inspectable Router Mount appends a distinct child boundary frame.
-It shares the root Resolver and root entry C<root_path> while copying the
-selected placement's logical namespace, captures, and cumulative Mount chain.
-
-An opaque application Mount retains its terminal Mount match in the parent
-frame. If that native target is another separately compiled Router, the child
-Router appends a frame to a compatible container with its own Resolver and its
-own entry C<root_path>; L<PAGI::Routing::URL> selects that innermost compatible
-frame.
-Malformed or newer C<pagi.routing> data is an incompatible boundary:
-the child router creates a fresh v1 container, ignores foreign ancestry, and
-does not croak. The incoming scope and foreign value are not mutated. Additive
-compatible fields, such as frame C<root_path>, retain version 1.
-
-The current frame is shared only through the router's request-local shallow
-scope clones, allowing router/mount middleware to inspect the final match after
-awaiting downstream. Treat the convention as read-only. Middleware outside
-the compiled app receives its original top-level scope and cannot see
-downstream top-level additions.
-
 =head1 PROTOCOL OUTCOMES AND FAILURES
 
 Unmatched SSE and WebSocket routes emit ordinary HTTP 404 responses on their
@@ -1100,7 +878,230 @@ All middleware uses explicit C<middleware(...)> descriptions at core
 boundaries and a request-time native app phase. Declaration order is the
 literal order of the C<routes> array.
 
-=head1 DELIBERATE DIFFERENCES FROM STARLETTE
+=head1 REFERENCE
+
+The complete rules behind the everyday API above. Most applications never
+need them.
+
+=head2 Compilation and request lifecycle
+
+C<< $routing->to_app >> resolves native components, middleware
+classes/factories, and executable match structures synchronously. Router
+construction has already validated composed logical addresses, parameters,
+and Router ancestry. Each
+call builds a fresh wrapper graph; it does not mutate or cache on the source
+description. Call it once for each intended application instance, retain the
+coderef, and reuse that app for requests.
+
+Middleware factories run once per compiled graph, not per request. Two
+C<to_app> calls therefore get ordinary independent middleware instances.
+Explicitly reused objects and closures still share the state their caller
+chose to share. One compiled app safely keeps request paths, method unions,
+Request/protocol objects, routing metadata, and outcome state in request-local
+scope or lexicals during concurrent requests.
+
+At request time a normal HTTP handler returns a native CODE or instantiated
+C<to_app> object, immediately or through a Future. Routing validates and
+invokes that application once against the original triplet. The handler
+receives neither C<$receive> nor C<$send>; return a Response or Pages
+application for the ordinary case. Use C<as_app_object> at declaration time when an
+endpoint itself must call C<$receive> or C<$send> and own event emission.
+
+Returning an arbitrary application is advanced delegation. It receives the
+unchanged HTTP, WebSocket, or SSE scope and remaining body stream; body events
+already consumed by the handler are not replayed. It receives no lifespan
+replay, and its routes, names, constraints, and schema metadata are opaque to
+the outer Router. A returned object's C<to_app> is called once per handler
+invocation, so static or expensive applications belong directly in Route,
+Mount, C<http_default>, or Compose.
+
+Synchronous handlers run in the server's current execution context. Routing
+never moves them into a worker or thread pool; blocking work blocks that event-
+loop thread.
+
+=head2 Inline constraint providers
+
+An inline source beginning with an unescaped C<&> declares a provider, not a
+regex. The complete source must be C<&> followed by an optional Perl package
+prefix and a terminal function name beginning with ASCII C<A> through C<Z>:
+
+    '/{id:&Int}'
+    '/{id:&PersonId}'
+    '/{id:&MyApp::Types::PersonId}'
+
+Lowercase terminal names, whitespace, expressions, arguments, methods, and
+partial regex/provider mixtures are invalid and croak during construction.
+The entire unescaped-leading-C<&> space is reserved so spellings such as
+C<&int>, C<&Int >, C<&[A-Z]+>, and C<&Foo::lower> never silently fall back to
+regexes.
+
+To match a literal leading ampersand, use the canonical regex spelling
+C<[&]Int> or C<[&][A-Z]+>. A backslashed alternative works only when the Perl
+string preserves it:
+
+    route('/{value:[&]Int}' => \&show);  # recommended
+    route('/{value:\&Int}'  => \&show);  # single-quoted string
+
+In a double-quoted Perl string, C<< "\&Int" >> becomes C<&Int> and therefore
+requests the provider.
+
+An unqualified provider resolves to the exact symbol-table CODE slot in the
+package that directly called C<route>, C<websocket>, C<sse>, or C<mount>.
+An ordinary Exporter alias leaves the consuming package as the caller. A real
+wrapper sub and a role-defined method make their own defining package the
+declaration boundary; invoking such code through a subclass does not rebind
+it. Use a fully qualified spelling when reusable declarations must name an
+external provider exactly.
+
+A framework that wraps C<route>, C<websocket>, C<sse> or C<mount> in its own
+sugar is that wrapper package, so an application's C<{id:&Int}> would be
+looked up in the framework. The wrapper names the application instead:
+
+    sub get {
+        my ($path, $handler, @options) = @_;
+        return route($path => $handler, @options,
+            declaration_package => scalar caller);
+    }
+
+C<declaration_package> names one package; lookup still never falls back to
+another.
+
+Qualified packages must already be loaded. Lookup never searches C<@ISA>,
+dispatches methods, invokes C<AUTOLOAD>, loads a module, consults
+C<Type::Registry>, evaluates the spelling, or falls back after a miss.
+
+Construction invokes each provider occurrence once with no arguments or
+invocant. It must return a regex, predicate coderef, or blessed C<check>
+object; an exception, Future, or other value fails construction. If a provider
+returns a coderef, that returned coderef is the per-value predicate: the
+provider itself is not passed path values and never runs during matching,
+C<path_for>, or C<url_for>. Providers should therefore be deterministic and
+free of request-specific side effects.
+
+All three returned shapes and all explicit constraints normalize once to a
+private predicate coderef with an optional error explainer. Composed Mounts and
+Router base applications preserve those exact predicates rather than reparsing paths,
+calling providers again, or applying explicit constraints twice.
+
+=head2 Validation semantics and Type::Tiny
+
+Regexes and inline patterns match the complete decoded value with C<\A> and
+C<\z>. Predicates receive only that scalar. Constraints validate but never
+coerce; false means no match, exceptions propagate, and a Future predicate is
+rejected. Database or resource checks belong in middleware or the handler.
+Matching, C<path_for>, and C<url_for> enforce the same normalized predicates
+for HTTP, WebSocket, and SSE names.
+
+C<Types::Standard> works without a registry because an imported function such
+as C<Int> returns a C<check>-compatible object when called with no arguments.
+Its own semantics apply: C<Int> accepts a leading minus sign, and PAGI still
+passes the original decoded string to the handler. Applications needing a
+positive identifier can expose a local capitalized zero-argument provider:
+
+    sub PersonId {
+        my $int = Int;
+        return sub {
+            my ($value) = @_;
+            return $int->check($value) && $value > 0;
+        };
+    }
+
+    route('/people/{id:&PersonId}' => \&show);
+
+Type::Tiny is not a PAGI::Tools runtime dependency.
+
+Inline patterns support ordinary regex comments C<(?#...)>, but their route
+tokenizer is intentionally not a complete Perl regex parser. Put complex
+patterns, especially extended-mode comments, in the explicit
+C<constraints =E<gt> { name =E<gt> qr/.../ }> form.
+
+=head2 MATCHED-ROUTE SCOPE CONVENTION
+
+The compiled router reserves C<pagi.routing> and leaves the older
+C<pagi.router> key untouched. The value is a read-only, versioned convention:
+
+    {
+        version => 1,
+        frames  => [{
+            resolver          => $resolver,
+            root_path         => '/proxy', # optional additive v1 field
+            logical_namespace => '/',
+            captures          => {},       # private reverse-routing snapshot
+            mounts            => [],
+            match             => undef,
+        }],
+    }
+
+Each compiled router installs a fresh request-local frame before Router
+middleware. C<root_path> records that router's entry boundary so known mount
+prefixes are not added twice during reverse generation. Older/manual v1 frames
+may omit it, in which case scope-bound reverse routing falls back to the current
+scope C<root_path>. C<logical_namespace> is the active containing namespace;
+C<captures> is a fresh, unaliased working snapshot used only for relative
+scope-bound reverse routing. A matched Router mount (C<routes>, or C<app>
+holding a Router) appends this record; an application mount does not, and
+records itself only as the terminal C<match>.
+
+    {
+        path      => '/tenants/{tenant_id}', # declared mount path
+        name      => 'tenant',                # declared value or undef
+        desc      => 'Tenant routes',         # declared value or undef
+    }
+
+All three keys are present. Nested Mounts append these records in
+outer-to-inner match order. The exact C<match> record for a selected leaf is:
+
+    {
+        kind              => 'route', # or websocket / sse
+        route             => '/tenants/{tenant_id}/users/{user_id}',
+        name              => '/tenant/show',
+        logical_namespace => '/tenant',
+        desc              => 'Display one tenant user',
+    }
+
+C<route> is the complete effective mounted route. C<name> is the complete
+absolute logical address, or undef for an unnamed leaf.
+C<logical_namespace> is available even when C<name> is undef. The declaration
+object's C<< Route->name >> remains only its local final segment, such as
+C<show>; matched metadata C<name> is absolute. C<desc> is that leaf's declared
+description, or undef.
+
+A selected application mount uses the same match shape:
+
+    {
+        kind              => 'mount',
+        route             => '/admin/{tenant_id}', # complete effective mount path
+        name              => undef,
+        logical_namespace => '/',
+        desc              => 'Tenant admin app',   # declared value or undef
+    }
+
+C<match> is the selected mount's terminal record. Router NONE/PARTIAL outcomes
+leave C<match> undefined while retaining the namespace and consumed-prefix
+capture snapshot of their owning placement. The Router renders the resulting
+404 or 405 without inventing a selected leaf.
+
+Entering a Router mount appends a distinct child boundary frame.
+It shares the root Resolver and root entry C<root_path> while copying the
+selected placement's logical namespace, captures, and cumulative Mount chain.
+
+An application mount retains its terminal Mount match in the parent
+frame. If that native target is another separately compiled Router, the child
+Router appends a frame to a compatible container with its own Resolver and its
+own entry C<root_path>; L<PAGI::Routing::URL> selects that innermost compatible
+frame.
+Malformed or newer C<pagi.routing> data is an incompatible boundary:
+the child router creates a fresh v1 container, ignores foreign ancestry, and
+does not croak. The incoming scope and foreign value are not mutated. Additive
+compatible fields, such as frame C<root_path>, retain version 1.
+
+The current frame is shared only through the router's request-local shallow
+scope clones, allowing router/mount middleware to inspect the final match after
+awaiting downstream. Treat the convention as read-only. Middleware outside
+the compiled app receives its original top-level scope and cannot see
+downstream top-level additions.
+
+=head2 DELIBERATE DIFFERENCES FROM STARLETTE
 
 Starlette supplied the useful Route/Mount/Router vocabulary, but PAGI does not
 claim API identity. Ordinary PAGI route and C<http_default> handlers receive
@@ -1118,13 +1119,9 @@ Starlette's colon mount namespace. SSE is a first-class routed scope.
 Middleware is pure PAGI app-to-app wrapping at Router, Mount, Route, and
 Compose boundaries.
 
-Current Starlette owns C<self.router> rather than subclassing Router. Starlette
-stores lifespan on Router, which makes a standalone Router lifecycle-capable,
-but mounted Routers do not receive the root lifespan exchange. PAGI preserves
-one non-cascading root lifecycle while keeping it on Compose. Starlette's
-single multiprotocol Router C<default> was considered and deliberately not
-copied. PAGI's C<http_default> handles only HTTP NONE, leaving stock WebSocket
-and SSE miss behavior intact. OpenAPI generation,
+Starlette's single multiprotocol Router C<default> was considered and
+deliberately not copied. PAGI's C<http_default> handles only HTTP NONE,
+leaving stock WebSocket and SSE miss behavior intact. OpenAPI generation,
 C<schema>, C<include_in_schema>, and arbitrary route metadata remain deferred
 until a concrete consumer is designed; the immutable route tree preserves the
 future inspection seam without advertising an unshipped schema API.
