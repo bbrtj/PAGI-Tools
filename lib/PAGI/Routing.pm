@@ -600,6 +600,17 @@ uses the same path grammar and constraint behavior; only HTTP routes accept
 C<methods>. An inline and explicit constraint may target the same parameter;
 both must pass, inline first.
 
+Constraints check a value; they never convert it. The handler gets the
+decoded path segment as text, so C<{id:&Int}> matches both C</notes/9> and
+C</notes/09>, and C<path_param('id')> is C<"9"> in one and C<"09"> in the
+other: the two are not C<eq>, and a JSON response carries C<"09"> as a
+string. Starlette's C<{id:int}> matches the same URLs but hands the handler
+the number. Numify where a number is needed
+(C<< 0 + $request->path_param('id') >>), or declare a pattern with one
+spelling per number, such as C<{id:[1-9][0-9]*}> for positive integers
+(C</notes/09>, C</notes/0> and C</notes/-3> do not match; use
+C<{id:0|[1-9][0-9]*}> when zero is allowed).
+
 =head3 Inline constraint providers
 
 An inline source beginning with an unescaped C<&> declares a provider, not a

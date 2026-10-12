@@ -871,9 +871,22 @@ All constraints receive one decoded scalar and validate without coercion:
   );
 
 The object form needs C<check($value)> and may provide
-C<get_message($value)>; Type::Tiny is not a hard runtime dependency. C<Int>
-accepts signed integers and PAGI retains the original string. A narrower local
-provider can close over it:
+C<get_message($value)>; Type::Tiny is not a hard runtime dependency.
+
+C<Int> accepts signed integers, and the handler gets the text, not a
+number: C</typed/09> matches, and C<path_param('id')> is C<"09">, not C<9>.
+Numify at the boundary that needs a number:
+
+  async sub show ($request) {
+      my $id = 0 + $request->path_param('id');   # "09" -> 9
+      return response('JSON', { id => $id });
+  }
+
+or use a pattern with one spelling per number, C<{id:[1-9][0-9]*}>, when
+C</typed/09> should be a 404 instead (it also refuses C<0> and C<-3>).
+
+A local provider can narrow C<Int> further, here to positive numbers. It
+still receives the text, so C<"09"> passes it:
 
   sub PersonId {
       my $int = Int;
