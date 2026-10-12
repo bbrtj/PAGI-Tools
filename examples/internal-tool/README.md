@@ -8,8 +8,8 @@ stylesheet comes from a static directory.
 
 PAGI-Tools ships no template engine, flash or validation. This app shows
 what each costs on top of it. The same application in Flask, which has all
-three built in, is at the end of this README; it was driven with the same requests and
-answers them the same way.
+three built in, is at the end of this README; it was driven with the same
+requests and answers them the same way.
 
 ## Run
 

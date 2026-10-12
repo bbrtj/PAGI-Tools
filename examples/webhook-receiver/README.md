@@ -10,8 +10,8 @@ whipupitude gap analysis, by someone who had just spent most of an hour
 reading the Tools docs (`PAGI::Tools`, the gut-check, `PAGI::Request`),
 and kept as written apart from the house brace style (one bug fixed:
 `use v5.40` turns on the `bitwise` feature, so string xor is `^.`). The
-same program in Flask and in Go's `net/http` is at the end of this README, driven with
-the same curl sequence.
+same program in Flask and in Go's `net/http` is at the end of this README,
+driven with the same curl sequence.
 
 ## Run
 
