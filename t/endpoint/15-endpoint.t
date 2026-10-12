@@ -9,7 +9,7 @@ use lib 'lib';
 use PAGI::Compose qw(compose);
 use PAGI::Endpoint;
 use PAGI::Response::Text ();
-use PAGI::Routing qw(endpoint mount route sse websocket);
+use PAGI::Routing qw(endpoint middleware mount route sse websocket);
 use PAGI::Test::Client;
 use PAGI::Tools ();
 
@@ -99,6 +99,220 @@ package Local::MooHealth {
     use Moo;
     extends 'PAGI::Endpoint::HTTP';
     has version => (is => 'ro', required => 1);
+}
+
+# BUILD_APP returning a builder: a fresh object per request, or a refusal.
+package Local::Guarded {
+    use parent -norequire, 'Local::Greeter';
+    our $BUILDS = 0;
+
+    sub BUILD_APP {
+        my ($class, %args) = @_;
+        return sub {
+            my ($request) = @_;
+            $BUILDS++;
+            return PAGI::Response::Text->new('no token', status => 403)
+                unless $request->header('X-Token');
+            return $class->new(%args);
+        };
+    }
+}
+
+package Local::AppRequest {
+    use parent 'PAGI::Request';
+}
+
+# Reports what its builder was given.
+package Local::RequestReporter {
+    use parent 'PAGI::Endpoint::HTTP';
+    our @SEEN;
+
+    sub BUILD_APP {
+        my ($class, %args) = @_;
+        return sub {
+            my ($request) = @_;
+            push @SEEN, [ref $request, $request->scope->{type}];
+            return $class->new(%args);
+        };
+    }
+
+    sub get { PAGI::Response::Text->new('reported') }
+}
+
+# A custom 405 hook on a per-request class.
+package Local::Picky {
+    use parent 'PAGI::Endpoint::HTTP';
+    use PAGI::Response::JSON ();
+    our $BUILDS = 0;
+
+    sub BUILD_APP {
+        my ($class, %args) = @_;
+        return sub { $BUILDS++; return $class->new(%args) };
+    }
+
+    sub get { PAGI::Response::Text->new('picky get') }
+
+    sub method_not_allowed {
+        my ($self, $request, @allowed) = @_;
+        return PAGI::Response::JSON->new(
+            { error => 'nope', allowed => \@allowed }, status => 405);
+    }
+}
+
+package Local::PerConnection {
+    use parent 'PAGI::Endpoint::WebSocket';
+    use Future::AsyncAwait;
+    use Scalar::Util qw(refaddr);
+    our @SEEN;
+
+    sub BUILD_APP {
+        my ($class, %args) = @_;
+        return sub {
+            my ($request) = @_;
+            push @SEEN, [ref $request, $request->scope->{type}];
+            return $class->new(%args);
+        };
+    }
+
+    async sub on_connect {
+        my ($self, $websocket) = @_;
+        await $websocket->accept;
+        await $websocket->send_text(refaddr($self));
+    }
+}
+
+package Local::PerStream {
+    use parent 'PAGI::Endpoint::SSE';
+    use Future::AsyncAwait;
+    use Scalar::Util qw(refaddr);
+    our @SEEN;
+
+    sub BUILD_APP {
+        my ($class, %args) = @_;
+        return sub {
+            my ($request) = @_;
+            push @SEEN, [ref $request, $request->scope->{type}];
+            return $class->new(%args);
+        };
+    }
+
+    async sub on_connect {
+        my ($self, $sse) = @_;
+        await $sse->send_event(data => refaddr($self));
+    }
+}
+
+package Local::GuardedSocket {
+    use parent 'PAGI::Endpoint::WebSocket';
+
+    sub BUILD_APP {
+        my ($class, %args) = @_;
+        return sub {
+            my ($request) = @_;
+            return PAGI::Response::Text->new('no token', status => 403)
+                unless $request->header('X-Token');
+            return $class->new(%args);
+        };
+    }
+}
+
+package Local::GuardedStream {
+    use parent 'PAGI::Endpoint::SSE';
+
+    sub BUILD_APP {
+        my ($class, %args) = @_;
+        return sub {
+            my ($request) = @_;
+            return PAGI::Response::Text->new('no token', status => 403)
+                unless $request->header('X-Token');
+            return $class->new(%args);
+        };
+    }
+}
+
+package Local::AsyncBuilt {
+    use parent -norequire, 'Local::Greeter';
+    use Future::AsyncAwait;
+    use Future::IO;
+
+    sub BUILD_APP {
+        my ($class, %args) = @_;
+        return async sub {
+            my ($request) = @_;
+            await Future::IO->sleep(0);
+            return PAGI::Response::Text->new('not yet', status => 401)
+                unless $request->header('X-User');
+            return $class->new(%args, greeting => 'hello ' . $request->header('X-User'));
+        };
+    }
+}
+
+# Its builder reads the body, so the handler gets it from the cache.
+package Local::BodyPeeker {
+    use parent 'PAGI::Endpoint::HTTP';
+    use Future::AsyncAwait;
+
+    sub BUILD_APP {
+        my ($class, %args) = @_;
+        return async sub {
+            my ($request) = @_;
+            my $data = await $request->json;
+            return $class->new(%args, peeked => $data->{text});
+        };
+    }
+
+    async sub post {
+        my ($self, $request) = @_;
+        my $data = await $request->json;
+        return PAGI::Response::Text->new("$self->{peeked}/$data->{text}");
+    }
+
+    async sub put {
+        my ($self, $request) = @_;
+        $request->body_stream;
+        return PAGI::Response::Text->new('streamed');
+    }
+}
+
+package Local::Exploding {
+    sub BUILD_APP { return sub { die "builder exploded\n" } }
+}
+
+package Local::JunkBuilder {
+    sub BUILD_APP { return sub { return {} } }
+}
+
+package Local::AsyncFails {
+    use Future::AsyncAwait;
+    sub BUILD_APP {
+        return async sub {
+            await Future::IO->sleep(0);
+            die "lookup failed\n";
+        };
+    }
+}
+
+package Local::AsyncJunk {
+    use Future::AsyncAwait;
+    sub BUILD_APP {
+        return async sub {
+            await Future::IO->sleep(0);
+            return {};
+        };
+    }
+}
+
+package Local::MooPerRequest {
+    use Moo;
+    extends 'PAGI::Endpoint::HTTP';
+    has user => (is => 'ro', required => 1);
+
+    sub BUILD_APP {
+        my ($class, %args) = @_;
+        return sub { $class->new(%args) };
+    }
+
+    sub get { PAGI::Response::Text->new('never reached') }
 }
 
 package Local::FixedEndpoint {
@@ -227,10 +441,10 @@ subtest 'mistakes fail at endpoint(), with their own messages' => sub {
     like(dies { endpoint('Bad Name') }, qr/\Ainvalid endpoint class name 'Bad Name' at /,
         'not a package name');
     like(dies { endpoint('Local::Neither') },
-        qr/\ALocal::Neither->BUILD_APP must return an app object \(one with to_app\)/,
+        qr/\ALocal::Neither->BUILD_APP must return an app object \(one with to_app\) or a coderef that builds one per request at /,
         'BUILD_APP returning a string');
     like(dies { endpoint('Local::NewReturnsJunk') },
-        qr/\ALocal::NewReturnsJunk->new must return an app object \(one with to_app\)/,
+        qr/\ALocal::NewReturnsJunk->new must return an app object \(one with to_app\) or a coderef that builds one per request at /,
         'new returning a hashref');
     like(dies { endpoint('Local::MooHealth') }, qr/\AMissing required arguments: version/,
         "a singleton missing a required Moo attribute: Moo's own error");
@@ -261,6 +475,187 @@ subtest 'a class with neither new nor BUILD_APP' => sub {
         qr/\Aendpoint class Local::Misspelt has neither new nor BUILD_APP at /,
         'a name some compiled code already used as a package reads as defined');
 };
+
+subtest 'BUILD_APP returning a builder: one object per request' => sub {
+    $Local::Guarded::BUILDS = 0;
+    $Local::Greeter::BUILT = 0;
+    my $guarded = endpoint('Local::Guarded', greeting => 'welcome in');
+    isa_ok($guarded, ['PAGI::Endpoint::PerRequest::HTTP'], 'endpoint() returns the wrapper');
+    is($Local::Guarded::BUILDS, 0, 'nothing is built until a request arrives');
+
+    my $client = PAGI::Test::Client->new(
+        app => compose(routes => [route('/guarded' => $guarded)]));
+    my $refused = $client->get('/guarded');
+    is([$refused->status, $refused->text], [403, 'no token'],
+        'a builder may return a Response that refuses the request');
+    my @answers = map {
+        $client->get('/guarded', headers => { 'X-Token' => 1 })->text
+    } 1 .. 2;
+    like($answers[0], qr/\Awelcome in from \d+\z/, 'with a token it builds the endpoint');
+    isnt($answers[0], $answers[1], 'a fresh object for each request');
+    is([$Local::Guarded::BUILDS, $Local::Greeter::BUILT], [3, 2],
+        'the builder ran per request; new ran when it was asked to');
+
+    my $put = $client->put('/guarded', headers => { 'X-Token' => 1 });
+    is([$put->status, $put->header('Allow')], [405, 'GET, HEAD, OPTIONS'],
+        "PUT: the Router answers the 405 from the class's methods");
+    is($Local::Guarded::BUILDS, 3, 'and the builder was not called for it');
+};
+
+subtest "the route asks the class for its methods" => sub {
+    my $http = endpoint('Local::Guarded');
+    is([$http->allowed_methods], [qw(GET HEAD OPTIONS)], 'the HTTP wrapper asks the class');
+    is(route('/g' => $http)->methods, [qw(GET HEAD OPTIONS)], 'and route() snapshots it');
+    is(route('/g' => $http, methods => 'GET')->methods, [qw(GET HEAD)],
+        'a finite methods option narrows it');
+    like(dies { route('/g' => $http, methods => 'PUT') },
+        qr/\Amethods \[PUT\] are not advertised by route endpoint allowed_methods/,
+        'and may not widen it');
+
+    my $ws = endpoint('Local::PerConnection');
+    isa_ok($ws, ['PAGI::Endpoint::PerRequest'], 'a WebSocket class gets the plain wrapper');
+    ok(!$ws->can('allowed_methods'), 'which has no allowed_methods');
+};
+
+subtest 'the builder gets the Request: HTTP, WebSocket and SSE' => sub {
+    @Local::RequestReporter::SEEN = @Local::PerConnection::SEEN = @Local::PerStream::SEEN = ();
+    my $routes = [
+        route('/report' => endpoint('Local::RequestReporter')),
+        websocket('/ws' => endpoint('Local::PerConnection')),
+        sse('/events' => endpoint('Local::PerStream')),
+    ];
+    my $client = PAGI::Test::Client->new(app => compose(routes => $routes));
+    $client->get('/report');
+    is(\@Local::RequestReporter::SEEN, [['PAGI::Request', 'http']], 'HTTP: a PAGI::Request');
+
+    my @objects;
+    for (1 .. 2) {
+        $client->websocket('/ws', sub { push @objects, $_[0]->receive_text });
+    }
+    is(\@Local::PerConnection::SEEN, [(['PAGI::Request', 'websocket']) x 2],
+        'WebSocket: a PAGI::Request, once per connection');
+    isnt($objects[0], $objects[1], 'and each connection has its own object');
+
+    @objects = ();
+    for (1 .. 2) {
+        $client->sse('/events', sub { push @objects, $_[0]->receive_event->{data} });
+    }
+    is(\@Local::PerStream::SEEN, [(['PAGI::Request', 'sse']) x 2],
+        'SSE: a PAGI::Request, once per connection');
+    isnt($objects[0], $objects[1], 'and each connection has its own object');
+
+    @Local::RequestReporter::SEEN = ();
+    my $with_class = PAGI::Test::Client->new(app => compose(
+        middleware => [middleware('RequestClass', class => 'Local::AppRequest')],
+        routes     => [route('/report' => endpoint('Local::RequestReporter'))],
+    ));
+    $with_class->get('/report');
+    is(\@Local::RequestReporter::SEEN, [['Local::AppRequest', 'http']],
+        'below RequestClass: the application\'s class');
+};
+
+subtest 'a WebSocket or SSE builder may refuse with a Response' => sub {
+    my $client = PAGI::Test::Client->new(app => compose(routes => [
+        websocket('/ws' => endpoint('Local::GuardedSocket')),
+        sse('/events' => endpoint('Local::GuardedStream')),
+    ]));
+    my $ws = $client->websocket('/ws');
+    is([$ws->refused, $ws->response->status, $ws->response->text], [1, 403, 'no token'],
+        'WebSocket: the handshake is refused with it');
+    my $sse = $client->sse('/events');
+    is([$sse->status, $sse->text], [403, 'no token'], 'SSE: the stream is refused with it');
+    $client->websocket('/ws', headers => { 'X-Token' => 1 }, sub {
+        my ($accepted) = @_;
+        ok(!$accepted->refused, 'with a token the WebSocket endpoint is built');
+    });
+};
+
+subtest "who answers a method the class does not have" => sub {
+    $Local::Picky::BUILDS = 0;
+    my $client = PAGI::Test::Client->new(app => compose(routes => [
+        route('/picky' => endpoint('Local::Picky')),
+        route('/star' => endpoint('Local::Picky'), methods => '*'),
+        mount('/mounted', app => endpoint('Local::Picky')),
+    ]));
+    my $res = $client->put('/picky');
+    is([$res->status, $res->text, $res->header('Allow')],
+        [405, 'Method Not Allowed', 'GET, HEAD, OPTIONS'],
+        'routed: the Router answers; the hook does not run');
+    is($Local::Picky::BUILDS, 0, 'and nothing was built');
+
+    for my $path ('/star', '/mounted') {
+        $res = $client->put($path);
+        is([$res->status, $res->json, $res->header('Allow')],
+            [405, { error => 'nope', allowed => [qw(GET HEAD OPTIONS)] }, 'GET, HEAD, OPTIONS'],
+            "$path: the built object's method_not_allowed answers");
+    }
+    is($Local::Picky::BUILDS, 2, 'the builder ran for each');
+};
+
+subtest 'a builder may be async' => sub {
+    my $client = PAGI::Test::Client->new(app => compose(routes => [
+        route('/async' => endpoint('Local::AsyncBuilt')),
+        route('/peek' => endpoint('Local::BodyPeeker')),
+    ]));
+    like($client->get('/async', headers => { 'X-User' => 'ada' })->text,
+        qr/\Ahello ada from \d+\z/, 'it awaits, then returns the object');
+    my $res = $client->get('/async');
+    is([$res->status, $res->text], [401, 'not yet'], 'or a refusal');
+
+    is($client->post('/peek', json => { text => 'milk' })->text, 'milk/milk',
+        'a builder that read the body leaves the handler json from the cache');
+    my $streamed;
+    like(warnings { $streamed = $client->put('/peek', json => { text => 'milk' }) },
+        [qr/\Aexception after response completed: Body already consumed; streaming not available/],
+        'but not body_stream');
+    is($streamed->status, 500, '... a 500');
+};
+
+subtest 'a builder that fails answers that request with a 500' => sub {
+    my $client = PAGI::Test::Client->new(app => compose(routes => [
+        route('/explodes' => endpoint('Local::Exploding')),
+        route('/junk' => endpoint('Local::JunkBuilder')),
+        route('/async-fails' => endpoint('Local::AsyncFails')),
+        route('/async-junk' => endpoint('Local::AsyncJunk')),
+        route('/moo' => endpoint('Local::MooPerRequest')),
+    ]));
+    my %case = (
+        '/explodes'    => qr/\Aexception after response completed: builder exploded$/,
+        '/junk'        => qr/\Aexception after response completed: Local::JunkBuilder->BUILD_APP's builder must return an app object \(one with to_app\); a native PAGI application goes through as_app_object\(\) at /,
+        '/async-fails' => qr/\Aexception after response completed: lookup failed$/,
+        '/async-junk'  => qr/\Aexception after response completed: Local::AsyncJunk->BUILD_APP's builder must return an app object \(one with to_app\); a native PAGI application goes through as_app_object\(\) at /,
+        '/moo'         => qr/\Aexception after response completed: Missing required arguments: user at /,
+    );
+    for my $path (sort keys %case) {
+        my $res;
+        like(warnings { $res = $client->get($path) }, [$case{$path}], "$path: the error");
+        is($res->status, 500, "$path: a 500");
+    }
+};
+
+SKIP: {
+    skip 'a signature needs Perl 5.36', 1 if $] < 5.036;
+    subtest 'a native application returned from BUILD_APP is called as a builder' => sub {
+        eval q{
+            package Local::NativeByMistake;
+            use v5.36;
+            use Future::AsyncAwait;
+            sub BUILD_APP ($class, %args) {
+                return async sub ($scope, $receive, $send) {
+                    await $send->({ type => 'http.response.start', status => 200, headers => [] });
+                };
+            }
+            1;
+        } or die $@;
+        my $client = PAGI::Test::Client->new(
+            app => compose(routes => [route('/native' => endpoint('Local::NativeByMistake'))]));
+        my $res;
+        like(warnings { $res = $client->get('/native') },
+            [qr/\Aexception after response completed: Too few arguments for subroutine 'Local::NativeByMistake::__ANON__' \(got 1; expected 3\)/],
+            "Perl's arity error, on the first request");
+        is($res->status, 500, '... a 500');
+    };
+}
 
 subtest 'the steps are methods a subclass may override' => sub {
     my $endpoint = PAGI::Endpoint->new('Local::Greeter', greeting => 'hi');

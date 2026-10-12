@@ -225,14 +225,16 @@ The selected handler runs inline. Immediate results are normalized with
 C<Future-E<gt>wrap>, but blocking synchronous work still blocks the event-loop
 thread. A returned object's C<to_app> is invoked once for that request.
 
-B<Singleton:> C<to_app> creates a single endpoint instance that serves the
-entire application lifetime. State stored in C<$self> persists across
-requests (within the same worker process).
+B<Built once by default:> named at a route with C<endpoint>, the class is
+built once, and that one object serves every request for the application's
+lifetime (within the same worker process), concurrently.
 
-B<Do not store per-request state on C<$self>> - one instance is shared by
-every request (and concurrent requests), so request-scoped data on C<$self>
-will leak between them. Keep configuration and long-lived services on
-C<$self>; keep request-scoped data on C<$request> or scope-bound helpers.
+B<Do not store per-request state on C<$self>> of an endpoint built once:
+request-scoped data on C<$self> would leak between concurrent requests. Keep
+configuration and long-lived services on C<$self>, and request-scoped data on
+C<$request> or scope-bound helpers. A class that wants a fresh object for
+every request says so with C<BUILD_APP> (L<PAGI::Endpoint>); C<$self> then
+belongs to that one request.
 
 =head1 CLASS METHODS
 
@@ -272,11 +274,16 @@ it receives the request and the allowed methods, and may return a Response,
 an application, or a Future of one. The endpoint sets the response's one
 C<Allow> field to the allowed methods, replacing any the answer carries.
 
+At a Route without C<< methods => '*' >> the Router answers methods this
+endpoint does not advertise, from C<allowed_methods>, so this hook runs
+only when the endpoint is mounted or routed with C<< methods => '*' >>.
+
 =head2 allowed_methods
 
     my @methods = $endpoint->allowed_methods;
 
-Returns list of HTTP methods this endpoint handles.
+Returns list of HTTP methods this endpoint handles. Works on the class as
+well as an instance; a per-request endpoint's Route asks the class.
 
 =head1 SEE ALSO
 

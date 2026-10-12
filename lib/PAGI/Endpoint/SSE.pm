@@ -129,6 +129,10 @@ dependencies may therefore live on the endpoint object. Each C<PAGI::SSE>
 protocol object and all connection-local state must stay local to C<handle>,
 because one endpoint instance can serve concurrent connections.
 
+A class whose C<BUILD_APP> returns a builder (L<PAGI::Endpoint>) gets a
+fresh object for each connection instead, which lives as long as that
+connection, so connection state may live on C<$self>.
+
 =head1 LIFECYCLE METHODS
 
 =head2 on_connect

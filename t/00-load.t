@@ -34,6 +34,7 @@ my @load_modules = qw(
     PAGI::App::File::Result
     PAGI::App::WrapPSGI
     PAGI::Endpoint
+    PAGI::Endpoint::PerRequest
     PAGI::Endpoint::HTTP
     PAGI::Endpoint::SSE
     PAGI::Endpoint::WebSocket

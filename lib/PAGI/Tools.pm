@@ -325,9 +325,13 @@ Route asks once, when it is built, and a C<methods> option may only narrow
 that list. C<< methods => '*' >> hands all method handling, 405 included, to
 the application. WebSocket and SSE routes ignore C<allowed_methods>.
 
-An Endpoint object is created once and serves every request or connection on
-its route, concurrently. Keep only configuration and long-lived services on
-it; per-request state belongs on the Request, WebSocket or SSE object.
+C<endpoint('Class', %args)> builds an Endpoint once, with
+C<< Class->new(%args) >>, and that object serves every request or
+connection on its route, concurrently: keep only configuration and
+long-lived services on it, and per-request state on the Request, WebSocket
+or SSE object. A class that wants a fresh object per request (per
+connection for WebSocket and SSE) says so with C<BUILD_APP>; see
+L<PAGI::Endpoint>.
 
 =head1 ROOTED STATIC FILES
 

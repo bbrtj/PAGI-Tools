@@ -181,9 +181,13 @@ Route asks once, when it is built, and a `methods` option may only narrow
 that list. `methods => '*'` hands all method handling, 405 included, to
 the application. WebSocket and SSE routes ignore `allowed_methods`.
 
-An Endpoint object is created once and serves every request or connection on
-its route, concurrently. Keep only configuration and long-lived services on
-it; per-request state belongs on the Request, WebSocket or SSE object.
+`endpoint('Class', %args)` builds an Endpoint once, with
+`Class->new(%args)`, and that object serves every request or
+connection on its route, concurrently: keep only configuration and
+long-lived services on it, and per-request state on the Request, WebSocket
+or SSE object. A class that wants a fresh object per request (per
+connection for WebSocket and SSE) says so with `BUILD_APP`; see
+[PAGI::Endpoint](https://metacpan.org/pod/PAGI%3A%3AEndpoint).
 
 # ROOTED STATIC FILES
 

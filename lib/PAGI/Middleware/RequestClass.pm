@@ -128,6 +128,11 @@ including ones you did not write.
 WebSocket and SSE scopes (a C<deny> handler gets one). It must accept them,
 as L<PAGI::Request/new> does.
 
+=item * B<A cheap constructor.> An endpoint built per request (see
+L<PAGI::Endpoint>) gets one instance for its builder and another for its
+method, so C<new> runs twice for that request. Keep it cheap, and never
+read the body in it.
+
 =item * B<Override.> C<request_response($handler, request_factory =E<gt> ...)>
 still decides for its one handler (L<PAGI::Routing::RequestResponse>).
 

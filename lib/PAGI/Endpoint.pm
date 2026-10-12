@@ -54,10 +54,21 @@ sub build {
 sub app_from {
     my ($self, $built) = @_;
     return $built if blessed($built) && $built->can('to_app');
+    return $self->per_request_app($built) if ref($built) eq 'CODE';
 
     my $class = $self->class;
     my $made_by = $class->can('BUILD_APP') ? "$class->BUILD_APP" : "$class->new";
-    croak "$made_by must return an app object (one with to_app)";
+    croak "$made_by must return an app object (one with to_app)"
+        . ' or a coderef that builds one per request';
+}
+
+sub per_request_app {
+    my ($self, $builder) = @_;
+    require PAGI::Endpoint::PerRequest;
+    my $wrapper = $self->class->can('allowed_methods')
+        ? 'PAGI::Endpoint::PerRequest::HTTP'
+        : 'PAGI::Endpoint::PerRequest';
+    return $wrapper->new(class => $self->class, build => $builder);
 }
 
 1;
@@ -78,6 +89,30 @@ PAGI::Endpoint - Name an endpoint class at a route; the class decides how it is 
         mount('/health', app => endpoint('MyApp::Health', version => '1.0')),
     ]);
 
+    # A Moo class that wants a fresh object for every request.
+    package MyApp::Notes;
+    use Moo;
+    use Future::AsyncAwait;
+    use PAGI::Tools qw(response);
+    extends 'PAGI::Endpoint::HTTP';
+
+    has page_size    => (is => 'ro', default => 20);
+    has current_user => (is => 'ro', required => 1);
+
+    sub BUILD_APP {
+        my ($class, %args) = @_;
+        return sub {
+            my ($request) = @_;
+            return $class->new(%args,
+                current_user => $request->header('X-User') // 'anonymous');
+        };
+    }
+
+    async sub get {
+        my ($self, $request) = @_;
+        return response('JSON', { user => $self->current_user });
+    }
+
 =head1 DESCRIPTION
 
 C<endpoint('Class', %args)>, exported by L<PAGI::Routing> and L<PAGI::Tools>,
@@ -91,6 +126,9 @@ built:
                                        when endpoint() runs      connection, concurrently
     BUILD_APP returns an app object    once, when endpoint()     every request and
                                        runs                      connection, concurrently
+    BUILD_APP returns a builder        the builder once; its     that request or
+                                       app object per request    connection only
+                                       or connection
 
 An app object is any object with a C<to_app> method: an Endpoint, a
 L<PAGI::Response>, a Router. The framework only ever calls the class's own
@@ -106,12 +144,89 @@ still works: it is the first row without the loading.
 
     sub BUILD_APP {
         my ($class, %args) = @_;
-        return $class->new(%args, started => time);
+        return $class->new(%args, started => time);   # an app object
     }
 
 C<BUILD_APP> is called once, as a class method, with C<endpoint>'s arguments,
-in place of C<new>. The app object it returns is placed at the route as it is
-and answers every request. It need not be an instance of the class.
+in place of C<new>. What it returns decides the lifecycle:
+
+=over 4
+
+=item * An app object (one with C<to_app>) is placed at the route as it is and
+answers every request. It need not be an instance of the class.
+
+=item * A coderef is a builder. It is called with a L<PAGI::Request> for every
+request (every connection, for WebSocket and SSE) and returns the app object
+that answers it. It may return any app object, including a Response that
+refuses the request:
+
+    sub BUILD_APP {
+        my ($class, %args) = @_;
+        return sub {
+            my ($request) = @_;
+            return response('Text', 'no token', status => 403)
+                unless $request->header('X-Token');
+            return $class->new(%args);
+        };
+    }
+
+=item * A builder may be async: it returns an app object, or a Future of one.
+The typical async builder fills a C<required> attribute from I/O:
+
+    sub BUILD_APP {
+        my ($class, %args) = @_;
+        return async sub {
+            my ($request) = @_;
+            my $user = await $args{users}->find($request->header('X-User-Id'));
+            return response('Text', 'who?', status => 401) unless $user;
+            return $class->new(%args, current_user => $user);
+        };
+    }
+
+A builder that dies, or whose Future fails, fails that request like a dying
+handler: a 500, with the error re-raised to the server.
+
+=back
+
+A coderef from C<BUILD_APP> is always a builder. A native PAGI application,
+C<async sub { my ($scope, $receive, $send) = @_; ... }>, returned there is not
+supported: it is called as a builder, with one argument. Return
+C<as_app_object($app)> (L<PAGI::Utils>) instead.
+
+=head1 WHAT THE BUILDER RECEIVES
+
+The builder receives a L<PAGI::Request> for HTTP, WebSocket and SSE alike, or
+the class L<PAGI::Middleware::RequestClass> set. For WebSocket and SSE it is
+not the connection helper: the object the builder returns accepts, sends and
+closes.
+
+The builder reads what the request already carries: headers, cookies, query
+and path parameters, and state. It should not read the body, nor C<receive>
+on a WebSocket or SSE scope, because the endpoint it builds owns that input;
+this is not enforced. A builder that awaits the body
+(C<< await $request->json >>) consumes it: the handler still gets C<json>,
+C<form> and C<body> from the scope's cache, but C<body_stream> then dies
+"Body already consumed".
+
+The handler's C<$request> is not the builder's object. An HTTP endpoint makes
+its own Request for its method, and both read the same cached headers,
+cookies and body; a Request class's C<new> therefore runs twice for that
+request.
+
+=head1 METHODS AND 405
+
+An HTTP endpoint tells its Route which methods it answers through
+C<allowed_methods> (L<PAGI::Endpoint::HTTP>). For a class built per request
+the Route asks the class, which is never built for it, so such a class that
+overrides C<allowed_methods> must answer it as a class method.
+
+At a plain route the Router answers a method the class does not advertise,
+with its 405 and C<Allow>, before anything is built: the builder never sees
+that method. Mounted, or routed with C<< methods => '*' >>, nothing filters
+first: the builder runs for every method, and the object it builds answers an
+unadvertised one with its C<method_not_allowed> (or the builder's own refusal
+answers first). OPTIONS reaches the endpoint, which answers 204 with
+C<Allow>.
 
 =head1 LIFETIMES AND LIFESPAN
 
@@ -125,23 +240,38 @@ requests, so keep only configuration and long-lived services on it, and
 per-request state on the Request, WebSocket or SSE object. Its state is per
 worker process: C<pagi-server --workers 4> builds four.
 
+An object a builder returns lives until its request is answered, or for
+WebSocket and SSE until its connection ends, so it may keep that request's
+or connection's state on C<$self>.
+
 =head1 WHEN THINGS FAIL
 
-Each of these dies at the C<endpoint()> call, while the application file
-loads.
+"Load" is the C<endpoint()> call, while the application file loads. "First
+request" is a 500 for that request, with the error re-raised to the server.
 
-    Mistake                                 Message
-    --------------------------------------  ----------------------------------------
-    no class name                           endpoint expects a class name
-    an odd argument list                    endpoint arguments must be key/value pairs
-    not a package name ('Bad Name')         invalid endpoint class name 'Bad Name'
-    an unknown class, or its file does      endpoint class X could not be loaded: ...
-    not compile
-    a class with neither new nor BUILD_APP  endpoint class X has neither new nor BUILD_APP
-    a required attribute is missing         the class's own error (Moo: Missing
-                                            required arguments: ...)
-    BUILD_APP or new returns no app object  X->BUILD_APP must return an app object
-                                            (one with to_app)
+    Mistake                                 When           Message
+    --------------------------------------  -------------  ------------------------------
+    no class name                           load           endpoint expects a class name
+    an odd argument list                    load           endpoint arguments must be
+                                                           key/value pairs
+    not a package name ('Bad Name')         load           invalid endpoint class name
+                                                           'Bad Name'
+    an unknown class, or its file does      load           endpoint class X could not be
+    not compile                                            loaded: ...
+    a class with neither new nor BUILD_APP  load           endpoint class X has neither
+                                                           new nor BUILD_APP
+    a singleton's required attribute is     load           the class's own error (Moo:
+    missing                                                Missing required arguments: ...)
+    BUILD_APP or new returns neither an     load           X->BUILD_APP must return an app
+    app object nor a coderef                               object (one with to_app) or a
+                                                           coderef that builds one per
+                                                           request
+    the builder dies, or its Future fails   first request  the builder's error
+    the builder returns no app object       first request  X->BUILD_APP's builder must
+                                                           return an app object (one with
+                                                           to_app); a native PAGI
+                                                           application goes through
+                                                           as_app_object()
 
 A misspelt class name that compiled code already uses as a package, as in
 C<Misspelt::Name::helper()>, reads as defined and is not required, so it dies
@@ -198,13 +328,24 @@ override it.
     my $app_object = $endpoint->app_from($built);
 
 Turns what C<build> returned into the route's app object: an object with
-C<to_app> is used as it is. Anything else dies "Class->BUILD_APP must return
-an app object (one with to_app)", or "Class->new must ..." for a class without
-C<BUILD_APP>. A subclass may override it.
+C<to_app> is used as it is, and a coderef goes to C<per_request_app>.
+Anything else dies "Class->BUILD_APP must return an app object (one with
+to_app) or a coderef that builds one per request", or "Class->new must ..."
+for a class without C<BUILD_APP>. A subclass may override it.
+
+=head2 per_request_app
+
+    my $app_object = $endpoint->per_request_app($builder);
+
+Returns the app object that calls the builder for each request or connection
+(L<PAGI::Endpoint::PerRequest>). For an HTTP class, one with
+C<allowed_methods>, the app object answers C<allowed_methods> by asking the
+class. A subclass may override it.
 
 =head1 SEE ALSO
 
-L<PAGI::Routing/endpoint>, L<PAGI::Endpoint::HTTP>,
-L<PAGI::Endpoint::WebSocket>, L<PAGI::Endpoint::SSE>
+L<PAGI::Routing/endpoint>, L<PAGI::Endpoint::PerRequest>,
+L<PAGI::Endpoint::HTTP>, L<PAGI::Endpoint::WebSocket>,
+L<PAGI::Endpoint::SSE>
 
 =cut

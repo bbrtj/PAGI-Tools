@@ -140,8 +140,8 @@ C<deny> / SSE C<decline> handlers, an ErrorHandler C<handler> listed after
 the middleware, and Authentication C<backend>s below it all receive a
 C<MyCompany::Request>, in mounted applications too. The class's C<new> must
 accept WebSocket and SSE scopes, and should be cheap and leave the body
-unread. For one or two helpers, a function that takes the request is
-simpler. See L<PAGI::Middleware::RequestClass> for the order, the costs, and
+unread: an endpoint built per request calls it twice. For one or two
+helpers, a function that takes the request is simpler. See L<PAGI::Middleware::RequestClass> for the order, the costs, and
 the hand-written equivalent.
 
 =head2 Custom Request Route Helpers
