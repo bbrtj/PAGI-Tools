@@ -357,8 +357,8 @@ delegate to the root Router and therefore use its Resolver and stable
 declaration graph. Resolver traversal can discover named leaves beneath an
 inspectable Router-valued Mount; this does not make the child the Compose root.
 C<routes> and C<named_routes> retain the Router's shallow-copy contracts;
-C<route_named> returns the original named leaf or C<undef>; C<path_for> has the
-forms documented by
+C<route_named> returns the original named leaf or Mount, or C<undef>;
+C<path_for> has the forms documented by
 L<PAGI::Routing::Router/path_for>.
 
 C<middleware> returns a shallow arrayref copy whose entries are the original

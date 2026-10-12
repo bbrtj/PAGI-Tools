@@ -367,10 +367,26 @@ subtest 'absolute and relative references preserve traversal and capture rules' 
         'overridden captures still satisfy target constraints');
 };
 
-subtest 'an exact leaf wins at a shared namespace address' => sub {
+subtest 'a route and a mount cannot share a name (scope-bound)' => sub {
+    like(
+        dies {
+            _resolver(
+                route('/direct-api' => sub { }, name => 'api'),
+                mount('/nested-api', app => router(routes => [
+                    route('/x' => sub { }, name => 'x'),
+                ]), name => 'api'),
+                mount('/group', app => router(routes => [
+                    route('/x' => sub { }, name => 'x'),
+                ]), name => 'group'),
+            );
+        },
+        qr/route '\/direct-api' and mount '\/nested-api' both claim the name '\/api'.*route\('\/'\)/,
+        'construction croaks',
+    );
+
     my $resolver = _resolver(
-        route('/direct-api' => sub { }, name => 'api'),
         mount('/nested-api', app => router(routes => [
+            route('/' => sub { }, name => 'index'),
             route('/x' => sub { }, name => 'x'),
         ]), name => 'api'),
         mount('/group', app => router(routes => [
@@ -385,19 +401,14 @@ subtest 'an exact leaf wins at a shared namespace address' => sub {
         },
     ));
 
-    is($root->path_for('/api'), '/direct-api',
-        'absolute lookup selects the exact leaf');
-    is($root->path_for('api'), '/direct-api',
-        'root-relative lookup selects the exact leaf');
-    is($nested->path_for('../api'), '/direct-api',
-        'parent-relative lookup selects the exact leaf');
-    is($root->path_for('/api/x'), '/nested-api/x',
-        'absolute descendant remains available');
+    is($root->path_for('/api'), '/nested-api',
+        'absolute lookup gives the Mount prefix');
+    is($nested->path_for('../api'), '/nested-api',
+        'parent-relative lookup gives the Mount prefix');
     is($nested->path_for('x'), '/nested-api/x',
         'relative descendant remains available');
-    like(dies { $root->path_for('/group') },
-        qr/resolves to a logical namespace, not a route/,
-        'namespace without an exact leaf is rejected');
+    is($root->path_for('/group'), '/group',
+        'a Mount without a landing route is a target');
 };
 
 subtest 'capture inheritance selects target keys only' => sub {

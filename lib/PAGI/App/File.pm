@@ -37,8 +37,12 @@ The component can be mounted directly in a declarative router:
     use PAGI::Routing qw(router mount);
 
     my $routing = router(routes => [
-        mount('/static', app => PAGI::App::File->from_app_path('static')),
+        mount('/static', app => PAGI::App::File->from_app_path('static'),
+            name => 'static'),
     ]);
+
+Name the mount to link to its files:
+C<< path_for($request, '/static', { path => 'app.css' }) >>.
 
 The named C<app> option matters: Route is a complete URL leaf, while this Mount
 composes the file application under a prefix and passes the remaining child

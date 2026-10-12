@@ -116,8 +116,8 @@ protocol completion.
 C<routes> returns a shallow arrayref copy of direct children in declaration
 order. C<named_routes> returns a shallow hashref copy mapping canonical
 absolute addresses such as C</person/blog/show> to their original immutable
-leaves; C<route_named($address)> returns one such leaf or undef for an unknown
-address. C<path_for> renders the application-relative path for an address
+leaves and named Mounts; C<route_named($address)> returns one of them or undef
+for an unknown address. C<path_for> renders the application-relative path for an address
 without request state or protocol I/O. A child Router's own paths remain local
 to that Router, while each outer Router resolver composes the path for its
 particular mount placement.
@@ -175,8 +175,9 @@ omits it and an empty string emits a terminal C<#>.
 An initial C</> makes a reference absolute; otherwise it starts at this
 Router's root. C<.> and C<..> components normalize exactly, dots within a
 component remain literal, and references are never URI-decoded. Empty
-components, repeated or trailing separators, above-root traversal,
-namespace-only results, and unknown exact targets fail. There is no ancestor
+components, repeated or trailing separators, above-root traversal, results
+ending at the root or with a terminal C<.> or C<..>, and unknown exact targets
+fail. There is no ancestor
 search, fuzzy fallback, dotted hierarchy, or overlapping-prefix folding.
 
 Query pairs are sorted and each UTF-8 key/value is percent-encoded as a URI

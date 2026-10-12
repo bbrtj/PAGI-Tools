@@ -1080,7 +1080,8 @@ Inspect direct children and named leaves without mutating the tree:
   my $named    = $routing->named_routes;
   my $leaf     = $routing->route_named('/v2/user');
 
-C<named_routes> maps absolute addresses to their original leaves. Immutable
+C<named_routes> maps absolute addresses to their original leaves and named
+Mounts. Immutable
 Router C<app> mounts are inspected recursively; other applications are opaque.
 C<desc> is a human note for listings and tools.
 
@@ -1124,6 +1125,37 @@ C<path_for($request, 'notes')> gives C</v2/notes> there with no change to the
 handlers. The full rules -- C<./> and C<../>, absolute references, and which
 captures a relative reference inherits -- are in
 L<PAGI::Routing/"REVERSE ROUTING AND INSPECTION">.
+
+=head2 Linking to static files
+
+Name the mount and its name is a link target: C<path_for> gives the
+mount's prefix, and with C<path> a file below it, with the proxy prefix
+applied. A page that hardcodes C</static/app.css> breaks under a root
+path; this does not:
+
+  use v5.40;
+  use PAGI::App::File;
+  use PAGI::Tools qw(compose mount path_for response route);
+  use PAGI::Test::Client;
+
+  my $app = compose(routes => [
+      route('/' => sub ($request) {
+          response('JSON', {
+              css    => path_for($request, 'static', { path => 'css/app.css' }),
+              prefix => path_for($request, 'static'),
+          });
+      }, name => 'home'),
+      mount('/static', app => PAGI::App::File->new(root => 'public'), name => 'static'),
+  ]);
+
+  # Served under the root path /app, as behind a proxy that strips it.
+  my $client = PAGI::Test::Client->new(app => $app, root_path => '/app');
+  my $links  = $client->get('/app/')->json;   # { css => '/app/static/css/app.css', prefix => '/app/static' }
+
+Leading slashes in C<path> are dropped, and each segment is
+percent-encoded; C<..> is not rewritten, so do not build C<path> from
+untrusted input. From a handler inside another mount, use the absolute
+name, C</static>. A route and a mount cannot share a name.
 
 =head2 Matched-Route Metadata
 

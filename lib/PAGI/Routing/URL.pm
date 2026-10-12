@@ -102,11 +102,13 @@ Names are logical addresses, not URL paths. Inside a Mount:
             route('/notes/{id}' => \&show_note,  name => 'note'),
             route('/notes'      => \&list_notes, name => 'notes'),
         ], name => 'api'),
+        mount('/static', app => $files, name => 'static'),
     ]);
 
     path_for($request, '/api/note', { id => 1 });   # /api/notes/1, from anywhere
     path_for($request, 'notes');                      # /api/notes, from a handler in api
     path_for($request, '../home');                    # /, from a handler in api
+    path_for($request, '/static', { path => 'app.css' });  # /static/app.css, from anywhere
 
 L<PAGI::Tools::Cookbook/"Linking inside a mounted app"> runs this example;
 L<PAGI::Routing/"REVERSE ROUTING AND INSPECTION"> has the full rules.

@@ -208,11 +208,8 @@ subtest 'mounted Router applications publish placement-specific reverse paths' =
         [0, 0, 0],
         'an arbitrary application is completely opaque to reverse inspection',
     );
-    like(
-        dies { $opaque_named->path_for('/legacy') },
-        qr/logical namespace|unknown route/,
-        'a Mount name is not an opaque target',
-    );
+    is($opaque_named->path_for('/legacy'), '/legacy',
+        'a named opaque Mount is a reverse target');
 };
 
 subtest 'Resolver metadata indexes every inspectable Router placement' => sub {
@@ -512,6 +509,8 @@ subtest 'Router path_for normalizes exact logical references without decoding' =
         'a child slash reference resolves from the Router root');
     is($routing->path_for('%2F'), '/encoded',
         'percent-encoded input remains one literal logical segment');
+    is($routing->path_for('group'), '/group',
+        'a named Mount resolves to its prefix');
 
     my @cases = (
         ['repeated slash', 'group//child', qr/contains an empty logical segment/],
@@ -523,7 +522,6 @@ subtest 'Router path_for normalizes exact logical references without decoding' =
         ['bare dot', '.', qr/resolves to a logical namespace, not a route/],
         ['bare dot-dot', '..', qr/traverses above the Router root/],
         ['normalized namespace', 'group/..', qr/resolves to a logical namespace, not a route/],
-        ['namespace only', 'group', qr/resolves to a logical namespace, not a route/],
         ['terminal dot on a leaf', 'show/.',
             qr/\Apath_for route reference 'show\/\.' resolves to a logical namespace, not a route/],
         ['terminal dot-dot on a leaf', 'show/child/..',
@@ -556,11 +554,12 @@ subtest 'route_named inspects normalized root references without throwing' => su
         refaddr($show),
         'interior navigation resolves from the Router root',
     );
+    isa_ok($routing->route_named('group'), ['PAGI::Routing::Mount'],
+        'a named Mount address returns its Mount');
 
     my $scalar = 'show';
     my @misses = (
         ['unknown address', 'missing'],
-        ['namespace only', 'group'],
         ['terminal dot', 'show/.'],
         ['terminal dot-dot', 'show/child/..'],
         ['repeated separator', 'group//child'],
@@ -582,53 +581,48 @@ subtest 'route_named inspects normalized root references without throwing' => su
     }
 };
 
-subtest 'an exact named leaf takes precedence over its namespace address' => sub {
-    my $api = route('/direct-api' => sub { }, name => 'api');
-    my $api_x = route('/x' => sub { }, name => 'x');
+subtest 'a route and a mount cannot share a name' => sub {
+    like(
+        dies {
+            router(routes => [
+                route('/direct-api' => sub { }, name => 'api'),
+                mount('/nested-api', routes => [
+                    route('/x' => sub { }, name => 'x'),
+                ], name      => 'api'),
+                mount('/group', routes => [
+                    route('/x' => sub { }, name => 'x'),
+                ], name      => 'group'),
+            ]);
+        },
+        qr/route '\/direct-api' and mount '\/nested-api' both claim the name '\/api'.*route\('\/'\)/,
+        'a route and a mount claiming one name croak at construction',
+    );
+
     my $routing = router(routes => [
-        $api,
-        mount('/nested-api', routes => [$api_x], name      => 'api'),
+        mount('/nested-api', routes => [
+            route('/' => sub { }, name => 'index'),
+            route('/x' => sub { }, name => 'x'),
+        ], name      => 'api'),
         mount('/group', routes => [
             route('/x' => sub { }, name => 'x'),
         ], name      => 'group'),
     ]);
 
-    is(
-        [sort keys %{$routing->named_routes}],
-        [qw(/api /api/x /group/x)],
-        'inspection publishes a leaf and descendants at the same address',
-    );
-    is(refaddr($routing->route_named('/api')), refaddr($api),
-        'route_named preserves the exact leaf identity at a namespace address');
-
-    my ($absolute, $relative, $descendant);
-    is(lives { $absolute = $routing->path_for('/api') }, T(),
-        'an absolute exact-leaf lookup does not fail as namespace-only');
-    is($absolute, '/direct-api',
-        'an absolute reference selects the exact leaf before the namespace');
-    is(lives { $relative = $routing->path_for('api') }, T(),
-        'a relative exact-leaf lookup does not fail as namespace-only');
-    is($relative, '/direct-api',
-        'a root-relative reference selects the exact leaf before the namespace');
-    is(lives { $descendant = $routing->path_for('/api/x') }, T(),
-        'a namespace descendant lookup remains available');
-    is($descendant, '/nested-api/x',
-        'a descendant below the shared namespace remains resolvable');
-
-    like(
-        dies { $routing->path_for('/group') },
-        qr/resolves to a logical namespace, not a route/,
-        'a namespace without an exact leaf still fails',
-    );
+    is($routing->path_for('/api'), '/nested-api', 'the Mount name gives its prefix');
+    is($routing->path_for('/api/index'), '/nested-api/',
+        'the landing route lives inside the Mount');
+    is($routing->path_for('/api/x'), '/nested-api/x', 'a descendant below the Mount');
+    is($routing->path_for('/group'), '/group',
+        'a Mount without a landing route is a target too');
     like(
         dies { $routing->path_for('api/.') },
         qr/resolves to a logical namespace, not a route/,
-        'terminal dot remains namespace-only even when normalization lands on a leaf',
+        'terminal dot still fails',
     );
     like(
         dies { $routing->path_for('api/child/..') },
         qr/resolves to a logical namespace, not a route/,
-        'terminal dot-dot remains namespace-only even when normalization lands on a leaf',
+        'terminal dot-dot still fails',
     );
 };
 
@@ -921,10 +915,13 @@ subtest 'composed Router graph exposes every Router application placement' => su
         [qw(
             /health
             /hidden
+            /person
+            /person/blog
             /person/blog/archive
             /person/blog/hidden
             /person/blog/index
             /person/blog/show
+            /person/settings
             /person/settings/notifications
             /person/show
         )],
@@ -994,8 +991,8 @@ subtest 'canonical collisions report both placement paths' => sub {
                 mount('/router', app => $child, name      => 'person'),
             ]);
         },
-        qr/duplicate canonical route address '\/person\/show'.*'\/inline\/one'.*'\/router\/two'/,
-        'inline and Router placements with one address report both effective paths',
+        qr/duplicate canonical route address '\/person'.*'\/inline'.*'\/router'/,
+        'two Mounts with one name report both effective paths',
     );
 };
 
@@ -1063,10 +1060,11 @@ subtest 'unnamed leaves publish no address while named source identity is defens
 
     is(
         [sort keys %{$routing->named_routes}],
-        ['/api/users'],
-        'only a declared local name publishes a canonical address',
+        ['/api', '/api/users'],
+        'a declared local name, on a leaf or a mount, publishes a canonical address',
     );
-    is($routing->route_named('/api'), undef, 'a namespace alone is not a route address');
+    isa_ok($routing->route_named('/api'), ['PAGI::Routing::Mount'],
+        'a named Mount address returns its Mount');
     is(
         refaddr($routing->route_named('/api/users')),
         refaddr($named_leaf),

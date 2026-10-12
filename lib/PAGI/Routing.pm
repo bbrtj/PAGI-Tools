@@ -794,6 +794,9 @@ at their boundary; existing internal slashes are not normalized.
 C<mount('/api')> accepts both C</api> and C</api/> at the mount boundary and
 does not redirect. This deliberately differs from Starlette's default trailing
 slash behavior.
+A page served at both C</admin> and C</admin/> resolves a relative link
+differently (C<href="users"> is C</users> from the first and
+C</admin/users> from the second); generate links with C<path_for>.
 
 =head1 MIDDLEWARE
 
@@ -837,11 +840,16 @@ C</person/show>. Logical addresses and URL paths are independent. An unnamed
 mount contributes no address segment. A Mount has exactly one base application:
 C<app> retains a declared application, while C<routes> constructs a child
 Router application. A name is optional for either form.
+A named Mount is itself an address: C<path_for('/static')> gives its prefix,
+and C<< path_for('/static', { path => 'app.css' }) >> a path below it, with
+prefix parameters and C<root_path> applied.
 
 The composed resolver visits direct routes and Router base applications. Named
-leaves must have unique absolute addresses. It croaks during Router
-construction when two leaves claim one address (naming both effective URL
-patterns), when a path parameter repeats along one effective ancestry, or when
+leaves and named Mounts must have unique absolute addresses. It croaks during
+Router construction when two of them claim one address (a route and a Mount
+included: put the landing route inside the Mount as C<route('/')>) (naming both
+effective URL patterns), when a path parameter repeats along one effective
+ancestry, or when
 a pathological Router subclass creates a cycle (naming its URL and logical
 mount ancestry). Sibling branches may reuse a parameter name or child Router.
 
@@ -855,8 +863,8 @@ References use exact filesystem-like normalization:
     blog/../show        normalized left to right
 
 Empty or repeated segments, trailing slashes, traversal above root, unknown
-exact addresses, and results ending at a namespace rather than a named leaf
-croak. Resolution never searches ancestors, retries an absolute spelling, or
+exact addresses, and results ending at the root or with a terminal C<.> or
+C<..> croak. Resolution never searches ancestors, retries an absolute spelling, or
 folds overlapping prefixes. References are not URI-decoded. A dot within one
 segment, such as C<v1.1>, stays literal.
 
@@ -932,7 +940,8 @@ The immutable tree is the public inspection surface:
     my $node   = $routing->route_named('/person/show');
 
 C<routes> contains only direct children in declaration order. C<named_routes>
-maps canonical absolute addresses to original leaves, and C<route_named>
+maps canonical absolute addresses to original leaves and named Mounts, and
+C<route_named>
 resolves from the Router root. Router base applications are traversed.
 Collection accessors return shallow copies. C<desc> is a human note with no
 matching or schema behavior.

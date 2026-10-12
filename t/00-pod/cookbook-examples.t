@@ -265,6 +265,18 @@ subtest 'Linking inside a mounted app recipe executes as published' => sub {
     );
 };
 
+
+subtest 'Linking to static files recipe executes as published' => sub {
+    my $recipe = code_block_containing($cookbook,
+        '=head2 Linking to static files', "{ path => 'css/app.css' }");
+    perl_script_runs(
+        'static file links',
+        $recipe
+            . "die 'css' unless \$links->{css} eq '/app/static/css/app.css';\n"
+            . "die 'prefix' unless \$links->{prefix} eq '/app/static';\n",
+    );
+};
+
 subtest 'Declaring what a route requires recipe executes as published' => sub {
     my $recipe = first_code_block($cookbook, '=head2 Declaring what a route requires');
     perl_script_runs(

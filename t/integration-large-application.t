@@ -230,12 +230,14 @@ subtest 'component routing publishes the canonical composed address map' => sub 
         [qw(
             /home
             /pagi
+            /person
+            /person/blog
             /person/blog/index
             /person/blog/show
             /person/index
             /person/show
         )],
-        'Root publishes exactly the six named leaves',
+        'Root publishes its six named leaves and two named mounts',
     );
 
     my ($home_source) = grep {

@@ -17,6 +17,9 @@
   - PAGI::Routing (route, websocket, sse, mount, router, path_for,
     url_for) and PAGI::Compose (application root with lifespan, error
     handling and a response guard).
+  - A named mount is a path_for/url_for target: its prefix, or a path below
+    it with path (path_for($request, 'static', { path => 'app.css' })). A
+    route and a mount cannot share a name.
   - Response classes: Text, HTML, JSON, Problem, Redirect, Empty, File,
     Stream and NDJSON, built by name with response('Name', ...) -- resolved
     like middleware(), '+' for a Response class from another distribution.

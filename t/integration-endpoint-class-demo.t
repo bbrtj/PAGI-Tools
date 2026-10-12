@@ -79,7 +79,7 @@ subtest 'ordinary assemblers expose immutable configured endpoint leaves' => sub
     is(scalar @$main_routes, 4, 'Main retains home, API, status, and static declarations');
     isa_ok($api_routing, 'PAGI::Routing::Router');
     is([sort keys %{$api_routing->named_routes}], [qw(
-        /events/stream /index /show /tools/status
+        /events /events/stream /index /show /tools /tools/status
     )], 'API subtree retains its complete local logical namespace');
 
     my ($home, $api_mount, $status_socket, $static) = @$main_routes;
@@ -87,7 +87,7 @@ subtest 'ordinary assemblers expose immutable configured endpoint leaves' => sub
     is(ref($home->endpoint), 'CODE', 'home uses an explicit binding closure');
     isa_ok($api_mount->app, 'PAGI::Routing::Router');
     is([sort keys %{$api_mount->app->named_routes}], [qw(
-        /events/stream /index /show /tools/status
+        /events /events/stream /index /show /tools /tools/status
     )], 'Main mounts the API object configured as one immutable Router');
     isa_ok($status_socket->endpoint, 'MyApp::StatusSocket');
     isa_ok($static->endpoint, 'PAGI::App::File');
@@ -128,8 +128,8 @@ subtest 'the nested class demo preserves HTTP, WebSocket, SSE, and lifespan beha
     ok(blessed($app) && $app->can('to_app'),
         'the real app file returns a to_app-capable object');
     is([sort keys %{$app->named_routes}], [qw(
-        /api/events/stream /api/index /api/show /api/tools/status
-        /home /status_socket
+        /api /api/events /api/events/stream /api/index /api/show
+        /api/tools /api/tools/status /home /status_socket
     )], 'nested local names form canonical absolute addresses');
 
     my ($resource, $metrics);
