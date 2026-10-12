@@ -1137,7 +1137,7 @@ Mount the same routes again at C</v2> under the name C<v2>, and
 C<path_for($request, 'notes')> gives C</v2/notes> there with no change to the
 handlers. The full rules -- C<./> and C<../>, absolute references, and which
 captures a relative reference inherits -- are in
-L<PAGI::Routing/"REVERSE ROUTING AND INSPECTION">.
+L<PAGI::Routing::URL/REFERENCES> and L<PAGI::Routing::URL/PLACEMENT AND ROOT PATH>.
 
 =head2 Linking to static files
 

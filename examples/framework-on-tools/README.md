@@ -89,8 +89,7 @@ curl -s localhost:5000/openapi.json | python3 -m json.tool
 
 ## See also
 
-- `PAGI::Routing`, "CONSTRUCTORS AND CODE POSITION" and "REVERSE ROUTING AND
-  INSPECTION"
+- `PAGI::Routing`, "HANDLERS" and "REVERSE ROUTING AND INSPECTION"
 - `PAGI::Middleware::RequestClass`, how the Request subclass reaches every
   handler
 - `PAGI::Middleware::ErrorHandler` and `PAGI::ErrorContext`
