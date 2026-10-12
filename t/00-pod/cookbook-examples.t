@@ -285,6 +285,16 @@ subtest 'Constraint Forms recipe shows the route its typed-text example names' =
         'and the typed-text paragraph that names it is kept';
 };
 
+subtest 'Matched-Route Metadata recipe executes as published' => sub {
+    my $recipe = first_code_block($cookbook, '=head2 Matched-Route Metadata');
+    perl_script_runs(
+        'matched-route metadata recipe',
+        $recipe
+            . "my \$want = join '|', '/ -> / (/home)', '/notes/7 -> /notes/{id} (/notes/show)', '/nowhere -> no route';\n"
+            . "die 'log: ' . join('|', \@log) unless join('|', \@log) eq \$want;\n",
+    );
+};
+
 subtest 'Declaring what a route requires recipe executes as published' => sub {
     my $recipe = first_code_block($cookbook, '=head2 Declaring what a route requires');
     perl_script_runs(

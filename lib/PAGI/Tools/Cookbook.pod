@@ -1004,74 +1004,54 @@ name, C</static>. A route and a mount cannot share a name.
 
 =head2 Matched-Route Metadata
 
-Each compiled router publishes a request-local, read-only convention before
-router middleware:
+Each compiled Router records the route it selected in the request scope,
+under C<pagi.routing>. Middleware in that Router's own list can read it
+after the request has been answered, for example to log which route
+served each request:
 
-  $scope->{'pagi.routing'} = {
-      version => 1,
-      frames  => [{
-          resolver          => $resolver,
-          root_path         => '/proxy', # optional additive v1 field
-          logical_namespace => '/',
-          captures          => {},       # private reverse-routing snapshot
-          mounts            => [],
-          match             => undef,
-      }],
+  use v5.40;
+  use Future::AsyncAwait;
+  use PAGI::Tools qw(compose middleware mount response route router);
+  use PAGI::Test::Client;
+
+  # Logs the route that answered, after the response, for every request this
+  # Router owns. It must sit in the Router's own middleware list: middleware
+  # outside the compiled Router never sees the routing metadata.
+  my @log;
+  my $log_route = sub ($app) {
+      return async sub ($scope, $receive, $send) {
+          await $app->($scope, $receive, $send);
+          my $match = $scope->{'pagi.routing'}{frames}[-1]{match};
+          push @log, $match
+              ? "$scope->{path} -> $match->{route} (" . ($match->{name} // 'unnamed') . ')'
+              : "$scope->{path} -> no route";
+      };
   };
 
-A matched structural or inspectable Router Mount appends this exact Mount
-record to the current frame before its Mount middleware runs:
+  my $routing = router(
+      routes => [
+          route('/' => sub ($request) { response('Text', 'home') }, name => 'home'),
+          mount('/notes', routes => [
+              route('/{id}' => sub ($request) { response('Text', 'a note') }, name => 'show'),
+          ], name => 'notes'),
+      ],
+      middleware => [middleware($log_route)],
+  );
 
-  {
-      path      => '/tenants/{tenant_id}', # declared mount path
-      name      => 'tenant',                # declared value or undef
-      desc      => 'Tenant routes',         # declared value or undef
-  }
+  my $app = compose(routes => [mount('/' => app => $routing)]);
 
-All keys are present; nested records are outer-to-inner. A selected leaf sets
-this exact C<match> before route middleware:
+  my $client = PAGI::Test::Client->new(app => $app);
+  $client->get($_) for '/', '/notes/7', '/nowhere';
+  # @log is now:
+  #   / -> / (/home)
+  #   /notes/7 -> /notes/{id} (/notes/show)
+  #   /nowhere -> no route
 
-  {
-      kind              => 'route', # or websocket / sse
-      route             => '/tenants/{tenant_id}/users/{user_id}',
-      name              => '/tenant/show', # absolute or undef
-      logical_namespace => '/tenant',
-      desc              => 'Display one tenant user', # declared or undef
-  }
-
-C<< Route->name >> is the declaration-local final segment, such as C<show>;
-matched C<name> is the composed absolute address. C<logical_namespace> remains
-available for unnamed leaves.
-
-An opaque application mount instead sets terminal C<match> with
-C<kind =E<gt> 'mount'>, its complete effective mount path in C<route>,
-C<name =E<gt> undef>, its containing C<logical_namespace>, and its declared
-C<desc> or undef. It does not append a C<mounts> record for itself. A
-Router-owned NONE/PARTIAL outcome leaves C<match> undefined. See
-L<PAGI::Routing/MATCHED-ROUTE SCOPE CONVENTION> for the complete
-public schema.
-
-Each matched Mount first appends its Mount record to the current frame. Entering
-an inspectable Router Mount then appends a distinct child boundary frame. That
-frame retains the root Resolver and root entry C<root_path> while copying the
-selected placement's namespace, captures, and cumulative Mount chain.
-
-An opaque Mount instead leaves its terminal Mount match in the parent frame. If
-its native target happens to be another separately compiled Router, that Router
-appends its own child frame to a compatible container, using its own Resolver
-and its own entry C<root_path>. Child middleware can inspect the new innermost
-frame while parent middleware retains the terminal Mount frame.
-
-Each active frame is shared only through request-local shallow scopes within
-its boundary: router/mount middleware can inspect the final match after awaiting
-downstream. Middleware outside the compiled app keeps its original top-level
-scope and does not see downstream top-level additions.
-
-Opaque, malformed, or newer C<pagi.routing> data forms an incompatible
-boundary. The child installs a fresh v1 container, ignores foreign ancestry,
-and leaves the incoming data untouched; it does not croak. Older/manual v1
-frames may omit C<root_path>, and request-bound reverse routing then falls back to
-the current request value.
+C<match> holds the complete route pattern, its absolute name, its
+namespace and its C<desc>; it is undefined when the Router answered 404
+or 405 itself. Treat the data as read-only. The complete schema, with
+mount records and nested frames, is
+L<PAGI::Routing/MATCHED-ROUTE SCOPE CONVENTION>.
 
 =head2 Lifespan Around Declarative Routing
 
