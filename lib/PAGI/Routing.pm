@@ -780,8 +780,8 @@ may omit it, in which case scope-bound reverse routing falls back to the current
 scope C<root_path>. C<logical_namespace> is the active containing namespace;
 C<captures> is a fresh, unaliased working snapshot used only for relative
 scope-bound reverse routing. A matched Router mount (C<routes>, or C<app>
-holding a Router) appends this record; an application mount does not, and
-records itself only as the terminal C<match>.
+holding a Router) appends this record to C<mounts>; an application mount does
+not, and records itself only as the terminal C<match>.
 
     {
         path      => '/tenants/{tenant_id}', # declared mount path
