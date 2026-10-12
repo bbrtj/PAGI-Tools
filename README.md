@@ -12,9 +12,7 @@ in-process testing without hiding that protocol boundary.
 For an ordinary HTTP application:
 
     use Future::AsyncAwait;
-    use PAGI::Compose qw(compose);
-    use PAGI::Response qw(response);
-    use PAGI::Routing qw(route);
+    use PAGI::Tools qw(compose response route);
 
     async sub home {
         my ($request) = @_;
@@ -50,6 +48,7 @@ a larger framework:
 - [PAGI::Auth](https://metacpan.org/pod/PAGI%3A%3AAuth) for authentication results, installed context, and challenge formatting
 - [PAGI::Middleware::Authentication](https://metacpan.org/pod/PAGI%3A%3AMiddleware%3A%3AAuthentication) for request-based application authentication backends
 - [PAGI::State](https://metacpan.org/pod/PAGI%3A%3AState), [PAGI::Stash](https://metacpan.org/pod/PAGI%3A%3AStash), [PAGI::Session](https://metacpan.org/pod/PAGI%3A%3ASession), [PAGI::CSRF](https://metacpan.org/pod/PAGI%3A%3ACSRF), and [PAGI::Transport](https://metacpan.org/pod/PAGI%3A%3ATransport)
+- [PAGI::FutureOwner](https://metacpan.org/pod/PAGI%3A%3AFutureOwner) for work an application starts and does not wait for
 - [PAGI::Test::Client](https://metacpan.org/pod/PAGI%3A%3ATest%3A%3AClient) and related in-process testing tools
 
 The toolkit stays below application conventions and dependency assembly.
@@ -66,9 +65,7 @@ An HTTP handler gets a [PAGI::Request](https://metacpan.org/pod/PAGI%3A%3AReques
 handler gets a [PAGI::WebSocket](https://metacpan.org/pod/PAGI%3A%3AWebSocket); an SSE handler gets a [PAGI::SSE](https://metacpan.org/pod/PAGI%3A%3ASSE):
 
     use Future::AsyncAwait;
-    use PAGI::Compose qw(compose);
-    use PAGI::Response qw(response);
-    use PAGI::Routing qw(route websocket);
+    use PAGI::Tools qw(compose response route websocket);
 
     async sub user {
         my ($request) = @_;
@@ -109,6 +106,64 @@ An unmatched path answers 404, and a matched path with the wrong method
 answers 405 with an `Allow` header. HEAD, disconnects and backpressure are
 handled for you.
 
+# IMPORTS
+
+`PAGI::Tools` exports the toolkit's everyday functions by name. Nothing is
+exported by default, and an unknown name dies at compile time:
+
+    use PAGI::Tools qw(compose response route path_for);
+    use PAGI::Tools qw(compose :routes);
+
+Each name is the function of the module listed here, re-exported as the same
+sub rather than wrapped, so it behaves exactly as when imported from that
+module. In particular `route`, `websocket`, `sse` and `mount` resolve a
+`{name:&Provider}` constraint provider in the package that called them: the
+package that imported them from `PAGI::Tools`.
+
+    Name                                          From
+    compose                                       PAGI::Compose
+    response                                      PAGI::Response
+    router route websocket sse mount
+      middleware request_response endpoint        PAGI::Routing
+    url path_for url_for                          PAGI::Routing::URL
+    error_context                                 PAGI::ErrorContext
+    app_state                                     PAGI::State
+    stash                                         PAGI::Stash
+    session                                       PAGI::Session
+    content_negotiation negotiated_type
+      respond_to                                  PAGI::ContentNegotiation
+    clone_scope wrap_send wrap_receive
+      wrap_response_headers                       PAGI::Utils::Middleware
+
+- `:routes` exports `router`, `route`, `websocket`, `sse` and
+`mount`, as [PAGI::Routing](https://metacpan.org/pod/PAGI%3A%3ARouting)'s `:routes` does.
+- `:urls` exports `url`, `path_for` and `url_for`.
+- `:all` exports every name above. Prefer naming what you use: a
+reader then sees where each function comes from.
+
+Loading `PAGI::Tools` loads those modules. Importing from each module
+directly still works, and each module documents its own exports. Not exported
+here: [PAGI::Pages](https://metacpan.org/pod/PAGI%3A%3APages)' factories (generic names such as `not_found`),
+[PAGI::Utils](https://metacpan.org/pod/PAGI%3A%3AUtils) (plumbing), [PAGI::Middleware::Builder](https://metacpan.org/pod/PAGI%3A%3AMiddleware%3A%3ABuilder) (its own DSL, whose
+default export `mount` collides with this `mount`; import Builder
+selectively, as ["IMPORTS" in PAGI::Routing](https://metacpan.org/pod/PAGI%3A%3ARouting#IMPORTS) shows), and the `PAGI::Exception::*`
+classes, which are classes, not functions. `use Future::AsyncAwait;` stays
+your own line: `PAGI::Tools` enables no pragmas.
+
+Route constraints read best in their explicit form, which shows where a type
+comes from:
+
+    use Types::Standard qw(Int);
+
+    route('/notes/{id}' => \&show, constraints => { id => Int });
+
+The compact form names a capitalised provider function in the calling
+package, here the same `Int`:
+
+    route('/notes/{id:&Int}' => \&show);
+
+See ["Inline constraint providers" in PAGI::Routing](https://metacpan.org/pod/PAGI%3A%3ARouting#Inline-constraint-providers).
+
 # HOW THE PIECES FIT
 
 [PAGI::Routing](https://metacpan.org/pod/PAGI%3A%3ARouting) is the one way to build routes. Five pieces, each with one
@@ -122,7 +177,8 @@ job:
 
 A [Router](https://metacpan.org/pod/PAGI%3A%3ARouting%3A%3ARouter) tries its children in order. When nothing
 matches it answers 404; when a path matches but not its method it answers 405
-with the `Allow` header, and it answers HEAD and OPTIONS for you.
+with the `Allow` header, and it answers HEAD for you; an Endpoint::HTTP class
+also answers OPTIONS.
 [Compose](https://metacpan.org/pod/PAGI%3A%3ACompose) builds the top Router from your routes and wraps it
 with application middleware, lifespan startup and shutdown, an error page for
 exceptions, HEAD handling, and a guard that finishes a response the
@@ -137,7 +193,7 @@ that owns a group of routes returns a Router instead, and the parent mounts
 it:
 
     package MyApp::People;
-    use PAGI::Routing qw(route router);
+    use PAGI::Tools qw(route router);
 
     sub routing {
         my ($self) = @_;
@@ -166,15 +222,24 @@ on the slot it is given to:
     Mount app                           an application       an application
                                         ($scope, $receive,   (via to_app)
                                         $send)
+    refuse (CSRF, TrustedHosts,         a handler taking     an application
+    HTTPSRedirect, ReverseProxy,        one Request          (via to_app)
+    RateLimit, ContentNegotiation,
+    WrapCGI, File, requires),
+    Maintenance response,
+    ErrorHandler handler
+    URLMap mounts and default,          an application       an application
+    Cascade, Builder's app
 
-So Mount always takes an application, and a Route takes a handler or an
-application object. Two small adapters cross between the slots:
+A slot that answers a request takes a handler; a slot that hosts an
+application takes an application. Objects mean the same everywhere. Two small adapters cross between the slots:
 
 - `as_app_object($app)` ([PAGI::Utils](https://metacpan.org/pod/PAGI%3A%3AUtils)) marks an existing
 three-argument application so it can sit in a Route or `http_default`.
 - `request_response($handler)` ([PAGI::Routing](https://metacpan.org/pod/PAGI%3A%3ARouting)) wraps a one-Request
 handler so it can be given to Mount. Its `request_factory` option builds a
-[PAGI::Request](https://metacpan.org/pod/PAGI%3A%3ARequest) subclass of your own for that handler.
+[PAGI::Request](https://metacpan.org/pod/PAGI%3A%3ARequest) subclass of your own for that handler. For one Request class
+across the application, use [PAGI::Middleware::RequestClass](https://metacpan.org/pod/PAGI%3A%3AMiddleware%3A%3ARequestClass).
 
 Methods: for an HTTP application object that implements `allowed_methods`,
 Route asks once, when it is built, and a `methods` option may only narrow
@@ -230,7 +295,7 @@ a request, such as access logging, works without a connection object.
 [PAGI::Tutorial](https://metacpan.org/pod/PAGI%3A%3ATutorial), [PAGI::Tools::Tutorial](https://metacpan.org/pod/PAGI%3A%3ATools%3A%3ATutorial), [PAGI::Tools::Cookbook](https://metacpan.org/pod/PAGI%3A%3ATools%3A%3ACookbook),
 [PAGI::Compose](https://metacpan.org/pod/PAGI%3A%3ACompose), [PAGI::Routing](https://metacpan.org/pod/PAGI%3A%3ARouting), [PAGI::Pages](https://metacpan.org/pod/PAGI%3A%3APages), [PAGI::Auth](https://metacpan.org/pod/PAGI%3A%3AAuth), [PAGI::Response](https://metacpan.org/pod/PAGI%3A%3AResponse),
 [PAGI::App::File](https://metacpan.org/pod/PAGI%3A%3AApp%3A%3AFile), [PAGI::Utils](https://metacpan.org/pod/PAGI%3A%3AUtils), [PAGI::Spec](https://metacpan.org/pod/PAGI%3A%3ASpec),
-[router frontend upgrade guide](https://github.com/jjn1056/PAGI-Tools/blob/main/UPGRADING.md),
+[router frontend upgrade guide](https://github.com/jjn1056/PAGI-Tools/blob/main/UPGRADING-REFERENCE.md),
 [PAGI::Server::Runner](https://metacpan.org/pod/PAGI%3A%3AServer%3A%3ARunner)
 
 # AUTHOR
