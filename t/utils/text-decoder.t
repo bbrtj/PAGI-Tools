@@ -140,4 +140,18 @@ subtest 'strip_bom drops one U+FEFF at the start' => sub {
     is $keep->decode("\xEF\xBB\xBFx"), "\x{FEFF}x", 'off by default: the BOM is text';
 };
 
+subtest 'plain UTF-16 and UTF-32 take the BOM themselves: strip_bom keeps a U+FEFF after it' => sub {
+    for my $case (
+        ['UTF-16', "\xFE\xFF\xFE\xFF\x00A"],
+        ['UTF-32', "\x00\x00\xFE\xFF\x00\x00\xFE\xFF\x00\x00\x00A"],
+    ) {
+        my ($name, $bytes) = @$case;
+        for my $strict (0, 1) {
+            my $d = PAGI::Utils::TextDecoder->new($name, strip_bom => 1, strict => $strict);
+            is $d->decode($bytes) . $d->finish, "\x{FEFF}A",
+                "$name, strict $strict: the BOM chose the byte order; the U+FEFF after it is text";
+        }
+    }
+};
+
 done_testing;

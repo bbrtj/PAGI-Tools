@@ -20,6 +20,10 @@ sub new {
     # Encode's 'utf8' is its lax variant; UTF-8 is decoded strictly however
     # it is spelt, as $request->text does.
     $encoding = find_encoding('UTF-8') if $encoding->name =~ /\Autf-?8/i;
+    # Plain UTF-16 and UTF-32 consume a leading BOM themselves to choose the
+    # byte order, so strip_bom has nothing left to drop: a U+FEFF after that
+    # mark is text.
+    $strip_bom = 0 if $encoding->name =~ /\AUTF-(?:16|32)\z/i;
     # Encode's UTF-16/32 decoder treats a chunk boundary inside a code unit,
     # or after the first half of a surrogate pair, as an error under FB_CROAK
     # (Unicode.xs checks it before STOP_AT_PARTIAL), so strict decoding never
@@ -163,7 +167,8 @@ garbled character does no harm.
 C<strip_bom> drops a single byte-order mark (U+FEFF) at the very start of
 the text. Off by default: in UTF-8, and in UTF-16LE/BE named as such, the
 mark is text. Plain C<UTF-16> and C<UTF-32> consume it to choose the byte
-order, with or without this option. Python calls this decoding
+order, so there the option does nothing: a U+FEFF after that mark is text
+and is kept. Python calls this decoding
 C<utf-8-sig>.
 
 Dies at once for an option other than C<strict> and C<strip_bom>, for an encoding Encode does
