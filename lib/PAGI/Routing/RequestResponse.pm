@@ -7,7 +7,6 @@ use Carp qw(croak);
 use Future;
 use Future::AsyncAwait;
 use Scalar::Util qw(blessed);
-use PAGI::Request;
 use PAGI::Request::_Factory ();
 use PAGI::Utils qw(invoke_app);
 
