@@ -305,10 +305,13 @@ rather than provide competing declaration styles:
   Compose                       root lifespan, middleware, and safety
 
 A small handler is usually a coderef. When HTTP verb dispatch or a connection
-lifecycle earns a class, place a configured L<PAGI::Endpoint::HTTP>,
-L<PAGI::Endpoint::WebSocket>, or L<PAGI::Endpoint::SSE> instance at that exact
-route. When an ordinary application class owns several paths, have a
-C<routing()> method return an immutable Router:
+lifecycle earns a class, write a L<PAGI::Endpoint::HTTP>,
+L<PAGI::Endpoint::WebSocket>, or L<PAGI::Endpoint::SSE> subclass and name it
+at its route with C<endpoint>:
+C<< route('/people/{id}' => endpoint('MyApp::Person', repo => $repo)) >>.
+C<endpoint> loads and builds the class (L<PAGI::Endpoint>). When an ordinary
+application class owns several paths, have a C<routing()> method return an
+immutable Router:
 
   package MyApp::People;
   use PAGI::Response qw(response);

@@ -5,7 +5,7 @@ use warnings;
 use Carp qw(croak);
 use Exporter 'import';
 
-our @EXPORT_OK = qw(router route websocket sse mount middleware request_response);
+our @EXPORT_OK = qw(router route websocket sse mount middleware request_response endpoint);
 our %EXPORT_TAGS = (
     routes     => [qw(router route websocket sse mount)],
     middleware => [qw(middleware)],
@@ -44,6 +44,11 @@ sub mount {
 sub middleware {
     require PAGI::Routing::Middleware;
     return PAGI::Routing::Middleware->new(@_);
+}
+
+sub endpoint {
+    require PAGI::Endpoint;
+    return PAGI::Endpoint->new(@_)->endpoint;
 }
 
 sub request_response {
@@ -160,6 +165,9 @@ Nothing is exported by default.
 =item * C<request_response> is an explicit opt-in export. It is not included
 in C<:routes> because it adapts a handler into an app object rather than
 constructing a route-tree node.
+
+=item * C<endpoint> is an explicit opt-in export in C<:all>, like
+C<request_response>.
 
 =item * C<:all> exports all public functions.
 
@@ -318,6 +326,7 @@ root.
     route('/path' => $handler, %options)
     route('/path' => as_app_object($native), %options)
     route('/path' => $application_object, %options)
+    route('/path' => endpoint('Class', %args), %options)
 
     websocket('/path' => $handler, %options)
     websocket('/path' => as_app_object($native), %options)
@@ -461,6 +470,20 @@ The distribution deliberately provides no C<get>, C<post>, C<delete>, or
 C<any> constructors. Common handler names would collide with C<get>/C<post>,
 and C<delete> is a Perl builtin. One C<route> form handles standard, extension,
 and application-defined methods uniformly.
+
+=head2 endpoint
+
+    endpoint($class, %args)
+
+    route('/notes' => endpoint('MyApp::Notes', page_size => 50))
+    websocket('/chat' => endpoint('MyApp::Chat', hub => $hub))
+    mount('/health', app => endpoint('MyApp::Health'))
+
+Loads the class by its exact package name and returns the app object for a
+route or mount; it is C<< PAGI::Endpoint->new($class, %args)->endpoint >>.
+The class decides how it is built: once with C<new>, or through its
+C<BUILD_APP>. There is no default namespace and no leading C<+>, unlike
+C<middleware>. See L<PAGI::Endpoint>.
 
 =head1 COMPILATION AND REQUEST LIFECYCLE
 

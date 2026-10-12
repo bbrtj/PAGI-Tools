@@ -123,7 +123,7 @@ PAGI::Endpoint::HTTP - Class-based HTTP endpoint handler
     package MyApp::UserAPI;
     use parent 'PAGI::Endpoint::HTTP';
     use Future::AsyncAwait;
-    use PAGI::Tools qw(response route);
+    use PAGI::Tools qw(endpoint response route);
 
     async sub get {
         my ($self, $request) = @_;
@@ -145,8 +145,8 @@ PAGI::Endpoint::HTTP - Class-based HTTP endpoint handler
         return response('Empty', status => 204);
     }
 
-    # Place one configured object at one exact Route.
-    route('/users/{id}' => MyApp::UserAPI->new(repo => $repo));
+    # Name the class; endpoint() loads and builds it.
+    route('/users/{id}' => endpoint('MyApp::UserAPI', repo => $repo));
 
 =head1 DESCRIPTION
 
@@ -161,9 +161,9 @@ complete, sorted C<allowed_methods> result. Explicit method handlers and an
 explicit C<options> method remain authoritative custom-response seams.
 Automatic OPTIONS retains its existing empty response with C<Allow>.
 
-An instantiated Endpoint object can be placed directly at a Route. With no
-explicit Route C<methods>, the Router snapshots C<allowed_methods> once at
-Route construction, including GET-derived HEAD and OPTIONS. The Router then
+An Endpoint is placed at a Route with C<endpoint> (or as an instance placed
+directly). With no explicit Route C<methods>, the Router snapshots
+C<allowed_methods> once at Route construction, including GET-derived HEAD and OPTIONS. The Router then
 owns unsupported-method 405 and the authoritative C<Allow> union; a matched
 OPTIONS reaches this Endpoint. Mounted, standalone, or deliberately broader
 Route placement retains the Endpoint's own method outcomes.

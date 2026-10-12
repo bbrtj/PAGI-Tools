@@ -298,6 +298,9 @@ my $person_route = route('/people/{id}' => MyApp::Person->new(repo => $repo),
 );
 ```
 
+In 0.003000 the taught spelling names the class:
+`endpoint('MyApp::Person', repo => $repo)`; see PAGI::Endpoint.
+
 Simple behavior stays a closure. Endpoint classes are best when HTTP verb
 dispatch, WebSocket/SSE connection lifecycle, or a long-lived configured
 dependency earns the class. They own one exact leaf, never a subtree.
@@ -316,6 +319,9 @@ on an instance retains that same object. No receiver is reconstructed for each
 connection. The configured WebSocket and SSE instance may serve concurrent
 connections, so store configuration and long-lived services on it and keep
 connection-local state on each `PAGI::WebSocket` or `PAGI::SSE` object.
+
+In 0.003000 the taught spelling names the class:
+`endpoint('MyApp::Chat', hub => $hub)`; see PAGI::Endpoint.
 
 ### HTTP endpoint method capability
 

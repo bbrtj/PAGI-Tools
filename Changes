@@ -91,6 +91,9 @@
     request_response's request_factory still wins for its one handler.
   - examples/request-class: an application's Request class set once by
     middleware.
+  - PAGI::Endpoint and endpoint() (PAGI::Routing, PAGI::Tools):
+    route('/x' => endpoint('Class', %args)) loads the class and builds it
+    once with new, or with its BUILD_APP.
   - Endpoint::HTTP answers QUERY with a query method. A query helper method
     on an existing subclass now answers QUERY too.
   - PAGI::Test::Client has a query method for the QUERY verb.

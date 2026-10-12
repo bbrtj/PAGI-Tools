@@ -130,8 +130,11 @@ application left incomplete.
 
 [PAGI::Endpoint::HTTP](https://metacpan.org/pod/PAGI%3A%3AEndpoint%3A%3AHTTP), [PAGI::Endpoint::WebSocket](https://metacpan.org/pod/PAGI%3A%3AEndpoint%3A%3AWebSocket) and
 [PAGI::Endpoint::SSE](https://metacpan.org/pod/PAGI%3A%3AEndpoint%3A%3ASSE) are for when one route's behavior is big enough to
-want a class; they do not build routes. A class that owns a group of routes
-returns a Router instead, and the parent mounts it:
+want a class; they do not build routes. Name the class at its route with
+`endpoint`, which loads and builds it:
+`route('/notes' => endpoint('MyApp::Notes', page_size => 50))`. A class
+that owns a group of routes returns a Router instead, and the parent mounts
+it:
 
     package MyApp::People;
     use PAGI::Routing qw(route router);

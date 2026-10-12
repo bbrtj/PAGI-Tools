@@ -22,7 +22,7 @@ our $VERSION = '0.003000';
 my @SOURCES = (
     'PAGI::Compose'           => [qw(compose)],
     'PAGI::Response'          => [qw(response)],
-    'PAGI::Routing'           => [qw(router route websocket sse mount middleware request_response)],
+    'PAGI::Routing'           => [qw(router route websocket sse mount middleware request_response endpoint)],
     'PAGI::Routing::URL'      => [qw(url path_for url_for)],
     'PAGI::ErrorContext'      => [qw(error_context)],
     'PAGI::State'             => [qw(app_state)],
@@ -193,7 +193,7 @@ package that imported them from C<PAGI::Tools>.
     compose                                       PAGI::Compose
     response                                      PAGI::Response
     router route websocket sse mount
-      middleware request_response                 PAGI::Routing
+      middleware request_response endpoint        PAGI::Routing
     url path_for url_for                          PAGI::Routing::URL
     error_context                                 PAGI::ErrorContext
     app_state                                     PAGI::State
@@ -260,8 +260,11 @@ application left incomplete.
 
 L<PAGI::Endpoint::HTTP>, L<PAGI::Endpoint::WebSocket> and
 L<PAGI::Endpoint::SSE> are for when one route's behavior is big enough to
-want a class; they do not build routes. A class that owns a group of routes
-returns a Router instead, and the parent mounts it:
+want a class; they do not build routes. Name the class at its route with
+C<endpoint>, which loads and builds it:
+C<< route('/notes' => endpoint('MyApp::Notes', page_size => 50)) >>. A class
+that owns a group of routes returns a Router instead, and the parent mounts
+it:
 
     package MyApp::People;
     use PAGI::Tools qw(route router);

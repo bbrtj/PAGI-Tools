@@ -171,7 +171,7 @@ use PAGI::Utils qw(as_app_object);
 }
 
 subtest 'exports are opt-in and tag-specific' => sub {
-    for my $name (qw(router route websocket sse mount middleware request_response)) {
+    for my $name (qw(router route websocket sse mount middleware request_response endpoint)) {
         ok(!NoImports->can($name), "no default $name export");
         ok(AllImports->can($name), "all exports $name");
     }
@@ -181,6 +181,7 @@ subtest 'exports are opt-in and tag-specific' => sub {
     ok(!RouteImports->can('middleware'), 'routes tag excludes middleware');
     ok(!RouteImports->can('request_response'),
         'routes tag excludes the request adapter');
+    ok(!RouteImports->can('endpoint'), 'routes tag excludes endpoint');
     ok(MiddlewareImports->can('middleware'), 'middleware tag exports middleware');
     ok(!MiddlewareImports->can('route'), 'middleware tag excludes route');
     ok(!PAGI::Routing->can('request_app'),
