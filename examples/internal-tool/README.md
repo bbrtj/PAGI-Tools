@@ -37,16 +37,18 @@ installed; it is not a dependency of PAGI-Tools.
   calls `csrf($request)->verify` on the parsed field. A missing token is a
   403.
 - **Static files.** `mount('/static', app =>
-  PAGI::App::File->from_app_path('public'))`. No route names a mount, so
-  the stylesheet link is built from `root_path` by hand.
+  PAGI::App::File->from_app_path('public'), name => 'static')`. The mount is
+  named `static`, so the layout links the stylesheet with
+  `url('static', { path = 'style.css' })`, which keeps a proxy prefix.
 - **State at startup.** The board lives in lifespan state and is read with
   `app_state($request)`.
 
 Measured with the gut-check line counter (code lines, imports in
-parentheses): PAGI-Tools 83 (9), Flask 51 (2). The templates are 47 and 44
-lines. The difference is the batteries: Flask's `render_template`,
-`flash`/`get_flashed_messages` and `url_for('static', ...)` are the `page`,
-`flash` and `static` helpers here, and Flask's module-level `BOARD` is
+parentheses): PAGI-Tools 82 (9), Flask 51 (2). The templates are 47 and 44
+lines. The difference is the batteries: Flask's `render_template` and
+`flash`/`get_flashed_messages` are the `page` and `flash` helpers here,
+`url_for('static', ...)` is the template's `url('static', ...)`, and Flask's
+module-level `BOARD` is
 Compose's `lifespan` block.
 
 ## Try

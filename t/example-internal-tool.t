@@ -67,4 +67,13 @@ is($client->post('/tasks/9/delete', form => { csrf_token => $token })->status, 4
 is($client->post('/tasks/1/delete', form => { csrf_token => $token })->status, 303, 'deleting redirects');
 like($client->get('/')->text, qr/Deleted\..*Nothing to do\./s, 'and the board is empty again');
 
+# Served under the root path /app, the stylesheet link keeps the prefix.
+my $prefixed = PAGI::Test::Client->new(app => $app, lifespan => 1, root_path => '/app');
+$prefixed->start;
+my ($stylesheet) = $prefixed->get('/app/')->text =~ m{<link rel="stylesheet" href="([^"]*)">};
+is($stylesheet, '/app/static/style.css', 'under a root path the stylesheet link keeps the prefix');
+is($prefixed->get($stylesheet)->status, 200, 'and resolves');
+$prefixed->stop;
+
+
 done_testing;

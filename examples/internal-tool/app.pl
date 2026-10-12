@@ -35,9 +35,6 @@ sub page ($request, $template, %vars) {
         csrf_token => csrf($request)->token,
         flash      => $flash,
         url        => sub ($name, @args) { path_for($request, $name, @args) },
-        # No route names the static mount, so its prefix is built by hand
-        # from root_path, which keeps it right under a proxy prefix.
-        static     => $request->scope->{root_path} . '/static',
     }, \my $html) or die $tt->error;
     return response('HTML', $html, status => $vars{status} // 200);
 }
@@ -111,7 +108,7 @@ compose(
         route('/tasks' => \&create, methods => ['POST'], name => 'create'),
         route('/tasks/{id}/toggle' => \&toggle, methods => ['POST'], name => 'toggle'),
         route('/tasks/{id}/delete' => \&remove, methods => ['POST'], name => 'delete'),
-        mount('/static', app => PAGI::App::File->from_app_path('public')),
+        mount('/static', app => PAGI::App::File->from_app_path('public'), name => 'static'),
     ],
     middleware => [
         middleware('Session'),
