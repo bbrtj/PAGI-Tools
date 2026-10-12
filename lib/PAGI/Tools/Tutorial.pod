@@ -707,7 +707,7 @@ An authenticated identity without permission can return a 403 Pages application:
       unless $identity->may('write');
 
 Both values are reusable Pages applications. See
-L<PAGI::Tools::Cookbook/Authentication & Sessions> for Basic, Bearer,
+L<PAGI::Tools::Cookbook/AUTHENTICATION & SESSIONS> for Basic, Bearer,
 multi-challenge, WebSocket, SSE, native-app, custom presentation, concealment,
 and explicit login redirect recipes. The cookie-login example is application
 policy; it is not an alternate Auth renderer.
