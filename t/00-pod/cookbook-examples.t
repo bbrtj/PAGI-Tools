@@ -287,10 +287,14 @@ subtest 'Constraint Forms recipe shows the route its typed-text example names' =
 
 subtest 'Matched-Route Metadata recipe executes as published' => sub {
     my $recipe = first_code_block($cookbook, '=head2 Matched-Route Metadata');
+    # The recipe's closing comment says what @log holds; the run must match it.
+    my ($published) = $recipe =~ /^# \@log is now:\n((?:#   .*\n)+)/m;
+    ok($published, 'the recipe says what @log holds');
+    my @want = map { s/\A#   //r } split /\n/, $published // '';
     perl_script_runs(
         'matched-route metadata recipe',
         $recipe
-            . "my \$want = join '|', '/ -> / (/home)', '/notes/7 -> /notes/{id} (/notes/show)', '/nowhere -> no route';\n"
+            . 'my $want = join "|", ' . join(', ', map { "q{$_}" } @want) . ";\n"
             . "die 'log: ' . join('|', \@log) unless join('|', \@log) eq \$want;\n",
     );
 };
