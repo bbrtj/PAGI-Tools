@@ -888,9 +888,10 @@ middleware('CSRF',
 ```
 
 The middleware now reads a form body (urlencoded or multipart) whenever an
-unsafe request sends no `X-CSRF-Token` header. The handler's `form_params`,
-`uploads` and `body` return that parse, but `body_stream` and
-`multipart_stream` on such a request die "Body already consumed". A route
+unsafe request sends no `X-CSRF-Token` header. The handler's `form_params`
+and `uploads` return that parse, as `body` does for a urlencoded form, but
+`body_stream` and `multipart_stream` on such a request die "Body already
+consumed". A route
 that streams a form upload gets its own `middleware('CSRF', form_field =>
 undef, refuse => 0)` and checks the token it streams with
 `csrf($request)->verify`, and it must sit outside every CSRF that reads the

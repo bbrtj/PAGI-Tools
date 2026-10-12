@@ -69,9 +69,9 @@ body is then never read. Without one, the middleware reads the field from
 an C<application/x-www-form-urlencoded> or C<multipart/form-data> body; it
 never reads any other body, JSON included. An empty header or field counts
 as not sent. The form is read through L<PAGI::Request> and stays cached in
-the scope, so the application's C<form_params>, C<uploads> and C<body>
-return it, while C<body_stream> and C<multipart_stream> die "Body already
-consumed" (see L</Streamed uploads>).
+the scope, so the application's C<form_params> and C<uploads> return
+it, as C<body> does for a urlencoded form, while C<body_stream> and
+C<multipart_stream> die "Body already consumed" (see L</Streamed uploads>).
 
 Every unsafe request first passes an origin check, modelled on Go's
 C<CrossOriginProtection>: a C<Sec-Fetch-Site> header must be C<same-origin>
