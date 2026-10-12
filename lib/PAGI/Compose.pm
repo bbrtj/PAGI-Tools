@@ -104,10 +104,6 @@ __END__
 
 PAGI::Compose - Immutable application-root composition
 
-Route matches a complete URL leaf. Mount composes an application under a
-prefix. Router selects and owns routing outcomes. Middleware wraps behavior.
-Compose owns the application root and lifespan.
-
 =head1 SYNOPSIS
 
     use PAGI::Compose qw(compose);
@@ -200,18 +196,7 @@ conversion is involved.
 An arbitrary native application has no direct Compose form in this release;
 deploy it directly or use a separately designed application boundary.
 
-Callable meaning is positional and deliberate:
-
-  Position                            Meaning
-  ----------------------------------  --------------------------------
-  HTTP Route endpoint / http_default CODE  one Request handler
-  HTTP Route endpoint / http_default object app object via to_app
-  WebSocket Route endpoint CODE             one WebSocket handler
-  WebSocket Route endpoint object           app object via to_app
-  SSE Route endpoint CODE                   one SSE handler
-  SSE Route endpoint object                 app object via to_app
-  Mount app CODE                       native PAGI application
-  Mount app object                     app object via to_app
+Callable meaning is positional; L<PAGI::Routing/HANDLERS> has the one table.
 
 Middleware descriptions are a separate construction-time contract: Compose
 constructs configured class targets, invokes factory targets with the inner
@@ -243,26 +228,10 @@ Router first:
     )
 
 Put a source-free Pages application directly in C<http_default> for the usual
-custom 404. When the result depends on the request, pass a bare one-Request
-handler instead:
-
-    use PAGI::Response qw(response);
-
-    compose(
-        routes => \@nodes,
-        http_default => sub ($request) {
-            return response('Problem', {
-                title  => 'Not Found',
-                status => 404,
-                detail => 'No route matched ' . $request->path,
-            });
-        },
-    )
-
-An advanced native C<http_default> CODE must be marked with
-C<as_app_object>. C<request_response> remains appropriate for adapting a
-one-Request handler into Mount C<app>, but not for ordinary C<http_default>
-use.
+custom 404, or a bare one-Request handler when the result depends on the
+request; an advanced native default is marked with C<as_app_object>.
+L<PAGI::Tools::Cookbook/"HTTP Defaults: Pages, Request Handlers, and Native Applications">
+shows each.
 
 Compose C<middleware> is the outer application-wide boundary. When a reusable
 Router already owns middleware, C<http_default>, C<desc>, identity, or a
