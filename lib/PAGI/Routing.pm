@@ -552,12 +552,12 @@ C<path> parameter.
 
 The composed resolver visits direct routes and Router base applications. Named
 leaves and named Mounts must have unique absolute addresses. It croaks during
-Router construction when two of them claim one address (a route and a Mount
-included: put the landing route inside the Mount as C<route('/')>) (naming both
-effective URL patterns), when a path parameter repeats along one effective
-ancestry, or when
-a pathological Router subclass creates a cycle (naming its URL and logical
-mount ancestry). Sibling branches may reuse a parameter name or child Router.
+Router construction when two of them claim one address, naming both effective
+URL patterns (a route and a Mount included: put the landing route inside the
+Mount as C<route('/')>); when a path parameter repeats along one effective
+ancestry; or when a pathological Router subclass creates a cycle, naming its
+URL and logical mount ancestry. Sibling branches may reuse a parameter name or
+child Router.
 
 Inside a handler, import C<path_for> and C<url_for> from
 L<PAGI::Routing::URL> and pass the Request, WebSocket, SSE, or scope:
