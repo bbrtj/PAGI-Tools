@@ -110,8 +110,9 @@ Names are logical addresses, not URL paths. Inside a Mount:
     path_for($request, '../home');                    # /, from a handler in api
     path_for($request, '/static', { path => 'app.css' });  # /static/app.css, from anywhere
 
-L<PAGI::Tools::Cookbook/"Linking inside a mounted app"> runs this example;
-L<PAGI::Routing/"REVERSE ROUTING AND INSPECTION"> has the full rules.
+L<PAGI::Tools::Cookbook/"Linking inside a mounted app"> runs this example
+and L<PAGI::Tools::Cookbook/"Linking to static files"> its C</static> line;
+L</REFERENCES> and L</PLACEMENT AND ROOT PATH> have the full rules.
 
 =cut
 
@@ -209,6 +210,96 @@ sub _routing_frame {
 }
 
 1;
+
+=head1 REFERENCES
+
+References use exact filesystem-like normalization:
+
+    /person/blog/show   absolute from this resolver root
+    show                relative to the current containing namespace
+    blog/show           child of that namespace
+    ./show              same namespace
+    ../show             parent namespace
+    blog/../show        normalized left to right
+
+Empty or repeated segments, trailing slashes, traversal above root, unknown
+exact addresses, and results ending at the root or with a terminal C<.> or
+C<..> croak. Resolution never searches ancestors, retries an absolute spelling, or
+folds overlapping prefixes. References are not URI-decoded. A dot within one
+segment, such as C<v1.1>, stays literal.
+
+For a named leaf, the current containing namespace is its absolute address
+without the final local name. An unnamed leaf, including a catch-all, uses the
+namespace contributed by its enclosing known Mounts. A Router-owned NONE
+outcome uses the owning Router placement and captures only prefixes actually
+consumed; it does not borrow an arbitrary partial leaf.
+
+=head1 ARGUMENTS
+
+All reverse helpers accept compact and named argument forms:
+
+    $routing->path_for('/person/show', { person_id => 42 });
+    path_for($request, 'show', { person_id => 42 }, { tab => 'profile' });
+    url_for($request, 'show', {}, {}, 'details');
+    url_for($request, 'show',
+        query    => { tab => 'profile' },
+        fragment => 'details',
+    );
+
+Compact order is C<(\%params, \%query, $fragment)>; empty hashrefs are
+placeholders when a component is skipped. In the named form C<params>,
+C<query>, and C<fragment> are optional and order-independent. A first trailing
+hashref selects compact form; a first trailing defined plain scalar selects
+named form. The forms cannot be mixed. Params and query must be hashrefs, and
+a fragment is a plain scalar or undef. C<undef> omits a fragment and an empty
+string emits a terminal C<#>. Query keys are sorted and all query and
+fragment components are UTF-8 percent-encoded. Output order is path, query,
+then fragment.
+
+=head1 PLACEMENT AND ROOT PATH
+
+Both functions accept a Request, WebSocket, SSE, or raw scope.
+Router C<path_for> starts at that Router's local root, inherits no request
+captures, and cannot know an external placement. A scope-bound URL helper uses
+the active request placement and adds the compiled-router entry C<root_path>
+exactly once. A relative reference inherits only captured keys needed by the
+target; explicit params override them. Absolute references inherit nothing.
+Query and fragment values never inherit.
+
+The same immutable child Router may be mounted at several paths and names. It
+stores no parent placement. A scope-bound URL helper follows the active
+request-local placement; calling the child Router's own C<path_for> still
+returns its local path. Each placement and each C<to_app> call receives a fresh
+compiled middleware graph.
+
+Scope C<root_path> is decoded Unicode. Scope-bound reverse routing
+percent-encodes it component-wise while preserving slashes, then joins it to
+the resolver's already escaped path without double-encoding route or query
+values.
+
+=head1 AUTHORITY AND PROXIES
+
+C<url_for> selects HTTP(S) or WS(S) from the route kind and uses
+L<PAGI::Authority> for a validated Host or server fallback. Duplicate or
+malformed Host fields never fall back. Routing does not parse Forwarded or
+X-Forwarded headers. Reverse helpers return strings or croak. They perform no
+receive/send calls, emit no protocol events, do not redirect, and do not mutate
+a response.
+
+For HTTP behind a trusted proxy, use this outer-to-inner order:
+
+    ReverseProxy -> TrustedHosts -> PAGI::Routing
+
+The shipped ReverseProxy and TrustedHosts middleware are currently HTTP-only
+and pass WebSocket/SSE scopes through. Those protocols must arrive with
+already normalized and validated scheme/authority data. Cross-protocol support
+is planned separately; routing does not supply it.
+
+=head1 CAPTURES ARE NOT PERMISSION
+
+Inheritance constructs a URL; it does not authorize the target. A captured
+tenant, account, or user identifier says nothing about whether the current
+principal may access it. Handlers must authorize normally.
 
 =head1 OWNERSHIP
 
