@@ -55,6 +55,7 @@ sub post    { shift->_request('POST', @_) }
 sub put     { shift->_request('PUT', @_) }
 sub patch   { shift->_request('PATCH', @_) }
 sub options { shift->_request('OPTIONS', @_) }
+sub query   { shift->_request('QUERY', @_) }
 
 # Cookie management
 sub cookies {
@@ -1236,6 +1237,14 @@ C<PAGI request did not complete within 5 seconds>.
 =head2 options
 
     my $res = $client->options($path, %options);
+
+=head2 query
+
+    my $res = $client->query($path, json => { where => 'title' });
+
+Sends the QUERY method (a safe, idempotent request that carries a body, as
+L<PAGI::Endpoint::HTTP> answers with a C<query> method). It takes the same
+options as the others: its body is given as for C<post>.
 
 =head3 Request Options
 

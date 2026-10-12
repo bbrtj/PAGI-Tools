@@ -91,6 +91,7 @@
     request_response's request_factory still wins for its one handler.
   - examples/request-class: an application's Request class set once by
     middleware.
+  - PAGI::Test::Client has a query method for the QUERY verb.
 
   [Changed]
   - Request is_json is true for every +json media type
