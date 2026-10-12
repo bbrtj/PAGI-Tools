@@ -29,6 +29,7 @@ my @load_modules = qw(
     PAGI::Middleware
     PAGI::Middleware::Authentication
     PAGI::Middleware::Builder
+    PAGI::Middleware::RequestClass
     PAGI::App::File
     PAGI::App::File::Result
     PAGI::App::WrapPSGI

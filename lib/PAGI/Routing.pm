@@ -243,10 +243,10 @@ names and unblessed references are invalid.
 
 =item * C<< request_response($handler) >> remains the explicit adapter for
 placing a one-Request handler in Mount C<app>. Its optional
-C<< request_factory => $coderef >> constructs a C<PAGI::Request> subclass for
-projects that publish custom Route helpers. Ordinary C<http_default> use does
-not need the adapter: a bare CODE there already receives one Request. It never
-infers coderef arity.
+C<< request_factory => $coderef >> gives that one handler a Request subclass;
+for the whole application, use L<PAGI::Middleware::RequestClass>. Ordinary
+C<http_default> use does not need the adapter: a bare CODE there already
+receives one Request. It never infers coderef arity.
 
 =item * C<< websocket('/x' =E<gt> $code) >> and
 C<< sse('/x' =E<gt> $code) >> receive one direct L<PAGI::WebSocket> or

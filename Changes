@@ -83,6 +83,12 @@
   - examples/gut-check: everyday applications next to their Starlette
     versions, with measured behaviour and line counts, tested in
     t/example-gut-check.t.
+  - PAGI::Middleware::RequestClass: middleware('RequestClass', class =>
+    'MyApp::Request') gives every handler below it (routes, Endpoint::HTTP
+    methods, refuse, deny and decline handlers, an ErrorHandler handler
+    listed after it, Authentication backends) that Request class instead
+    of PAGI::Request, through the scope key pagi.request.factory;
+    request_response's request_factory still wins for its one handler.
 
   [Changed]
   - Request is_json is true for every +json media type

@@ -312,7 +312,8 @@ three-argument application so it can sit in a Route or C<http_default>.
 
 =item * C<request_response($handler)> (L<PAGI::Routing>) wraps a one-Request
 handler so it can be given to Mount. Its C<request_factory> option builds a
-L<PAGI::Request> subclass of your own for that handler.
+L<PAGI::Request> subclass of your own for that handler. For one Request class
+across the application, use L<PAGI::Middleware::RequestClass>.
 
 =back
 

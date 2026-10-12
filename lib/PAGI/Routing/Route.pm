@@ -241,7 +241,8 @@ one-argument protocol handler or an app object. An B<app object> is an
 instantiated object with a C<to_app> method. Its C<name>, when supplied,
 is one local logical address segment: it is nonempty, contains no slash, and
 is not C<.> or C<..>; dots are literal characters. A CODE endpoint is a
-coderef handler: HTTP receives one L<PAGI::Request>, WebSocket receives one
+coderef handler: HTTP receives one L<PAGI::Request>, or the class
+L<PAGI::Middleware::RequestClass> set, WebSocket receives one
 L<PAGI::WebSocket>, and SSE receives one L<PAGI::SSE>. An app object is a
 native application endpoint, compiled once through
 L<PAGI::Utils/to_app>. Wrap a native coderef with L<PAGI::Utils/as_app_object>.
