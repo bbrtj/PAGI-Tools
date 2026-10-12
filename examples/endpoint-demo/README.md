@@ -91,19 +91,20 @@ return await invoke_app($response, $scope, $receive, $send);
 Successful endpoint payloads remain application-owned JSON. `PAGI::Pages`
 handles only the generic HTTP failure.
 
-The three endpoint objects are direct Compose route leaves. Their middleware is
-wrapped explicitly with `middleware`, and the static-file route comes last
-because the shared routing engine preserves written order:
+The three endpoint classes are named at their routes with `endpoint`, which
+builds each once. Their middleware is wrapped explicitly with `middleware`,
+and the static-file route comes last because the shared routing engine
+preserves written order:
 
 ```perl
-use PAGI::Routing qw(middleware route sse websocket);
+use PAGI::Routing qw(endpoint middleware route sse websocket);
 
 compose(routes => [
-    route('/api/messages' => MessageAPI->new,
+    route('/api/messages' => endpoint('MessageAPI'),
         middleware => [middleware($access_log), middleware($require_json)]),
-    websocket('/ws/echo' => EchoWS->new,
+    websocket('/ws/echo' => endpoint('EchoWS'),
         middleware => [middleware($timing)]),
-    sse('/events' => MessageEvents->new,
+    sse('/events' => endpoint('MessageEvents'),
         middleware => [middleware($timing)]),
     route('/*path' => PAGI::App::File->from_app_path('public')),
 ]);
@@ -115,7 +116,7 @@ catch-all `route` rather than `mount('/')`: a Route is HTTP-only, so a
 WebSocket or SSE request to an unknown path gets the Router's refusal instead
 of reaching the file application, which serves HTTP only.
 
-`route`, `websocket`, and `sse` retain each configured endpoint object for the
+`endpoint` builds each class once, and that object serves the route for the
 compiled application's lifetime. The same object may serve concurrent work,
 so shared configuration stays on the endpoint while request and connection
 state stays on the protocol object. The HTTP Route snapshots
