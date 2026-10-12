@@ -32,6 +32,19 @@ package ScopeValidationEndpoint {
     }
 }
 
+package ClassReportingEndpoint {
+    use parent 'PAGI::Endpoint::HTTP';
+
+    sub get {
+        my ($self, $request) = @_;
+        return PAGI::Response::Text->new(ref $request);
+    }
+}
+
+package Local::AppRequest {
+    use parent 'PAGI::Request';
+}
+
 subtest 'to_app returns PAGI-compatible coderef' => sub {
     my $app = HelloEndpoint->to_app;
 
@@ -85,6 +98,24 @@ subtest 'invalid scopes fail before a handler runs' => sub {
         is($receive_calls, 0, "$type does not receive");
         is($send_calls, 0, "$type does not send");
     }
+};
+
+subtest 'a method receives the class the scope key builds' => sub {
+    my $app = ClassReportingEndpoint->to_app;
+    my $class_for = sub {
+        my (%extra) = @_;
+        my @sent;
+        $app->(
+            { type => 'http', method => 'GET', path => '/', headers => [], %extra },
+            sub { Future->done({ type => 'http.request' }) },
+            sub { push @sent, $_[0]; Future->done },
+        )->get;
+        return $sent[1]{body};
+    };
+
+    is($class_for->(), 'PAGI::Request', 'no key: PAGI::Request');
+    is($class_for->('pagi.request.factory' => sub { Local::AppRequest->new(@_) }),
+        'Local::AppRequest', 'a key: its class');
 };
 
 done_testing;

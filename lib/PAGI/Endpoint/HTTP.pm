@@ -7,7 +7,7 @@ use Future;
 use Future::AsyncAwait;
 use Carp qw(croak);
 use Scalar::Util qw(blessed);
-use PAGI::Request;
+use PAGI::Request::_Factory ();
 use PAGI::Response::Empty ();
 use PAGI::Response::Text ();
 use PAGI::Utils qw(invoke_app);
@@ -104,7 +104,7 @@ sub to_app {
             unless defined($type) && !ref($type) && length($type);
         croak "PAGI::Endpoint::HTTP requires HTTP scope; received '$type'"
             unless $type eq 'http';
-        my $request = PAGI::Request->new($scope, $receive);
+        my $request = PAGI::Request::_Factory::request_for_scope($scope, $receive);
         my $application = await $endpoint->dispatch($request);
         await invoke_app($application, $scope, $receive, $send);
     };
@@ -206,7 +206,7 @@ Each receives:
 
 =item C<$self> - The endpoint instance
 
-=item C<$request> - A L<PAGI::Request> instance
+=item C<$request> - A L<PAGI::Request>, or the class L<PAGI::Middleware::RequestClass> set
 
 =back
 
