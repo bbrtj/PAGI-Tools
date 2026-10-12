@@ -8,6 +8,7 @@ use Future;
 use Future::AsyncAwait;
 use Scalar::Util qw(blessed);
 use PAGI::Request;
+use PAGI::Request::_Factory ();
 use PAGI::Utils qw(invoke_app);
 
 sub new {
@@ -31,11 +32,9 @@ sub new {
     croak 'request_response handler must be a coderef'
         unless exists($args{handler}) && ref($handler) eq 'CODE';
 
-    my $request_factory = exists $args{request_factory}
-        ? $args{request_factory}
-        : sub { return PAGI::Request->new(@_) };
+    my $request_factory = $args{request_factory};
     croak 'request_response request_factory must be a coderef'
-        unless ref($request_factory) eq 'CODE';
+        if exists($args{request_factory}) && ref($request_factory) ne 'CODE';
 
     return bless {
         handler         => $handler,
@@ -54,10 +53,17 @@ sub to_app {
         croak "PAGI::Routing::RequestResponse requires HTTP, WebSocket, or SSE scope; received '$type'"
             unless $type eq 'http' || $type eq 'websocket' || $type eq 'sse';
 
-        my $request = $request_factory->($scope, $receive);
-        croak 'request_response request_factory must return a '
-            . 'PAGI::Request instance or subclass'
-            unless blessed($request) && $request->isa('PAGI::Request');
+        # An explicit request_factory wins; otherwise the scope decides.
+        my $request;
+        if ($request_factory) {
+            $request = $request_factory->($scope, $receive);
+            croak 'request_response request_factory must return a '
+                . 'PAGI::Request instance or subclass'
+                unless blessed($request) && $request->isa('PAGI::Request');
+        }
+        else {
+            $request = PAGI::Request::_Factory::request_for_scope($scope, $receive);
+        }
         my $handler_result = $handler->($request);
         my $returned = await Future->wrap($handler_result);
         croak 'request handler returned nothing; a native ($scope, $receive, '
@@ -123,7 +129,10 @@ C<http_default> use: a bare CODE there already receives one Request. Compose
 instead accepts route declarations only through C<routes>; an immutable Router
 is preserved as an explicit Mount application within that list.
 
-By default, each invocation constructs one C<PAGI::Request>. An optional
+By default, each invocation constructs the Request its scope asks for: the
+class a middleware such as L<PAGI::Middleware::RequestClass> set in the scope
+key C<pagi.request.factory>, or a plain C<PAGI::Request>. An explicit
+C<request_factory> wins over the scope. An optional
 C<request_factory> coderef receives the exact C<($scope, $receive)> pair and
 must synchronously return a C<PAGI::Request> instance or subclass. The factory
 runs exactly once per invocation, before the handler, and must not return a
@@ -145,7 +154,8 @@ receive, and send. It does not cache a dynamic result across requests.
     );
 
 C<handler> is required and must be a coderef. C<request_factory> is optional
-and must be a coderef. Unknown, duplicate, and odd constructor options fail at
+and must be a coderef. Without C<request_factory>, the scope decides, on every
+invocation. Unknown, duplicate, and odd constructor options fail at
 construction. The functional C<request_response> helper accepts the handler
 positionally followed by the same optional C<request_factory> pair.
 
