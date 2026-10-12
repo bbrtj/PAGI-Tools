@@ -59,6 +59,10 @@ sub _new_from {
             : $declaration_package,
     );
 
+    croak "named mount '$path' declares a 'path' parameter; path_for uses 'path' "
+        . "for the remainder below a named mount, so rename the parameter"
+        if defined $opts{name} && grep { $_ eq 'path' } @{$pattern->parameters};
+
     return bless {
         kind        => 'mount',
         _pattern    => $pattern,
@@ -131,6 +135,10 @@ unnamed mounts use this same representation:
 
     mount('/api', app => $api_app, name => 'api')
     mount('/public', routes => [ route('/status' => $handler) ])
+
+A C<name> makes the Mount a reverse target (see
+L<PAGI::Routing/"REVERSE ROUTING AND INSPECTION">); a named Mount's path may
+not declare a C<path> parameter, which names the remainder below it.
 
 The ownership comparison is:
 

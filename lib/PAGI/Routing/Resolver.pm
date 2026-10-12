@@ -190,6 +190,9 @@ sub _index_named_mount {
     my ($self, $node, $effective_path, $child_segments, $predicates) = @_;
     my $name = _canonical_address($child_segments);
     my $prefix = _published_path($effective_path);
+    croak "named mount '$name' cannot reverse its remainder: its effective path "
+        . "'$prefix' already declares a 'path' parameter; rename that parameter"
+        if exists $predicates->{path};
 
     my $record = {
         name    => $name,

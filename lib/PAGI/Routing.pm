@@ -842,7 +842,9 @@ C<app> retains a declared application, while C<routes> constructs a child
 Router application. A name is optional for either form.
 A named Mount is itself an address: C<path_for('/static')> gives its prefix,
 and C<< path_for('/static', { path => 'app.css' }) >> a path below it, with
-prefix parameters and C<root_path> applied.
+prefix parameters and C<root_path> applied. C<path> is a reserved parameter
+name there: a named Mount, and any Mount around one, may not declare a
+C<path> parameter.
 
 The composed resolver visits direct routes and Router base applications. Named
 leaves and named Mounts must have unique absolute addresses. It croaks during

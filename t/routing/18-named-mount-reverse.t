@@ -314,4 +314,36 @@ subtest 'inspection lists named mounts' => sub {
     is($routing->_resolver->route_kind('/static'), 'mount', 'route_kind of a Mount address');
 };
 
+subtest 'path is reserved on a named Mount and its ancestors' => sub {
+    like(dies { mount('/files/{path}', app => $files, name => 'f') },
+        qr/\Anamed mount '\/files\/\{path\}' declares a 'path' parameter; path_for uses 'path' for the remainder below a named mount, so rename the parameter/,
+        'a named mount declaring {path}');
+    like(dies { mount('/files/:path', app => $files, name => 'f') },
+        qr/\Anamed mount '\/files\/:path' declares a 'path' parameter/,
+        'the :path spelling');
+    like(dies { mount('/files/{path:\d+}', app => $files, name => 'f') },
+        qr/\Anamed mount '\/files\/\{path:\\d\+\}' declares a 'path' parameter/,
+        'a constrained {path:...}');
+    ok(lives { mount('/files/{path}', app => $files) },
+        'an unnamed mount may still declare {path}');
+
+    my $ancestor = qr/\Anamed mount '\/s' cannot reverse its remainder: its effective path '\/\{path\}\/s' already declares a 'path' parameter; rename that parameter/;
+    like(dies {
+        router(routes => [
+            mount('/{path}', routes => [mount('/s', app => $files, name => 's')]),
+        ]);
+    }, $ancestor, 'below an ancestor declaring {path}');
+    like(dies {
+        router(routes => [
+            mount('/{path}', app => router(routes => [mount('/s', app => $files, name => 's')])),
+        ]);
+    }, $ancestor, 'the same through app => router(...)');
+
+    my $routing = router(routes => [
+        mount('/{path}', routes => [route('/x' => sub { }, name => 'x')]),
+    ]);
+    is($routing->path_for('x', { path => 'p' }), '/p/x',
+        'a named route below an ancestor declaring {path} is unaffected');
+};
+
 done_testing;
