@@ -230,6 +230,9 @@
     strict sends for messages that must arrive, try_send_* for setup steps
     and broadcasts, start, accept and keepalive safe once the client has
     gone. The sse-dashboard example drops its is_closed checks.
+  - PAGI::Routing's POD leads with the everyday API and keeps the complete
+    rules in a REFERENCE part; component modules, the Cookbook and the
+    Tutorial link to one statement of each rule instead of restating it.
 
   [Breaking -- see UPGRADING.md]
   - body_stream over max_bytes is a BodyError 413 too_large (it was a plain

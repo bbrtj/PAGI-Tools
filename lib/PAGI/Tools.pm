@@ -252,7 +252,8 @@ job:
 
 A L<Router|PAGI::Routing::Router> tries its children in order. When nothing
 matches it answers 404; when a path matches but not its method it answers 405
-with the C<Allow> header, and it answers HEAD and OPTIONS for you.
+with the C<Allow> header, and it answers HEAD for you; an Endpoint::HTTP class
+also answers OPTIONS.
 L<Compose|PAGI::Compose> builds the top Router from your routes and wraps it
 with application middleware, lifespan startup and shutdown, an error page for
 exceptions, HEAD handling, and a guard that finishes a response the
