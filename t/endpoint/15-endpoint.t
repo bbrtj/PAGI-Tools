@@ -315,6 +315,43 @@ package Local::MooPerRequest {
     sub get { PAGI::Response::Text->new('never reached') }
 }
 
+# Moose without MooseX::NonMoose keeps the base's new, so these attributes
+# would be ignored. No make_immutable, so Moose itself prints nothing.
+package Local::PlainMoose {
+    use Moose;
+    extends 'PAGI::Endpoint::HTTP';
+    has foo => (is => 'ro', required => 1);
+}
+
+package Local::MooseChild {
+    use Moose;
+    extends 'Local::PlainMoose';
+}
+
+package Local::MooseBuilder {
+    use Moose;
+    extends 'PAGI::Endpoint::HTTP';
+
+    sub BUILD_APP {
+        my ($class, %args) = @_;
+        return sub { $class->new(%args) };
+    }
+}
+
+# A framework that exports its own endpoint function.
+package Local::FrameworkEndpoint {
+    our @ISA = ('PAGI::Endpoint');
+}
+
+package Local::Framework {
+    our @CARP_NOT = ('PAGI::Endpoint');
+    sub endpoint { return Local::FrameworkEndpoint->new(@_)->endpoint }
+}
+
+package Local::FrameworkWithoutCarpNot {
+    sub endpoint { return Local::FrameworkEndpoint->new(@_)->endpoint }
+}
+
 package Local::FixedEndpoint {
     our @ISA = ('PAGI::Endpoint');
 
@@ -656,6 +693,40 @@ SKIP: {
         is($res->status, 500, '... a 500');
     };
 }
+
+subtest 'a Moose class without MooseX::NonMoose is refused at endpoint()' => sub {
+    my $expected = 'is a Moose class whose new is not Moose\'s, so its attributes'
+        . ' (required, default, BUILD) would be ignored; add "use MooseX::NonMoose"'
+        . ' after "use Moose"';
+    for my $class (qw(Local::PlainMoose Local::MooseChild Local::MooseBuilder)) {
+        my $line = __LINE__ + 1;
+        like(dies { endpoint($class, foo => 1) },
+            qr/\Aendpoint class \Q$class $expected\E at \Q$this_file\E line $line\.$/,
+            "$class, at the line that named it");
+    }
+    ok(lives { endpoint('Local::MooHealth', version => '1.0') },
+        'a Moo class is not mistaken for one with Moose loaded');
+};
+
+subtest 'load errors name the line that called endpoint' => sub {
+    my $line = __LINE__ + 1;
+    my $error = dies { endpoint('Bad Name') };
+    like($error, qr/ at \Q$this_file\E line $line\.$/, 'through PAGI::Routing');
+
+    $line = __LINE__ + 1;
+    $error = dies { PAGI::Tools::endpoint('No::Such::Endpoint') };
+    my @locations = $error =~ / at (\S+) line (\d+)\./g;
+    is(\@locations, [$this_file, $line], 'through PAGI::Tools, with one location');
+
+    $line = __LINE__ + 1;
+    $error = dies { Local::Framework::endpoint('Bad Name') };
+    like($error, qr/ at \Q$this_file\E line $line\.$/,
+        "a framework's own endpoint with \@CARP_NOT = ('PAGI::Endpoint')");
+
+    $error = dies { Local::FrameworkWithoutCarpNot::endpoint('Bad Name') };
+    unlike($error, qr/ at \Q$this_file\E line $line\.$/,
+        'without it the error names the framework\'s line instead');
+};
 
 subtest 'the steps are methods a subclass may override' => sub {
     my $endpoint = PAGI::Endpoint->new('Local::Greeter', greeting => 'hi');

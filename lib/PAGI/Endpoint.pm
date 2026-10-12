@@ -6,6 +6,10 @@ use Carp qw(croak);
 use Scalar::Util qw(blessed);
 use PAGI::Utils ();
 
+# endpoint() in PAGI::Routing is the usual caller: errors name the line that
+# called endpoint(), not PAGI::Routing.
+our @CARP_NOT = ('PAGI::Routing');
+
 sub new {
     my ($class, $endpoint_class, @args) = @_;
     croak 'endpoint expects a class name'
@@ -40,6 +44,7 @@ sub load_class {
     }
     croak "endpoint class $class has neither new nor BUILD_APP"
         unless $class->can('new') || $class->can('BUILD_APP');
+    _check_moose_constructor($class);
     return;
 }
 
@@ -69,6 +74,21 @@ sub per_request_app {
         ? 'PAGI::Endpoint::PerRequest::HTTP'
         : 'PAGI::Endpoint::PerRequest';
     return $wrapper->new(class => $self->class, build => $builder);
+}
+
+# A Moose class extending a non-Moose base keeps the base's new, so its
+# required, default and BUILD would be silently ignored. The can('meta') gate
+# keeps Moo classes out: with Moose loaded, a Moo class's metaclass also
+# answers isa('Moose::Meta::Class').
+sub _check_moose_constructor {
+    my ($class) = @_;
+    return unless $INC{'Moose.pm'} && $class->can('meta');
+    my $meta = eval { $class->meta };
+    return unless blessed($meta) && $meta->isa('Moose::Meta::Class');
+    return if $class->isa('Moose::Object');
+    croak "endpoint class $class is a Moose class whose new is not Moose's, so its"
+        . ' attributes (required, default, BUILD) would be ignored; add'
+        . ' "use MooseX::NonMoose" after "use Moose"';
 }
 
 1;
@@ -244,6 +264,17 @@ An object a builder returns lives until its request is answered, or for
 WebSocket and SSE until its connection ends, so it may keep that request's
 or connection's state on C<$self>.
 
+=head1 MOO AND MOOSE
+
+A Moo class that C<extends 'PAGI::Endpoint::HTTP'> (or C<::WebSocket>,
+C<::SSE>) works as it is: Moo's C<new> enforces C<required> and C<default>.
+
+A Moose class extending an Endpoint base needs C<use MooseX::NonMoose> after
+C<use Moose>. Without it the class keeps the base's plain C<new>, so its
+C<required>, C<default> and C<BUILD> would be silently ignored; C<endpoint>
+refuses such a class, whether it has C<BUILD_APP> or not. The check runs only
+when Moose is already loaded, and never loads it.
+
 =head1 WHEN THINGS FAIL
 
 "Load" is the C<endpoint()> call, while the application file loads. "First
@@ -260,6 +291,9 @@ request" is a 500 for that request, with the error re-raised to the server.
     not compile                                            loaded: ...
     a class with neither new nor BUILD_APP  load           endpoint class X has neither
                                                            new nor BUILD_APP
+    a Moose class without                   load           endpoint class X is a Moose
+    MooseX::NonMoose                                       class whose new is not Moose's,
+                                                           ...
     a singleton's required attribute is     load           the class's own error (Moo:
     missing                                                Missing required arguments: ...)
     BUILD_APP or new returns neither an     load           X->BUILD_APP must return an app
@@ -273,6 +307,8 @@ request" is a 500 for that request, with the error re-raised to the server.
                                                            application goes through
                                                            as_app_object()
 
+Load errors name the line that called C<endpoint>.
+
 A misspelt class name that compiled code already uses as a package, as in
 C<Misspelt::Name::helper()>, reads as defined and is not required, so it dies
 "has neither new nor BUILD_APP" rather than "could not be loaded".
@@ -284,6 +320,7 @@ step is a public method, so a framework can subclass PAGI::Endpoint, override
 one step, and export its own C<endpoint>:
 
     package MyFramework;
+    our @CARP_NOT = ('PAGI::Endpoint');
     sub endpoint { MyFramework::Endpoint->new(@_)->endpoint }
 
 =head2 new
@@ -309,13 +346,17 @@ The arguments given to C<new>, as a list, unchanged and in order.
 Runs C<load_class>, then C<app_from> on what C<build> returns, and returns
 the app object for a route or mount. C<endpoint('Class', %args)> in
 L<PAGI::Routing> is C<< PAGI::Endpoint->new('Class', %args)->endpoint >>.
+A package that exports its own C<endpoint> function adds
+C<< our @CARP_NOT = ('PAGI::Endpoint') >>, so load errors name its caller's line.
 
 =head2 load_class
 
 Loads the class by its exact package name, unless the package is already
 defined (declared in the application file, or loaded before), which needs no
-file. It then checks that the class has C<new> or C<BUILD_APP>. A subclass may
-override it; calling C<< $self->SUPER::load_class >> keeps the checks.
+file. It then checks that the class has C<new> or C<BUILD_APP>, and, when
+Moose is loaded, that a Moose class has Moose's C<new> (L</MOO AND MOOSE>).
+A subclass may override it; calling C<< $self->SUPER::load_class >> keeps
+the checks.
 
 =head2 build
 

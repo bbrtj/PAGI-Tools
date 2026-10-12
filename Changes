@@ -95,7 +95,8 @@
     route('/x' => endpoint('Class', %args)) loads the class and builds it
     once with new, or with its BUILD_APP. A BUILD_APP that returns a coderef
     builds the endpoint per request (per connection for WebSocket and SSE);
-    the builder may be async.
+    the builder may be async. Moose endpoint classes need MooseX::NonMoose,
+    and endpoint() says so.
   - Endpoint::HTTP answers QUERY with a query method. A query helper method
     on an existing subclass now answers QUERY too.
   - PAGI::Test::Client has a query method for the QUERY verb.
