@@ -230,7 +230,7 @@ segment, such as C<v1.1>, stays literal.
 
 For a named leaf, the current containing namespace is its absolute address
 without the final local name. An unnamed leaf, including a catch-all, uses the
-namespace contributed by its enclosing known Mounts. A Router-owned NONE
+namespace contributed by its enclosing Router mounts. A Router-owned NONE
 outcome uses the owning Router placement and captures only prefixes actually
 consumed; it does not borrow an arbitrary partial leaf.
 

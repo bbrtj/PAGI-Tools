@@ -147,13 +147,14 @@ automatic OPTIONS. A Mount takes exactly one of C<app> or C<routes>:
   mount('/static', app => $static_app)
 
 C<routes> constructs a complete child Router application. C<app> retains a
-native application or app object; an immutable Router remains
-inspectable while other applications are opaque. A local C<name> is optional
+native application or app object. A Router in either form makes a Router
+mount, which the parent can inspect; anything else makes an application mount,
+opaque to the parent. A local C<name> is optional
 for either form. After a prefix matches, the child owns its full match, 404,
 and 405. Those responses flow through child, Mount-occurrence, and parent
 middleware, but the parent never resumes scanning.
 
-The structural form always takes an arrayref of nodes:
+The C<routes> form always takes an arrayref of nodes:
 
   mount('/reports', routes => [route('/' => \&report)])
 

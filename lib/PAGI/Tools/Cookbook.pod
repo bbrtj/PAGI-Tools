@@ -941,8 +941,8 @@ mounted:
 
 Mount the same routes again at C</v2> under the name C<v2>, and
 C<path_for($request, 'notes')> gives C</v2/notes> there with no change to the
-handlers. One Router mounted twice works the same way; an absolute reference
-names the placement:
+handlers. The same routes mounted twice work the same way; an absolute
+reference names the placement:
 
   use PAGI::Routing::URL qw(path_for url_for);
 
