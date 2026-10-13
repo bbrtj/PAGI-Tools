@@ -2751,7 +2751,8 @@ See C<examples/10-forms-and-uploads/> for complete examples.
 =head2 CSRF on a streamed upload
 
 L<PAGI::Middleware::CSRF> reads the token from a form's C<csrf_token>
-field, and that read consumes the body. A route that streams a plain HTML
+field, and L<PAGI::Request> then serves that parse rather than stream the
+body. A route that streams a plain HTML
 form's upload with C<multipart_stream> runs its own CSRF middleware, which
 never reads the body or refuses, and checks the token itself:
 
