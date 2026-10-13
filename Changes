@@ -37,7 +37,9 @@
   - PAGI::ErrorContext (error_context): the error an ErrorHandler handler
     answers. PAGI::Request::BodyError gains client_message.
   - PAGI::Auth (auth, auth_result, unauth_result, www_authenticate,
-    requires) and PAGI::Middleware::Authentication.
+    requires) and PAGI::Middleware::Authentication. A body its backend
+    reads is handed on to the application with record_receive;
+    body_buffer chooses where it is kept meanwhile.
   - PAGI::State, PAGI::CSRF, PAGI::Transport and PAGI::Routing::URL
     helpers; PAGI::Authority; PAGI::Utils::Headers; PAGI::Utils
     path_from_root, pagi_env and environment predicates.

@@ -9,7 +9,7 @@ use Future::AsyncAwait;
 use Scalar::Util qw(blessed);
 use PAGI::Auth qw(auth);
 use PAGI::Request::_Factory ();
-use PAGI::Utils::Middleware qw(clone_scope);
+use PAGI::Utils::Middleware qw(clone_scope record_receive);
 use PAGI::Utils ();
 
 sub _init {
@@ -24,8 +24,11 @@ sub _init {
             || (blessed($backend) && $backend->can('authenticate'));
 
     $self->{backend} = $backend;
+    $self->{body_buffer} = $config->{body_buffer};
+    croak 'Authentication body_buffer must be a coderef that returns a buffer, like PAGI::Utils::ReceiveBuffer->new'
+        if defined($self->{body_buffer}) && ref($self->{body_buffer}) ne 'CODE';
     PAGI::Utils::_reject_unknown_options('Authentication', $config,
-        qw(backend));
+        qw(backend body_buffer));
 }
 
 sub wrap {
@@ -40,7 +43,11 @@ sub wrap {
             return;
         }
 
-        my $request = PAGI::Request::_Factory::request_for_scope($scope, $receive);
+        # The backend may read the body (a signed request), so it reads
+        # through a recording receive and the application gets the replay.
+        my ($reading, $replaying) = record_receive($receive,
+            $self->{body_buffer} ? (buffer => $self->{body_buffer}->($scope)) : ());
+        my $request = PAGI::Request::_Factory::request_for_scope($scope, $reading);
         my $returned = ref($backend) eq 'CODE'
             ? $backend->($request)
             : $backend->authenticate($request);
@@ -50,7 +57,7 @@ sub wrap {
 
         my $inner = clone_scope($scope, { 'pagi.auth' => $results[0] });
         auth($inner);
-        await $app->($inner, $receive, $send);
+        await $app->($inner, $replaying, $send);
         return;
     };
 }
@@ -96,7 +103,8 @@ Plack::Builder does.
 
 Construct with C<new(backend =E<gt> $backend)> and call C<wrap($next)> to get a
 native application. C<backend> is required and must be exactly a coderef or an
-object implementing C<authenticate>; unknown constructor options are errors.
+object implementing C<authenticate>; C<body_buffer> is optional (see below);
+unknown constructor options are errors.
 The same backend is reused across invocations. This middleware constructs one
 L<PAGI::Request>, or the class L<PAGI::Middleware::RequestClass> set when that
 middleware is listed before this one, for each HTTP, WebSocket, or SSE
@@ -107,8 +115,16 @@ that Request as its only argument; an object's C<authenticate($request)> receive
 it after the normal invocant. Either form must return exactly one completed
 L<PAGI::Auth::Result>, directly or through a L<Future>. Bare users, C<undef>,
 and response values are errors.
-The Request uses the real receive channel: backend body reads have their normal
-consumption effects and protocol restrictions, with no automatic body replay.
+A backend may read the request body -- to check a signature over it, say --
+and the application still receives it: the Request reads through
+L<PAGI::Utils::Middleware/record_receive>, and the application is given the
+replay. A body the backend never reads passes straight through. C<body_buffer>
+chooses where a body that was read is kept until the application receives it:
+a coderef, called with the scope of each request (read or not, as the
+middleware cannot know in advance), returning a buffer for that request -- a
+L<PAGI::Utils::ReceiveBuffer> with other options, or any object with its
+C<append> and C<take> methods. Make the buffer do no work until C<append> is
+called. The default holds 64KB in memory and the rest in a temporary file.
 
 The result is installed under C<pagi.auth> in a shallow child scope and the
 downstream application always continues. Guest and rejected results do not
