@@ -17,7 +17,7 @@ Router object; servers accept anything with `to_app`.
 
 - Perl 5.18+ with `Future::AsyncAwait` for the distribution and most examples;
   `large-application`, `starlette-apples`, `gut-check`, `content-negotiation`, `upload-streaming`, `process-streaming`,
-  `webhook-receiver`, `framework-on-tools`, `request-class`, `starlette-endpoint`, `endpoint-lifecycle`, `escape-hatches`, `internal-tool`, `auth-cookie-login`, `auth-extensions`, `auth-notes`, and `auth-jwt-sandbox`
+  `webhook-receiver`, `signed-requests`, `framework-on-tools`, `request-class`, `starlette-endpoint`, `endpoint-lifecycle`, `escape-hatches`, `internal-tool`, `auth-cookie-login`, `auth-extensions`, `auth-notes`, and `auth-jwt-sandbox`
   require Perl 5.40+
 - A PAGI server to run examples against:
   ```
@@ -49,6 +49,7 @@ HTTP:
 - `contact-form` - a POST handler parsing form fields and file uploads
 - `internal-tool` - Perl 5.40 task board, the everyday HTML workflow: Template Toolkit pages, a form re-rendered with its errors, redirect after POST, a session flash, CSRF on every form, a static stylesheet; the same application in Flask in its README, with line counts
 - `webhook-receiver` - Perl 5.40 whip-it-up GitHub-style webhook receiver: HMAC over the raw body, a JSONL log, a status page and a JSON view, written cold with a clock running; the same program in Flask and Go in its README
+- `signed-requests` - Perl 5.40 signed CI deliveries: a middleware checks an HMAC over the whole body, then the routes read that body again (`record_receive`), a JSON event through `$request->json` and an artifact streamed to disk, with bodies over 1MB spooled to a temporary file meanwhile
 - `upload-streaming` - streaming uploads, bytes or text: a binary file kept exactly as sent, CSV imports decoded by the client's charset with `strict` and `strip_bom` (cp1252, UTF-8 with a BOM, UTF-16) and parsed with Text::CSV, NDJSON read by line with `each_line`, a lenient transform, a 415 for a charset the stream cannot decode, and `truncated` for a hang-up
 - `content-negotiation` - one notes resource for browsers, htmx and API clients: the ContentNegotiation middleware on a mount picks HTML or JSON from Accept, refuses with the app's own 406 problem and sends Vary; `respond_to` names each representation; htmx gets fragments with `Vary: HX-Request`; a POST reads a form or JSON by Content-Type; `/health` stays outside the negotiation
 - `static-files` - static file serving with `PAGI::App::File`
