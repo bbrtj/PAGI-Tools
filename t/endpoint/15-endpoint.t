@@ -407,7 +407,7 @@ subtest 'without BUILD_APP the class is built once, with new and the arguments' 
     my $greeter = endpoint('Local::Greeter', greeting => 'hi');
     is($Local::Greeter::BUILT, 1, 'new runs once, when endpoint() is called');
     isa_ok($greeter, ['Local::Greeter'], 'endpoint() returns the object itself');
-    ok(!$greeter->isa('PAGI::Endpoint::PerRequest'), 'not a per-request wrapper');
+    ok(!$greeter->isa('PAGI::Endpoint::_PerRequest'), 'not a per-request wrapper');
 
     my $client = PAGI::Test::Client->new(
         app => compose(routes => [route('/greet' => $greeter)]));
@@ -538,7 +538,7 @@ subtest 'BUILD_APP returning a builder: one object per request' => sub {
     $Local::Guarded::BUILDS = 0;
     $Local::Greeter::BUILT = 0;
     my $guarded = endpoint('Local::Guarded', greeting => 'welcome in');
-    isa_ok($guarded, ['PAGI::Endpoint::PerRequest::HTTP'], 'endpoint() returns the wrapper');
+    isa_ok($guarded, ['PAGI::Endpoint::_PerRequest::HTTP'], 'endpoint() returns the wrapper');
     is($Local::Guarded::BUILDS, 0, 'nothing is built until a request arrives');
 
     my $client = PAGI::Test::Client->new(
@@ -571,7 +571,7 @@ subtest "the route asks the class for its methods" => sub {
         'and may not widen it');
 
     my $ws = endpoint('Local::PerConnection');
-    isa_ok($ws, ['PAGI::Endpoint::PerRequest'], 'a WebSocket class gets the plain wrapper');
+    isa_ok($ws, ['PAGI::Endpoint::_PerRequest'], 'a WebSocket class gets the plain wrapper');
     ok(!$ws->can('allowed_methods'), 'which has no allowed_methods');
 };
 

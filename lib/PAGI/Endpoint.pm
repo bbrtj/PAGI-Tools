@@ -79,10 +79,10 @@ sub app_from {
 
 sub per_request_app {
     my ($self, $builder) = @_;
-    require PAGI::Endpoint::PerRequest;
+    require PAGI::Endpoint::_PerRequest;
     my $wrapper = $self->class->can('allowed_methods')
-        ? 'PAGI::Endpoint::PerRequest::HTTP'
-        : 'PAGI::Endpoint::PerRequest';
+        ? 'PAGI::Endpoint::_PerRequest::HTTP'
+        : 'PAGI::Endpoint::_PerRequest';
     return $wrapper->new(class => $self->class, build => $builder);
 }
 
@@ -389,14 +389,18 @@ for a class without C<BUILD_APP>. A subclass may override it.
 
     my $app_object = $endpoint->per_request_app($builder);
 
-Returns the app object that calls the builder for each request or connection
-(L<PAGI::Endpoint::PerRequest>). For an HTTP class, one with
-C<allowed_methods>, the app object answers C<allowed_methods> by asking the
-class. A subclass may override it.
+Returns the app object that calls the builder for each request or connection,
+with that request's L<PAGI::Request> (or the class
+L<PAGI::Middleware::RequestClass> set), awaiting the builder if it returned a
+Future, and runs the app object the builder returned; that object lives until
+the request is answered or the connection ends. A builder that returns no app
+object fails that request. For an HTTP class, one with C<allowed_methods>, the
+app object answers C<allowed_methods> by asking the class, so the Route never
+builds an object to learn the methods. A subclass may override it.
 
 =head1 SEE ALSO
 
-L<PAGI::Routing/endpoint>, L<PAGI::Endpoint::PerRequest>,
+L<PAGI::Routing/endpoint>,
 L<PAGI::Endpoint::HTTP>, L<PAGI::Endpoint::WebSocket>,
 L<PAGI::Endpoint::SSE>
 
