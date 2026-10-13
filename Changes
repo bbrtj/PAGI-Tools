@@ -352,6 +352,14 @@
     It used to build the class with new and no arguments, ignoring BUILD_APP.
 
   [Fixed]
+  - PAGI::Middleware::MethodOverride reads the _method field of a
+    urlencoded or multipart POST body, as its documentation always said
+    (and as Rails and Laravel do); it read only the header and the query
+    string, so an HTML form's hidden _method did nothing. Order: header,
+    form field, query. The body is handed on with record_receive and its
+    parse shared with the application, so a form below it cannot be
+    streamed; check_form => 0 never reads the body. New body_buffer
+    option, as CSRF has.
   - PAGI::Middleware::Builder's enable no longer ignores a middleware
     that fails to load: a file that did not compile, or died while
     loading, was used half-defined, and a missing one failed later at

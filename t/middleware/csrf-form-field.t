@@ -337,4 +337,45 @@ subtest 'body_buffer makes the buffer for each request whose body is read' => su
         qr/CSRF body_buffer must be a coderef that returns a buffer/, 'body_buffer must be a coderef';
 };
 
+subtest 'interleaved requests through one middleware keep their own bodies' => sub {
+    my $middleware = PAGI::Middleware::CSRF->new;
+    my %seen;
+    my $app = $middleware->wrap(async sub {
+        my ($scope, $receive, $send) = @_;
+        my $body = '';
+        while (1) {
+            my $event = await $receive->();
+            last unless $event->{type} eq 'http.request';
+            $body .= $event->{body};
+            last unless $event->{more};
+        }
+        $seen{$scope->{path}} = ($scope->{'pagi.csrf_failure'} // 'valid') . " $body";
+        await $send->({ type => 'http.response.start', status => 200, headers => [] });
+        await $send->({ type => 'http.response.body', body => '', more => 0 });
+    });
+    # A request whose body chunks arrive only when the test releases them.
+    my $request = sub {
+        my ($path, $token, @chunks) = @_;
+        my @pending = map { Future->new } @chunks;
+        my $next = 0;
+        my $receive = sub { $next < @pending ? $pending[$next++] : Future->done({ type => 'http.disconnect' }) };
+        my $run = $app->({ type => 'http', method => 'POST', path => $path, query_string => '',
+            headers => [['content-type', 'application/x-www-form-urlencoded'], ['cookie', "csrf_token=$token"]],
+        }, $receive, sub { Future->done });
+        return ($run, sub {
+            my ($n) = @_;
+            $pending[$n]->done({ type => 'http.request', body => $chunks[$n], more => $n < $#chunks ? 1 : 0 });
+        });
+    };
+    my ($a_token, $b_token) = ('a' x 64, 'b' x 64);
+    my ($run_a, $release_a) = $request->('/a', $a_token, "csrf_token=$a_token&", 'who=alice');
+    my ($run_b, $release_b) = $request->('/b', $b_token, "csrf_token=$b_token&", 'who=bob');
+    $release_a->(0);
+    $release_b->($_) for 0, 1;    # the second request finishes first
+    $release_a->(1);
+    $_->get for $run_a, $run_b;
+    is \%seen, { '/a' => "valid csrf_token=$a_token&who=alice", '/b' => "valid csrf_token=$b_token&who=bob" },
+        'each request is checked against its own token and gets its own whole body';
+};
+
 done_testing;
