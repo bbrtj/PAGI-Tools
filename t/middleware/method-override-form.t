@@ -154,4 +154,41 @@ subtest 'with CSRF, in either order, a form carries both _method and csrf_token'
     }
 };
 
+subtest 'interleaved requests through one middleware keep their own bodies' => sub {
+    my $middleware = PAGI::Middleware::MethodOverride->new;
+    my %seen;
+    my $app = $middleware->wrap(async sub {
+        my ($scope, $receive, $send) = @_;
+        my $body = '';
+        while (1) {
+            my $event = await $receive->();
+            last unless $event->{type} eq 'http.request';
+            $body .= $event->{body};
+            last unless $event->{more};
+        }
+        $seen{$scope->{path}} = "$scope->{method} $body";
+    });
+    # A request whose body chunks arrive only when the test releases them.
+    my $request = sub {
+        my ($path, @chunks) = @_;
+        my @pending = map { Future->new } @chunks;
+        my $next = 0;
+        my $receive = sub { $next < @pending ? $pending[$next++] : Future->done({ type => 'http.disconnect' }) };
+        my $run = $app->({ type => 'http', method => 'POST', path => $path, query_string => '',
+            headers => [['content-type', 'application/x-www-form-urlencoded']] }, $receive, sub { Future->done });
+        return ($run, sub {
+            my ($n) = @_;
+            $pending[$n]->done({ type => 'http.request', body => $chunks[$n], more => $n < $#chunks ? 1 : 0 });
+        });
+    };
+    my ($run_a, $release_a) = $request->('/a', '_method=DELETE&', 'who=alice');
+    my ($run_b, $release_b) = $request->('/b', '_method=PATCH&', 'who=bob');
+    $release_a->(0);
+    $release_b->($_) for 0, 1;    # the second request finishes first
+    $release_a->(1);
+    $_->get for $run_a, $run_b;
+    is \%seen, { '/a' => 'DELETE _method=DELETE&who=alice', '/b' => 'PATCH _method=PATCH&who=bob' },
+        'each request gets its own method and its own whole body';
+};
+
 done_testing;
