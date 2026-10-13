@@ -101,7 +101,7 @@ subtest 'a class that is neither defined nor loadable dies when the application 
     my $app;
     ok(lives { $app = with_class('Local::NoSuchRequest') }, 'compose() itself does not build middleware');
     like(dies { $app->to_app },
-        qr/\ARequestClass cannot load Local::NoSuchRequest: Can't locate Local\/NoSuchRequest\.pm/,
+        qr/\ARequestClass: cannot load Local::NoSuchRequest: Can't locate Local\/NoSuchRequest\.pm/,
         'to_app does');
     $app = with_class('PAGI::Response');
     like(dies { $app->to_app }, qr/\ARequestClass PAGI::Response is not a PAGI::Request at /,

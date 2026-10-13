@@ -46,7 +46,6 @@ sub require_login {
     sub new { my ($class, %config) = @_; return bless \%config, $class }
     sub wrap { my ($self, $next) = @_; return main::require_login($next, %$self) }
 }
-BEGIN { $INC{'Local/RequireLogin.pm'} = __FILE__ }
 
 subtest 'factory, object, and class policies protect groups and bypass lifespan' => sub {
     for my $form (qw(factory object class)) {

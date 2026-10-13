@@ -106,7 +106,10 @@ sub builder (&) {
 Enable a middleware. Short names are prefixed with
 'PAGI::Middleware::'. A leading '+' selects the exact package name and is
 stripped before loading. Already-qualified PAGI::Middleware::* names are
-preserved.
+preserved. A class already defined -- declared in the application file, or
+loaded before -- is used as it is; otherwise its file is loaded, and a name
+with no file, or a file that fails to load, dies
+C<enable('...'): cannot load ...> (or C<enable_if>) at once.
 
 When passed an already-configured middleware instance (an object with a
 C<wrap> method), it is used directly. Passing config args alongside an
@@ -206,7 +209,7 @@ sub add_middleware {
         return $self;
     }
 
-    my $class = $self->_resolve_middleware($name);
+    my $class = $self->_load_middleware($name, 'enable');
     push @{$self->{middleware}}, {
         class     => $class,
         config    => \%config,
@@ -238,7 +241,7 @@ sub add_middleware_if {
         return $self;
     }
 
-    my $class = $self->_resolve_middleware($name);
+    my $class = $self->_load_middleware($name, 'enable_if');
     push @{$self->{middleware}}, {
         class     => $class,
         config    => \%config,
@@ -309,20 +312,15 @@ sub _resolve_middleware {
 
     # 'GZIP' -> PAGI::Middleware::GZIP, 'PAGI::Middleware::GZIP' as is,
     # '+My::Custom' -> My::Custom.
-    my $class = PAGI::Utils::_resolve_class('PAGI::Middleware', $name, 'middleware');
+    return PAGI::Utils::_resolve_class('PAGI::Middleware', $name, 'middleware');
+}
 
-    # Load the module
-    my $file = $class;
-    $file =~ s{::}{/}g;
-    $file .= '.pm';
-
-    eval { require $file };
-    if ($@) {
-        # If loading fails, the error will surface when instantiating
-        # This allows for forward declarations
-        warn "Warning: Could not load $class: $@" if $ENV{PAGI_DEBUG};
-    }
-
+# Private: the class $name names, loaded; $call is how the user asked for it.
+sub _load_middleware {
+    my ($self, $name, $call) = @_;
+    my $class = $self->_resolve_middleware($name);
+    my $error = PAGI::Utils::_load_class($class, "$call('$name')", sub { $_[0]->can('new') });
+    croak $error if defined $error;
     return $class;
 }
 

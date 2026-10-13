@@ -4,6 +4,7 @@ use strict;
 use warnings;
 use parent 'PAGI::Middleware';
 use Future::AsyncAwait;
+use Carp qw(croak);
 use Exporter 'import';
 use JSON::MaybeXS;
 use PAGI::Utils ();
@@ -23,9 +24,8 @@ sub _build_named {
     my ($function, $kind, $name, @args) = @_;
     my $class = PAGI::Utils::_resolve_class(
         "PAGI::Middleware::Session::$kind", $name, 'session ' . lc $kind);
-    (my $file = "$class.pm") =~ s{::}{/}g;
-    eval { require $file; 1 }
-        or die "$function('$name'): cannot load $class: $@";
+    my $error = PAGI::Utils::_load_class($class, "$function('$name')", sub { $_[0]->can('new') });
+    croak $error if defined $error;
     return $class->new(@args);
 }
 
@@ -140,6 +140,11 @@ distributions, like the cookie store, work the same way);
 own: C<session_store('+MyApp::SessionStore', ...)>.
 
 =back
+
+A class already defined -- declared in the application file, or loaded
+before -- is used as it is; otherwise its file is loaded, and a name with no
+file, or a file that fails to load, dies
+C<session_store('...'): cannot load ...> (or C<session_state>).
 
 A class that cannot be loaded dies naming the class it looked for
 (C<< session_store('Redis'): cannot load PAGI::Middleware::Session::Store::Redis: ... >>).

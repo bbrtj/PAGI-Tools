@@ -119,6 +119,14 @@
   - PAGI::Test::Client has a query method for the QUERY verb.
 
   [Changed]
+  - One way to load a class given by name, shared by middleware(),
+    Builder's enable, response(), session_store/session_state, endpoint()
+    and RequestClass: a class already defined (declared in app.pl, or
+    loaded) is used as it is, so an inline class needs no $INC line;
+    otherwise its file is loaded, and a missing or failing file dies
+    "NAME('...'): cannot load CLASS: ...". A class whose file died while
+    loading is never used half-defined. endpoint()'s message was
+    "endpoint class X could not be loaded"; RequestClass's gains a colon.
   - Request is_json is true for every +json media type
     (application/vnd.api+json, application/problem+json, ...), not only
     application/json.
@@ -344,6 +352,10 @@
     It used to build the class with new and no arguments, ignoring BUILD_APP.
 
   [Fixed]
+  - PAGI::Middleware::Builder's enable no longer ignores a middleware
+    that fails to load: a file that did not compile, or died while
+    loading, was used half-defined, and a missing one failed later at
+    new (the error showed only under PAGI_DEBUG). It dies at enable.
   - PAGI::Test::Client drives the event loop while a request waits on real
     I/O: a streamed response whose producer awaits Future::IO now completes
     in-process instead of failing with a 500 (it previously worked only by

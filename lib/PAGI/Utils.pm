@@ -420,6 +420,32 @@ sub _package_is_defined {
     return grep({ !/::\z/ } keys %$stash) ? 1 : 0;
 }
 
+# The one way PAGI-Tools loads a class it is given by name. Returns undef
+# once $class can be used, or the message to die with, which begins with
+# $caller (the call as the user wrote it, such as "response('JSON')").
+#
+# A class that is already defined -- declared in app.pl, or loaded -- and
+# that $usable accepts is used as it is: a class declared in app.pl has no
+# file. Otherwise its file is required. A class whose file died while
+# loading is never used as it is, though it may have defined enough to look
+# usable. A package that is defined but has no file, and that $usable
+# refused (a name compiled code mentioned), is left for the caller's own
+# check to report.
+sub _load_class {
+    my ($class, $caller, $usable) = @_;
+    (my $file = "$class.pm") =~ s{::}{/}g;
+    my $failed = exists($INC{$file}) && !defined($INC{$file});
+    my $defined = !$failed && _package_is_defined($class);
+    return undef if $defined && $usable->($class);
+    return "$caller: cannot load $class: no file named exactly $file in \@INC"
+        unless _file_name_matches_case($file);
+    return undef if eval { require $file; 1 };
+    # require's own " at FILE line N." names this line, not the caller's.
+    (my $error = $@) =~ s/ at \S+ line \d+\.\n\z//;
+    return undef if $defined && $error =~ /\ACan't locate \Q$file\E in \@INC/;
+    return "$caller: cannot load $class: $error";
+}
+
 # On a case-insensitive filesystem, require 'Foo/json.pm' opens Foo/JSON.pm
 # and compiles it a second time under a package name it does not define.
 # True when every component of the first @INC match has exactly this case,

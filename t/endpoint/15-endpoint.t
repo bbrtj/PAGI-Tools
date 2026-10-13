@@ -495,13 +495,13 @@ subtest 'a class that cannot be loaded' => sub {
     my $line = __LINE__ + 1;
     my $error = dies { PAGI::Endpoint->new('No::Such::Endpoint')->endpoint };
     like($error,
-        qr/\Aendpoint class No::Such::Endpoint could not be loaded: Can't locate No\/Such\/Endpoint\.pm in \@INC/,
+        qr/\Aendpoint\('No::Such::Endpoint'\): cannot load No::Such::Endpoint: Can't locate No\/Such\/Endpoint\.pm in \@INC/,
         'an unknown class');
     my @locations = $error =~ / at (\S+) line (\d+)\./g;
     is(\@locations, [$this_file, $line], 'one location: the line that asked for it');
 
     like(dies { endpoint('PAGITestTmp::Broken') },
-        qr/\Aendpoint class PAGITestTmp::Broken could not be loaded: .*Compilation failed in require/s,
+        qr/\Aendpoint\('PAGITestTmp::Broken'\): cannot load PAGITestTmp::Broken: .*Compilation failed in require/s,
         'a file that does not compile');
 };
 
@@ -518,7 +518,7 @@ PERL
 
     write_module('PAGITestTmp/MentionedBroken.pm', "package PAGITestTmp::MentionedBroken;\nsub new {\n1;\n");
     like(dies { endpoint('PAGITestTmp::MentionedBroken') },
-        qr/\Aendpoint class PAGITestTmp::MentionedBroken could not be loaded: /,
+        qr/\Aendpoint\('PAGITestTmp::MentionedBroken'\): cannot load PAGITestTmp::MentionedBroken: /,
         'a file that does not compile is a load error, not "has neither"');
 };
 
