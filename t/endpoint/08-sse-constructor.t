@@ -79,7 +79,7 @@ subtest 'class to_app constructs its endpoint immediately and only once' => sub 
     }
 
     $Local::ConstructionCountingSSE::NEW_CALLS = 0;
-    my $app = Local::ConstructionCountingSSE->to_app;
+    my $app = Local::ConstructionCountingSSE->new->to_app;
 
     is $Local::ConstructionCountingSSE::NEW_CALLS, 1,
         'class to_app constructs the endpoint immediately';
@@ -128,7 +128,7 @@ subtest 'app reuses only a compatible exact-scope SSE cache' => sub {
             $CacheAwareEndpoint::seen = undef;
 
             my $run = sub {
-                run_until_client_leaves(CacheAwareEndpoint->to_app, $scope);
+                run_until_client_leaves(CacheAwareEndpoint->new->to_app, $scope);
             };
             if ($case eq 'throwing scope') {
                 no warnings 'redefine';

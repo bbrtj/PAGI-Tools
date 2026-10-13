@@ -21,6 +21,9 @@ my $home = $client->get('/app/');
 is($home->status, 200, 'home under /app, with its lifespan state');
 my @hrefs = $home->text =~ m{<a href="([^"]*)">}g;
 ok(scalar @hrefs, 'home renders links');
+my ($stylesheet) = $home->text =~ m{<link rel="stylesheet" href="([^"]*)">};
+is($stylesheet, '/app/static/app.css', 'the stylesheet link keeps the prefix');
+is($client->get($stylesheet)->status, 200, 'the stylesheet resolves');
 for my $href (@hrefs) {
     next if $href =~ m{\A[a-z][a-z0-9+.-]*:}i && $href !~ m{\Ahttp://testserver/};  # another site
     (my $target = $href) =~ s{\Ahttp://testserver(?=/)}{};

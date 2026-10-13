@@ -6,16 +6,14 @@ use lib dirname(__FILE__) . '/lib';
 
 use MyApp::Main;
 use MyApp::API;
-use MyApp::API::Events;
 use PAGI::Compose qw(compose);
 
 my @users = (
     { id => 1, name => 'Alice' },
     { id => 2, name => 'Bob' },
 );
-my $events = MyApp::API::Events->new;
-my $api    = MyApp::API->new(events => $events, users => \@users);
-my $main   = MyApp::Main->new(api => $api);
+my $api  = MyApp::API->new(users => \@users);
+my $main = MyApp::Main->new(api => $api);
 
 compose(
     routes => $main->routes,

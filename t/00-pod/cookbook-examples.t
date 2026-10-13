@@ -100,7 +100,7 @@ sub code_block_containing {
 
 sub perl_script_runs {
     my ($label, $source) = @_;
-    my ($handle, $path) = tempfile(SUFFIX => '.pl');
+    my ($handle, $path) = tempfile(SUFFIX => '.pl', UNLINK => 1);
     print {$handle} $source or die "Cannot write $path: $!";
     close $handle or die "Cannot close $path: $!";
 
@@ -128,12 +128,12 @@ subtest 'Cookbook publishes the complete declarative topology' => sub {
     like $cookbook,
         qr/Endpoint::HTTP\/WebSocket\/SSE.*?one exact route.*?Route.*?exact path.*?Mount.*?prefix.*?Router.*?ordered children.*?Compose.*?lifespan/is,
         'the five-layer topology appears in the Cookbook';
-    like $cookbook, qr/route\('\/messages'\s*=>\s*MessageAPI->new/,
-        'HTTP endpoint object is placed at one exact Route';
-    like $cookbook, qr/websocket\('\/chat'\s*=>\s*ChatEndpoint->new/,
-        'WebSocket endpoint object is placed at one exact Route';
-    like $cookbook, qr/sse\('\/events'\s*=>\s*EventEndpoint->new/,
-        'SSE endpoint object is placed at one exact Route';
+    like $cookbook, qr/route\('\/messages'\s*=>\s*endpoint\('MessageAPI'/,
+        'HTTP endpoint class is named at one exact Route';
+    like $cookbook, qr/websocket\('\/chat'\s*=>\s*endpoint\('ChatEndpoint'/,
+        'WebSocket endpoint class is named at one exact Route';
+    like $cookbook, qr/sse\('\/events'\s*=>\s*endpoint\('EventEndpoint'/,
+        'SSE endpoint class is named at one exact Route';
     like $cookbook, qr/sub routing.*?return router\(/s,
         'ordinary object assembly returns an immutable Router';
     like $cookbook, qr/compose\(\s*routes\s*=>\s*\[/s,
@@ -219,6 +219,17 @@ PERL
     perl_script_runs('protocol refusal application forms', $recipe . $checks);
 };
 
+subtest "An Application's Request Class recipe executes as published" => sub {
+    my $recipe = first_code_block($cookbook, "=head2 An Application's Request Class");
+    perl_script_runs(
+        'application Request class recipe',
+        $recipe
+            . "use PAGI::Test::Client;\n"
+            . "my \$response = PAGI::Test::Client->new(app => \$app)->get('/reports');\n"
+            . "die 'expected the class helper' unless \$response->status == 200 && \$response->text eq 'Example Corp reports';\n",
+    );
+};
+
 subtest 'custom Request route helper recipe executes as published' => sub {
     my $recipe = first_code_block(
         $cookbook, '=head2 Custom Request Route Helpers');
@@ -251,6 +262,40 @@ subtest 'Linking inside a mounted app recipe executes as published' => sub {
             . "die 'absolute from the root' unless \$from_root->{note} eq '/api/notes/1';\n"
             . "die 'relative sibling' unless \$from_api->{notes} eq '/api/notes';\n"
             . "die 'parent' unless \$from_api->{home} eq '/';\n",
+    );
+};
+
+
+subtest 'Linking to static files recipe executes as published' => sub {
+    my $recipe = code_block_containing($cookbook,
+        '=head2 Linking to static files', "{ path => 'css/app.css' }");
+    perl_script_runs(
+        'static file links',
+        $recipe
+            . "die 'css' unless \$links->{css} eq '/app/static/css/app.css';\n"
+            . "die 'prefix' unless \$links->{prefix} eq '/app/static';\n",
+    );
+};
+
+subtest 'Constraint Forms recipe shows the route its typed-text example names' => sub {
+    my $heading = '=head2 Constraint Forms and Wildcard Safety';
+    like first_code_block($cookbook, $heading), qr{route\('/typed/\{id:&Int\}'},
+        'the /typed route is the first example';
+    like pod_section($cookbook, $heading), qr{C</typed/09> matches},
+        'and the typed-text paragraph that names it is kept';
+};
+
+subtest 'Matched-Route Metadata recipe executes as published' => sub {
+    my $recipe = first_code_block($cookbook, '=head2 Matched-Route Metadata');
+    # The recipe's closing comment says what @log holds; the run must match it.
+    my ($published) = $recipe =~ /^# \@log is now:\n((?:#   .*\n)+)/m;
+    ok($published, 'the recipe says what @log holds');
+    my @want = map { s/\A#   //r } split /\n/, $published // '';
+    perl_script_runs(
+        'matched-route metadata recipe',
+        $recipe
+            . 'my $want = join "|", ' . join(', ', map { "q{$_}" } @want) . ";\n"
+            . "die 'log: ' . join('|', \@log) unless join('|', \@log) eq \$want;\n",
     );
 };
 
@@ -336,6 +381,49 @@ subtest 'Thrown pages recipe executes as published' => sub {
             . "\$res = \$client->get('/nope');\n"
             . "die 'a routing miss gets it from http_default' unless \$res->status == 404 && \$res->json->{error} eq 'Not Found';\n",
     );
+};
+
+subtest 'CSRF on a streamed upload recipe executes as published' => sub {
+    my $recipe = first_code_block($cookbook, '=head2 CSRF on a streamed upload');
+    my $checks = <<'PERL';
+use PAGI::Test::Client;
+my $client = PAGI::Test::Client->new(app => $app);
+my ($token) = $client->get('/notes/')->text =~ /name="csrf_token" value="([^"]+)"/;
+die 'no token on the page' unless $token;
+my $boundary = 'XyZ';
+my %multipart = ('Content-Type' => "multipart/form-data; boundary=$boundary");
+sub part {
+    my ($name, $content, $is_file) = @_;
+    return ("--$boundary",
+        qq{Content-Disposition: form-data; name="$name"} . ($is_file ? q{; filename="a.bin"} : ''),
+        ($is_file ? ('Content-Type: application/octet-stream') : ()), '', $content);
+}
+sub multipart_body { join "\r\n", @_, "--$boundary--", '' }
+my $file = 'x' x 5000;
+my @cases = (
+    ['script, right header, file first', 200,
+        multipart_body(part(file => $file, 1)), { %multipart, 'X-CSRF-Token' => $token }],
+    ['script, wrong header, file first', 403,
+        multipart_body(part(file => $file, 1)), { %multipart, 'X-CSRF-Token' => 'forged' }],
+    ['form, token first', 200,
+        multipart_body(part(csrf_token => $token), part(file => $file, 1)), \%multipart],
+    ['form, token after the file', 403,
+        multipart_body(part(file => $file, 1), part(csrf_token => $token)), \%multipart],
+    ['form, no token', 403,
+        multipart_body(part(file => $file, 1)), \%multipart],
+    ['form, token first, cross-site', 403,
+        multipart_body(part(csrf_token => $token), part(file => $file, 1)), { %multipart, 'Sec-Fetch-Site' => 'cross-site' }],
+    ['wrong header, right token field first', 403,
+        multipart_body(part(csrf_token => $token), part(file => $file, 1)), { %multipart, 'X-CSRF-Token' => 'forged' }],
+);
+for my $case (@cases) {
+    my ($label, $want, $body, $headers) = @$case;
+    my $res = $client->post('/upload', body => $body, headers => $headers);
+    die "$label: expected $want, got " . $res->status . ' ' . $res->text . "\n" unless $res->status == $want;
+    die "$label: expected the stored size\n" if $want == 200 && $res->text ne 'Stored 5000 bytes';
+}
+PERL
+    perl_script_runs('CSRF on a streamed upload recipe', $recipe . $checks);
 };
 
 subtest 'Tutorial routing object example executes exactly as published' => sub {

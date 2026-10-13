@@ -13,7 +13,7 @@ my @middleware = qw(
     Cookie CORS CSRF Debug ErrorHandler ETag GZip Head Healthcheck
     HTTPSRedirect Lint Maintenance MethodOverride RateLimit RequestId
     ReverseProxy Rewrite Runtime SecurityHeaders Session SSE::Retry Static
-    TrustedHosts XSendfile
+    TrustedHosts XSendfile RequestClass
 );
 
 # The SYNOPSIS's first run of verbatim paragraphs, unindented.

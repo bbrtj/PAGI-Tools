@@ -3,23 +3,18 @@ use strict;
 use warnings;
 use Future::AsyncAwait;
 
-use MyApp::API::User;
 use PAGI::Pages qw(not_found unauthorized);
 use PAGI::Request;
 use PAGI::Response qw(response);
-use PAGI::Routing qw(middleware mount route router sse);
+use PAGI::Routing qw(endpoint middleware mount route router sse);
 use PAGI::Routing::URL qw(path_for);
 use PAGI::State qw(app_state);
 use PAGI::Utils qw(invoke_app);
 
 sub new {
     my ($class, %args) = @_;
-    die "events is required\n" unless $args{events};
     die "users is required\n" unless $args{users};
-    return bless {
-        events => $args{events},
-        users  => $args{users},
-    }, $class;
+    return bless { users => $args{users} }, $class;
 }
 
 sub Int { return qr/\A\d+\z/ }
@@ -40,7 +35,7 @@ sub routing {
                 name => 'index',
                 middleware => [$demo_token_middleware]),
             route('/show/{user_id:&Int}' =>
-                MyApp::API::User->new(users => $self->{users}),
+                endpoint('MyApp::API::User', users => $self->{users}),
                 name => 'show',
                 middleware => [$demo_token_middleware]),
             mount('/tools', routes => [
@@ -48,7 +43,7 @@ sub routing {
                     name => 'status'),
             ], name => 'tools'),
             mount('/events', routes => [
-                sse('/stream' => $self->{events}, name => 'stream'),
+                sse('/stream' => endpoint('MyApp::API::Events'), name => 'stream'),
             ], name => 'events'),
         ],
     );

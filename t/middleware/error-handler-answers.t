@@ -307,4 +307,24 @@ subtest 'a thrown redirect that fails to render goes through the error pipeline'
         'on_error and the handler see the render failure';
 };
 
+{
+    package Local::AppRequest;
+    use parent 'PAGI::Request';
+}
+
+subtest 'the handler receives the class the scope key builds' => sub {
+    my $seen;
+    my $handler = sub { my ($request) = @_; $seen = ref $request; return error_context($request)->default };
+    my ($status, undef, undef, $failure, $warnings) = run(
+        error   => PAGI::Request::BodyError->new(message => 'bad'),
+        options => { handler => $handler },
+        scope   => { type => 'http', method => 'GET', path => '/', headers => [],
+            'pagi.request.factory' => sub { Local::AppRequest->new(@_) } },
+    );
+    is([$seen, $status, $failure, $warnings], ['Local::AppRequest', 400, undef, []],
+        'a key: its class');
+    run(error => PAGI::Request::BodyError->new(message => 'bad'), options => { handler => $handler });
+    is($seen, 'PAGI::Request', 'no key: PAGI::Request');
+};
+
 done_testing;

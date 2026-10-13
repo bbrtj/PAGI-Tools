@@ -7,7 +7,7 @@ use Future;
 use Future::AsyncAwait;
 use Carp qw(croak);
 use Scalar::Util qw(blessed);
-use PAGI::Request;
+use PAGI::Request::_Factory ();
 use PAGI::Response::Empty ();
 use PAGI::Response::Text ();
 use PAGI::Utils qw(invoke_app);
@@ -19,7 +19,7 @@ sub new {
 }
 
 # HTTP methods we support
-our @HTTP_METHODS = qw(get post put patch delete head options);
+our @HTTP_METHODS = qw(get post put patch delete head options query);
 
 sub allowed_methods {
     my ($self) = @_;
@@ -94,8 +94,9 @@ sub _with_allow {
 }
 
 sub to_app {
-    my ($invocant) = @_;
-    my $endpoint = blessed($invocant) ? $invocant : $invocant->new;
+    my ($endpoint) = @_;
+    croak "to_app is called on an endpoint object; use endpoint('$endpoint') or $endpoint->new->to_app"
+        unless blessed($endpoint);
 
     return async sub {
         my ($scope, $receive, $send) = @_;
@@ -104,7 +105,7 @@ sub to_app {
             unless defined($type) && !ref($type) && length($type);
         croak "PAGI::Endpoint::HTTP requires HTTP scope; received '$type'"
             unless $type eq 'http';
-        my $request = PAGI::Request->new($scope, $receive);
+        my $request = PAGI::Request::_Factory::request_for_scope($scope, $receive);
         my $application = await $endpoint->dispatch($request);
         await invoke_app($application, $scope, $receive, $send);
     };
@@ -123,7 +124,7 @@ PAGI::Endpoint::HTTP - Class-based HTTP endpoint handler
     package MyApp::UserAPI;
     use parent 'PAGI::Endpoint::HTTP';
     use Future::AsyncAwait;
-    use PAGI::Tools qw(response route);
+    use PAGI::Tools qw(endpoint response route);
 
     async sub get {
         my ($self, $request) = @_;
@@ -145,15 +146,15 @@ PAGI::Endpoint::HTTP - Class-based HTTP endpoint handler
         return response('Empty', status => 204);
     }
 
-    # Place one configured object at one exact Route.
-    route('/users/{id}' => MyApp::UserAPI->new(repo => $repo));
+    # Name the class; endpoint() loads and builds it.
+    route('/users/{id}' => endpoint('MyApp::UserAPI', repo => $repo));
 
 =head1 DESCRIPTION
 
 PAGI::Endpoint::HTTP provides a Starlette-inspired class-based approach
 to handling HTTP requests. Define methods named after HTTP verbs (get,
-post, put, patch, delete, head, options) and the endpoint automatically
-dispatches to them.
+post, put, patch, delete, head, options, query) and the endpoint
+automatically dispatches to them.
 
 When no method handler exists, L</method_not_allowed> answers -- by default a
 plain-text C<405 Method Not Allowed> -- and the endpoint sets C<Allow> to its
@@ -161,9 +162,9 @@ complete, sorted C<allowed_methods> result. Explicit method handlers and an
 explicit C<options> method remain authoritative custom-response seams.
 Automatic OPTIONS retains its existing empty response with C<Allow>.
 
-An instantiated Endpoint object can be placed directly at a Route. With no
-explicit Route C<methods>, the Router snapshots C<allowed_methods> once at
-Route construction, including GET-derived HEAD and OPTIONS. The Router then
+An Endpoint is placed at a Route with C<endpoint> (or as an instance placed
+directly). With no explicit Route C<methods>, the Router snapshots
+C<allowed_methods> once at Route construction, including GET-derived HEAD and OPTIONS. The Router then
 owns unsupported-method 405 and the authoritative C<Allow> union; a matched
 OPTIONS reaches this Endpoint. Mounted, standalone, or deliberately broader
 Route placement retains the Endpoint's own method outcomes.
@@ -199,6 +200,7 @@ Define any of these async methods to handle requests:
     async sub delete { my ($self, $request) = @_; ... }
     async sub head { my ($self, $request) = @_; ... }
     async sub options { my ($self, $request) = @_; ... }
+    async sub query { my ($self, $request) = @_; ... }
 
 Each receives:
 
@@ -206,7 +208,7 @@ Each receives:
 
 =item C<$self> - The endpoint instance
 
-=item C<$request> - A L<PAGI::Request> instance
+=item C<$request> - A L<PAGI::Request>, or the class L<PAGI::Middleware::RequestClass> set
 
 =back
 
@@ -224,33 +226,34 @@ The selected handler runs inline. Immediate results are normalized with
 C<Future-E<gt>wrap>, but blocking synchronous work still blocks the event-loop
 thread. A returned object's C<to_app> is invoked once for that request.
 
-B<Singleton:> C<to_app> creates a single endpoint instance that serves the
-entire application lifetime. State stored in C<$self> persists across
-requests (within the same worker process).
+B<Built once by default:> named at a route with C<endpoint>, the class is
+built once, and that one object serves every request for the application's
+lifetime (within the same worker process), concurrently.
 
-B<Do not store per-request state on C<$self>> - one instance is shared by
-every request (and concurrent requests), so request-scoped data on C<$self>
-will leak between them. Keep configuration and long-lived services on
-C<$self>; keep request-scoped data on C<$request> or scope-bound helpers.
+B<Do not store per-request state on C<$self>> of an endpoint built once:
+request-scoped data on C<$self> would leak between concurrent requests. Keep
+configuration and long-lived services on C<$self>, and request-scoped data on
+C<$request> or scope-bound helpers. A class that wants a fresh object for
+every request says so with C<BUILD_APP> (L<PAGI::Endpoint>); C<$self> then
+belongs to that one request.
 
-=head1 CLASS METHODS
+=head1 INSTANCE METHODS
 
 =head2 to_app
 
-    my $app = MyEndpoint->to_app;
+    my $app = endpoint('MyEndpoint')->to_app;
 
-Returns a PAGI-compatible async coderef that can be used directly
-with PAGI::Server or composed with middleware. Creates a single endpoint
-instance at construction time; that instance is reused for every request
-(singleton).
+Returns a PAGI-compatible async coderef that can be used directly with
+PAGI::Server or composed with middleware. C<to_app> is an instance
+method: called on an endpoint object, it retains that exact object for
+the returned application's lifetime. Calling it on a class name dies
+with "to_app is called on an endpoint object; use
+endpoint('MyEndpoint') or MyEndpoint->new->to_app". To place a class at
+a route, name it with L<PAGI::Routing/endpoint>, which builds it as the
+class decides (L<PAGI::Endpoint>).
 
 The returned application accepts HTTP scopes only. Other protocol scopes are
 rejected before a handler runs or either I/O callback is invoked.
-
-Calling C<to_app> on an already configured endpoint instance retains that
-exact instance and reuses it for the returned application's lifetime.
-
-=head1 INSTANCE METHODS
 
 =head2 dispatch
 
@@ -271,11 +274,16 @@ it receives the request and the allowed methods, and may return a Response,
 an application, or a Future of one. The endpoint sets the response's one
 C<Allow> field to the allowed methods, replacing any the answer carries.
 
+At a Route without C<< methods => '*' >> the Router answers methods this
+endpoint does not advertise, from C<allowed_methods>, so this hook runs
+only when the endpoint is mounted or routed with C<< methods => '*' >>.
+
 =head2 allowed_methods
 
     my @methods = $endpoint->allowed_methods;
 
-Returns list of HTTP methods this endpoint handles.
+Returns list of HTTP methods this endpoint handles. Works on the class as
+well as an instance; a per-request endpoint's Route asks the class.
 
 =head1 SEE ALSO
 

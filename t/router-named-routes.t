@@ -50,8 +50,9 @@ subtest 'ordinary routing objects retain named sibling placements' => sub {
         mount('/right/{tenant}', app => $child, name => 'right'),
     ]);
 
-    is([sort keys %{$routing->named_routes}], ['/left/show', '/right/show'],
-        'one immutable child publishes names under both Mount placements');
+    is([sort keys %{$routing->named_routes}],
+        ['/left', '/left/show', '/right', '/right/show'],
+        'one immutable child publishes names under both named Mount placements');
     is($routing->path_for('/left/show', { tenant => 'acme', id => 1 }),
         '/left/acme/item/1', 'left absolute name renders its placement');
     is($routing->path_for('/right/show', { tenant => 'beta', id => 2 }),
@@ -179,7 +180,7 @@ subtest 'known mounts compose nested names without copying them' => sub {
     ]);
 
     is([sort keys %{$main->named_routes}], [
-        '/api/users/list', '/api/users/show', '/home',
+        '/api', '/api/users', '/api/users/list', '/api/users/show', '/home',
     ], 'known mount placement names compose recursively');
     is($main->path_for('/home'), '/', 'root route remains available');
     is($main->path_for('/api/users/list'), '/api/users/',
@@ -195,14 +196,16 @@ subtest 'known mounts compose nested names without copying them' => sub {
         'immutable child Routers retain caller-owned leaf identity');
 };
 
-subtest 'opaque mounts accept placement metadata but publish no leaf names' => sub {
+subtest 'opaque mounts publish their own name but no names below it' => sub {
     my $opaque = sub { return Future->done };
-    my $routing = router(routes => [
-        mount('/legacy', app => $opaque, name => 'legacy'),
-    ]);
+    my $mount = mount('/legacy', app => $opaque, name => 'legacy');
+    my $routing = router(routes => [$mount]);
     is($routing->routes->[0]->name, 'legacy',
         'an opaque Mount retains its local placement name');
-    is($routing->named_routes, {}, 'opaque target contributes no names');
+    is([keys %{$routing->named_routes}], ['/legacy'],
+        'opaque target contributes only its own name');
+    is(refaddr($routing->named_routes->{'/legacy'}), refaddr($mount),
+        'that name maps to the Mount');
 };
 
 done_testing;

@@ -35,21 +35,11 @@ sub page ($request, $template, %vars) {
         csrf_token => csrf($request)->token,
         flash      => $flash,
         url        => sub ($name, @args) { path_for($request, $name, @args) },
-        # No route names the static mount, so its prefix is built by hand
-        # from root_path, which keeps it right under a proxy prefix.
-        static     => $request->scope->{root_path} . '/static',
     }, \my $html) or die $tt->error;
     return response('HTML', $html, status => $vars{status} // 200);
 }
 
 sub flash ($request, $message) { session($request)->set(flash => $message) }
-
-# The CSRF middleware runs with refuse => 0 because the token is a form
-# field, which it does not read; each POST checks the parsed field.
-sub refused ($request, $form) {
-    return undef if csrf($request)->verify($form->get('csrf_token') // '');
-    return response('Text', 'CSRF token validation failed', status => 403);
-}
 
 sub tasks ($request) { app_state($request)->get('board') }
 
@@ -70,7 +60,6 @@ async sub index ($request) {
 
 async sub create ($request) {
     my $form = await $request->form_params;
-    if (my $refusal = refused($request, $form)) { return $refusal }
     my ($values, $errors) = validate($form);
     return page($request, 'index.tt', tasks => tasks($request)->{list},
         form => $values, errors => $errors, status => 422)
@@ -83,8 +72,6 @@ async sub create ($request) {
 }
 
 async sub toggle ($request) {
-    my $form = await $request->form_params;
-    if (my $refusal = refused($request, $form)) { return $refusal }
     my $id = $request->path_param('id');
     my ($task) = grep { $_->{id} == $id } @{ tasks($request)->{list} };
     return response('Text', 'No such task', status => 404) unless $task;
@@ -94,8 +81,6 @@ async sub toggle ($request) {
 }
 
 async sub remove ($request) {
-    my $form = await $request->form_params;
-    if (my $refusal = refused($request, $form)) { return $refusal }
     my $id    = $request->path_param('id');
     my $board = tasks($request);
     my $before = @{ $board->{list} };
@@ -111,11 +96,13 @@ compose(
         route('/tasks' => \&create, methods => ['POST'], name => 'create'),
         route('/tasks/{id}/toggle' => \&toggle, methods => ['POST'], name => 'toggle'),
         route('/tasks/{id}/delete' => \&remove, methods => ['POST'], name => 'delete'),
-        mount('/static', app => PAGI::App::File->from_app_path('public')),
+        mount('/static', app => PAGI::App::File->from_app_path('public'), name => 'static'),
     ],
     middleware => [
         middleware('Session'),
-        middleware('CSRF', session => 1, refuse => 0),
+        # Every POST is a form carrying csrf_token, which the middleware reads:
+        # a missing or wrong token is refused with a 403.
+        middleware('CSRF', session => 1),
     ],
     lifespan => {
         startup => sub ($state, $scope) { $state->{board} = { next => 1, list => [] } },

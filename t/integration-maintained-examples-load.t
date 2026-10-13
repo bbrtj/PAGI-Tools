@@ -117,7 +117,7 @@ subtest 'full demo serves its high-level root handler' => sub {
         'root route preserves its native response');
 };
 
-subtest 'endpoint demo declares endpoint objects directly' => sub {
+subtest 'endpoint demo names endpoint classes at routes' => sub {
     my $source = source_text("$Bin/../examples/endpoint-demo/app.pl");
 
     unlike($source, qr/use PAGI::App::Router;/,
@@ -125,15 +125,15 @@ subtest 'endpoint demo declares endpoint objects directly' => sub {
     unlike($source, qr/->to_app\b/,
         'endpoint demo does not materialize endpoint applications manually');
     like($source,
-        qr/route\('\/api\/messages'\s*=>\s*MessageAPI->new,\s*
+        qr/route\('\/api\/messages'\s*=>\s*endpoint\('MessageAPI'\),\s*
             middleware\s*=>\s*\[middleware\(\$access_log\),\s*middleware\(\$require_json\)\]/x,
         'HTTP endpoint is a direct route with its existing middleware');
     like($source,
-        qr/websocket\('\/ws\/echo'\s*=>\s*EchoWS->new,\s*
+        qr/websocket\('\/ws\/echo'\s*=>\s*endpoint\('EchoWS'\),\s*
             middleware\s*=>\s*\[middleware\(\$timing\)\]/x,
         'WebSocket endpoint uses protocol-neutral middleware (AccessLog logs HTTP only)');
     like($source,
-        qr/sse\('\/events'\s*=>\s*MessageEvents->new,\s*
+        qr/sse\('\/events'\s*=>\s*endpoint\('MessageEvents'\),\s*
             middleware\s*=>\s*\[middleware\(\$timing\)\]/x,
         'SSE endpoint is a direct route with its existing middleware');
     like($source,

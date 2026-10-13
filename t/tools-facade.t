@@ -19,6 +19,7 @@ my %SOURCE = (
     mount                 => 'PAGI::Routing',
     middleware            => 'PAGI::Routing',
     request_response      => 'PAGI::Routing',
+    endpoint              => 'PAGI::Routing',
     url                   => 'PAGI::Routing::URL',
     path_for              => 'PAGI::Routing::URL',
     url_for               => 'PAGI::Routing::URL',

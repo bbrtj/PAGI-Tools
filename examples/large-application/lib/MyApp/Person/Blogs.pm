@@ -22,6 +22,7 @@ sub list_blogs($request) {
     unless ($person) {
         return response('HTML',
             MyApp::View->document(
+                $request,
                 'Blogs not found',
                 '    <h1>Blogs not found</h1>',
             ),
@@ -43,6 +44,7 @@ sub list_blogs($request) {
     my $person_path = path_for($request, '../show');
 
     return response('HTML', MyApp::View->document(
+        $request,
         "Blogs by $person->{name}",
         qq{    <a href="$person_path">$person->{name}</a>\n}
             . "    <h1>Blogs</h1>\n    <ul>\n"
@@ -60,6 +62,7 @@ sub show_blog($request) {
         my $blogs_path = path_for($request, 'index');
         return response('HTML',
             MyApp::View->document(
+                $request,
                 'Blog not found',
                 qq{    <a href="$blogs_path">Blogs</a>\n}
                     . '    <h1>Blog not found</h1>',
@@ -77,6 +80,7 @@ sub show_blog($request) {
     );
 
     return response('HTML', MyApp::View->document(
+        $request,
         $blog->{title},
         qq{    <a href="$home_path">Home</a> / }
             . qq{<a href="$person_path">Person</a> / }

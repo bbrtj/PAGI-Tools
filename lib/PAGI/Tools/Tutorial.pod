@@ -4,10 +4,6 @@
 
 PAGI::Tools::Tutorial - Optional convenience helpers for PAGI applications
 
-Route matches a complete URL leaf. Mount composes an application under a
-prefix. Router selects and owns routing outcomes. Middleware wraps behavior.
-Compose owns the application root and lifespan.
-
 =head1 DESCRIPTION
 
 PAGI itself is a protocol; see L<PAGI::Tutorial> for the protocol tutorial.
@@ -79,16 +75,9 @@ applications (PART 7).
 L<PAGI::Routing> is the compact route-tree API. HTTP handlers receive one
 L<PAGI::Request> and return immediate or Future-backed application values,
 commonly L<PAGI::Response> or L<PAGI::Pages::Application>. WebSocket and SSE
-handlers receive their direct protocol objects:
-
-  HTTP Route endpoint / http_default CODE  -> one Request handler
-  HTTP Route endpoint / http_default object -> app object via to_app
-  WebSocket Route endpoint CODE             -> one WebSocket handler
-  WebSocket Route endpoint object           -> app object via to_app
-  SSE Route endpoint CODE                   -> one SSE handler
-  SSE Route endpoint object                 -> app object via to_app
-  Mount app CODE                       -> native PAGI application
-  Mount app object                     -> app object via to_app
+handlers receive their direct protocol objects;
+L<PAGI::Routing/HANDLERS> says what a coderef or object means in each
+position.
 
   use Future::AsyncAwait;
   use PAGI::Tools qw(:routes response);
@@ -146,49 +135,32 @@ Type::Tiny type is an ordinary zero-argument provider function:
 
   route('/users/{id:&Int}' => \&user, name => 'user');
 
-PAGI calls C<Int> while constructing the route and later validates without
-coercing the captured string. Type::Tiny is optional for applications; it is
-not a PAGI::Tools runtime dependency. A package-local provider can give an
-application rule its own name and semantics:
-
-  sub PersonId {
-      my $int = Int;
-      return sub {
-          my ($value) = @_;
-          return $int->check($value) && $value > 0;
-      };
-  }
-
-  route('/people/{id:&PersonId}' => \&person, name => 'person');
-
-Use a short inline regex for a short path-local rule and the explicit
-C<constraints> hash for dynamic, subclass-dependent, or complex rules. See
-L<PAGI::Routing/Path parameters, wildcards, and constraints> for provider
-lookup, escaping, and reverse-routing behavior.
+L<PAGI::Tools::Cookbook/Constraint Forms and Wildcard Safety> builds a
+package-local provider, and L<PAGI::Routing/Inline constraint providers> has
+the lookup and escaping rules.
 
 GET includes HEAD automatically. Paths are exact, with no slash redirect or
-automatic OPTIONS. Mount has one composition contract and exactly one named
-target:
+automatic OPTIONS. A Mount takes exactly one of C<app> or C<routes>:
 
   mount('/api', routes => \@nodes, name => 'api')
   mount('/people', app => $people, name => 'person')
   mount('/static', app => $static_app)
 
 C<routes> constructs a complete child Router application. C<app> retains a
-native application or app object; an immutable Router remains
-inspectable while other applications are opaque. A local C<name> is optional
+native application or app object. A Router in either form makes a Router
+mount, which the parent can inspect; anything else makes an application mount,
+opaque to the parent. A local C<name> is optional
 for either form. After a prefix matches, the child owns its full match, 404,
 and 405. Those responses flow through child, Mount-occurrence, and parent
 middleware, but the parent never resumes scanning.
 
-The structural form always takes an arrayref of nodes:
+The C<routes> form always takes an arrayref of nodes:
 
   mount('/reports', routes => [route('/' => \&report)])
 
-Route and structural-mount names are local segments; slash constructs absolute
-logical addresses such as C</api/user>. Import URL helpers from their Router
-owner; request-bound calls may resolve from the active namespace and inherit
-only target-required captures:
+Route and mount names are local segments; slash constructs absolute logical
+addresses such as C</api/user>. Import URL helpers from
+L<PAGI::Routing::URL>:
 
   use PAGI::Routing::URL qw(path_for url_for);
 
@@ -199,18 +171,14 @@ only target-required captures:
       fragment => 'details',
   );
 
-Absolute request-bound references and Router-object calls inherit nothing. URL
-generation is not authorization. Reverse helpers return strings or croak; they
-send no protocol events or redirects.
+L<PAGI::Routing::URL> has the rules for relative references, inherited
+captures, and the argument forms.
 
-Pure route/mount/router middleware lists contain explicit descriptions, such
-as C<< middleware =E<gt> [middleware($factory)] >>. Use
-C<middleware($class, %config)> for deferred class construction,
-C<middleware($factory, %config)> for a configured synchronous factory, and
-C<middleware($object)> for an already configured C<wrap> object. Native
-three-channel CODE endpoints remain explicit with C<as_app_object>. See L<PAGI::Routing> for
-the complete lifecycle and
-L<PAGI::Tools::Cookbook> for mounted, application, protocol, reverse-routing, and
+Route, mount and router middleware lists contain explicit descriptions, such
+as C<< middleware =E<gt> [middleware($factory)] >>; L<PAGI::Routing::Middleware>
+has the three forms. Native three-channel CODE endpoints remain explicit with
+C<as_app_object>. See L<PAGI::Routing> for the complete lifecycle and
+L<PAGI::Tools::Cookbook> for mount, catch-all, constraint, linking and
 metadata recipes.
 
 =head2 2.2 PAGI::Compose - Application Root
@@ -305,10 +273,13 @@ rather than provide competing declaration styles:
   Compose                       root lifespan, middleware, and safety
 
 A small handler is usually a coderef. When HTTP verb dispatch or a connection
-lifecycle earns a class, place a configured L<PAGI::Endpoint::HTTP>,
-L<PAGI::Endpoint::WebSocket>, or L<PAGI::Endpoint::SSE> instance at that exact
-route. When an ordinary application class owns several paths, have a
-C<routing()> method return an immutable Router:
+lifecycle earns a class, write a L<PAGI::Endpoint::HTTP>,
+L<PAGI::Endpoint::WebSocket>, or L<PAGI::Endpoint::SSE> subclass and name it
+at its route with C<endpoint>:
+C<< route('/people/{id}' => endpoint('MyApp::Person', repo => $repo)) >>.
+C<endpoint> loads and builds the class (L<PAGI::Endpoint>). When an ordinary
+application class owns several paths, have a C<routing()> method return an
+immutable Router:
 
   package MyApp::People;
   use PAGI::Response qw(response);
@@ -736,7 +707,7 @@ An authenticated identity without permission can return a 403 Pages application:
       unless $identity->may('write');
 
 Both values are reusable Pages applications. See
-L<PAGI::Tools::Cookbook/Authentication & Sessions> for Basic, Bearer,
+L<PAGI::Tools::Cookbook/AUTHENTICATION & SESSIONS> for Basic, Bearer,
 multi-challenge, WebSocket, SSE, native-app, custom presentation, concealment,
 and explicit login redirect recipes. The cookie-login example is application
 policy; it is not an alternate Auth renderer.
@@ -1117,9 +1088,10 @@ Includes:
 
 Protect against Cross-Site Request Forgery:
 
-  middleware('CSRF', cookie_name => '_csrf_token'),
+  middleware('CSRF'),
 
-Validates CSRF tokens on POST/PUT/PATCH/DELETE requests.
+Checks a token on unsafe requests (POST, PUT, PATCH, DELETE): the
+X-CSRF-Token header, or a plain form's C<csrf_token> field.
 
 =back
 
@@ -1593,32 +1565,9 @@ depends on the applications it composes.
 
 =head2 7.7 Starlette Vocabulary, PAGI Boundaries
 
-PAGI follows Starlette's Route/Mount/Router/application topology, not every
-method on Starlette Request. L<PAGI::Request> owns HTTP input; imports identify
-the Router or middleware that supplies optional behavior. This keeps optional
-capability ownership visible and lets a higher-level framework use its own
-Router API.
-
-Ordinary Route and C<http_default> handlers receive the direct Request, while
-C<as_app_object> marks a native Route or C<http_default> CODE and Mount
-C<app> CODE receives the native three channels. C<request_response> remains
-for adapting a one-Request handler into Mount C<app>, not ordinary
-C<http_default> use. Compose accepts only route declarations through
-C<routes>; preserve an immutable Router through an explicit Mount within that
-list.
-Constraints validate without coercion. Names use slash logical
-addresses and relative L<PAGI::Routing::URL> lookup. SSE is a first-class scope, and all
-middleware is pure PAGI app-to-app wrapping.
-
-Current Starlette owns C<self.router> without subclassing Router. Its Router
-stores lifespan handling, so a standalone Starlette Router is lifecycle-
-capable, while mounted Routers do not receive the root lifespan exchange. PAGI
-preserves that one non-cascading lifecycle but keeps it on Compose. A bare PAGI
-Router declines lifespan, and strict mode rejects the decline. Starlette's
-single multiprotocol Router C<default> was considered and deliberately not
-copied. PAGI C<http_default> affects only HTTP NONE, leaving the stock WebSocket
-and SSE miss paths intact. OpenAPI/schema generation and C<include_in_schema> remain
-deferred until a concrete consumer exists; no placeholder option is shipped.
+L<PAGI::Routing/DELIBERATE DIFFERENCES FROM STARLETTE> lists where PAGI
+routing departs from Starlette, and L<PAGI::Compose/STARLETTE COMPARISON>
+covers lifespan.
 
 =head1 SEE ALSO
 

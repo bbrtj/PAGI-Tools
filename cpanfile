@@ -38,6 +38,8 @@ requires 'Crypt::URandom', '0.36';
 on 'test' => sub {
     requires 'Test2::V0', '0.000159';
     requires 'Moose', '2.2200';
+    # t/endpoint/15-endpoint.t and examples/endpoint-lifecycle use Moo
+    requires 'Moo';
     requires 'Type::Tiny';
     # In-process tests drive apps under a real event loop
     requires 'IO::Async', '0.802';

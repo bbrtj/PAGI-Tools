@@ -8,8 +8,8 @@ stylesheet comes from a static directory.
 
 PAGI-Tools ships no template engine, flash or validation. This app shows
 what each costs on top of it. The same application in Flask, which has all
-three built in, is at the end of this README; it was driven with the same requests and
-answers them the same way.
+three built in, is at the end of this README; it was driven with the same
+requests and answers them the same way.
 
 ## Run
 
@@ -32,22 +32,27 @@ installed; it is not a dependency of PAGI-Tools.
   handler, `get`-then-`delete` in `page`.
 - **Validation errors.** Hand-written: a `validate` returning values and
   errors, and a 422 re-render of the same template.
-- **CSRF on forms.** The middleware runs with `session => 1, refuse => 0`
-  because the token is a form field it does not read, so each POST handler
-  calls `csrf($request)->verify` on the parsed field. A missing token is a
-  403.
+- **CSRF on forms.** `middleware('CSRF', session => 1)` reads the hidden
+  `csrf_token` field of every POST, as it does by default, and answers a
+  missing or wrong token with a 403 before any handler runs. The handlers
+  never mention CSRF; `create` still gets its fields from `form_params`,
+  which the middleware's read left cached.
 - **Static files.** `mount('/static', app =>
-  PAGI::App::File->from_app_path('public'))`. No route names a mount, so
-  the stylesheet link is built from `root_path` by hand.
+  PAGI::App::File->from_app_path('public'), name => 'static')`. The mount is
+  named `static`, so the layout links the stylesheet with
+  `url('static', { path = 'style.css' })`, which keeps a proxy prefix.
 - **State at startup.** The board lives in lifespan state and is read with
   `app_state($request)`.
 
 Measured with the gut-check line counter (code lines, imports in
-parentheses): PAGI-Tools 83 (9), Flask 51 (2). The templates are 47 and 44
-lines. The difference is the batteries: Flask's `render_template`,
-`flash`/`get_flashed_messages` and `url_for('static', ...)` are the `page`,
-`flash` and `static` helpers here, and Flask's module-level `BOARD` is
-Compose's `lifespan` block.
+parentheses): PAGI-Tools 74 (9), Flask 51 (2). The templates are 47 and 44
+lines. The difference is the batteries: Flask's `render_template` and
+`flash`/`get_flashed_messages` are the `page` and `flash` helpers here,
+`url_for('static', ...)` is the template's `url('static', ...)`, and Flask's
+module-level `BOARD` is
+Compose's `lifespan` block. CSRF goes the other way: the Flask version
+checks it by hand (`check_csrf` and its three calls), where PAGI-Tools'
+middleware reads the form field itself.
 
 ## Try
 
@@ -214,7 +219,8 @@ ul.tasks form { display: inline; }
 ## See also
 
 - `PAGI::Session` and `PAGI::Middleware::Session`
-- `PAGI::CSRF`, for `verify` with a form-field token
+- `PAGI::Middleware::CSRF`, which reads the `csrf_token` field; `PAGI::CSRF`
+  for the token the page renders
 - `PAGI::App::File`, `from_app_path`
 - `examples/auth-cookie-login`, the same form idioms with a login
 - `examples/contact-form`, form fields and file uploads without a session

@@ -34,7 +34,7 @@ package DeclineOnConnect {
 }
 
 subtest 'on_connect decline yields a real 401 response, no sse.start, no exception' => sub {
-    my $app = DeclineOnConnect->to_app;
+    my $app = DeclineOnConnect->new->to_app;
     my $client = PAGI::Test::Client->new(app => $app);
 
     my $res;
@@ -64,7 +64,7 @@ subtest 'handle() does not call run() (and therefore never sends sse.start) afte
     # sse.start sent after a completed decline fails the send outright --
     # so if handle()'s guard were missing, this would die instead of
     # returning a clean 403.
-    my $app = DeclineThenTryToStream->to_app;
+    my $app = DeclineThenTryToStream->new->to_app;
     my $client = PAGI::Test::Client->new(app => $app);
 
     my $res;

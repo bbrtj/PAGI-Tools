@@ -37,13 +37,13 @@ package SimpleWSEndpoint {
 }
 
 subtest 'to_app returns PAGI-compatible coderef' => sub {
-    my $app = SimpleWSEndpoint->to_app;
+    my $app = SimpleWSEndpoint->new->to_app;
 
     ref_ok($app, 'CODE', 'to_app returns coderef');
 };
 
 subtest 'app creates a WebSocket wrapper and calls handle' => sub {
-    my $app = SimpleWSEndpoint->to_app;
+    my $app = SimpleWSEndpoint->new->to_app;
 
     my @sent;
     my @events = (
@@ -128,7 +128,7 @@ subtest 'app reuses only a compatible exact-scope WebSocket cache' => sub {
             $scope->{'pagi.websocket'} = $cached;
             $CacheAwareEndpoint::seen = undef;
 
-            CacheAwareEndpoint->to_app->(
+            CacheAwareEndpoint->new->to_app->(
                 $scope, $receive, sub { Future->done },
             )->get;
 

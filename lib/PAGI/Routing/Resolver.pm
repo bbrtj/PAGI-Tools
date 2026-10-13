@@ -101,6 +101,8 @@ sub _visit_nodes {
             my @child_segments = @$address_segments;
             push @child_segments, $node->name
                 if defined $node->name && length $node->name;
+            $self->_index_named_mount($node, $effective_path, \@child_segments, $predicates)
+                if defined $node->name && length $node->name;
             $self->{metadata_by_location}{$location_key} = {
                 match => {
                     kind  => 'mount',
@@ -180,14 +182,56 @@ sub _visit_nodes {
             pattern => $pattern,
         };
 
-        if (my $previous = $self->{by_name}{$effective_name}) {
-            croak "duplicate canonical route address '$effective_name' for effective paths "
-                . "'$previous->{path}' and '$effective_path'; add or change a local mount name";
-        }
-
-        push @{$self->{records}}, $record;
-        $self->{by_name}{$effective_name} = $record;
+        $self->_index_record($record);
     }
+}
+
+sub _index_named_mount {
+    my ($self, $node, $effective_path, $child_segments, $predicates) = @_;
+    my $name = _canonical_address($child_segments);
+    my $prefix = _published_path($effective_path);
+    croak "named mount '$name' cannot reverse its remainder: its effective path "
+        . "'$prefix' already declares a 'path' parameter; rename that parameter"
+        if exists $predicates->{path};
+
+    my $record = {
+        name    => $name,
+        path    => $prefix,
+        kind    => 'mount',
+        desc    => $node->desc,
+        node    => $node,
+        pattern => PAGI::Routing::Pattern->new(
+            path               => $prefix,
+            mode               => 'route',
+            constraints        => {},
+            _predicate_records => $predicates,
+        ),
+        remainder_pattern => PAGI::Routing::Pattern->new(
+            path               => $effective_path . '/*path',
+            mode               => 'route',
+            constraints        => {},
+            _predicate_records => { %$predicates, path => [] },
+        ),
+    };
+    $self->_index_record($record);
+}
+
+sub _index_record {
+    my ($self, $record) = @_;
+    my $name = $record->{name};
+    if (my $previous = $self->{by_name}{$name}) {
+        if (($previous->{kind} eq 'mount') != ($record->{kind} eq 'mount')) {
+            my ($route, $mount) = $record->{kind} eq 'mount'
+                ? ($previous, $record) : ($record, $previous);
+            croak "route '$route->{path}' and mount '$mount->{path}' both claim the name "
+                . "'$name'; a name is one URL. Put the landing route inside the mount as route('/')";
+        }
+        croak "duplicate canonical route address '$name' for effective paths "
+            . "'$previous->{path}' and '$record->{path}'; add or change a local mount name";
+    }
+
+    push @{$self->{records}}, $record;
+    $self->{by_name}{$name} = $record;
 }
 
 sub _metadata_for_location {
@@ -370,7 +414,15 @@ sub _render_reverse_from_scope {
 
 sub _render_resolved_reverse {
     my ($self, $arguments, $record, $canonical, $was_absolute) = @_;
-    my $path = $record->{pattern}->render($arguments->{params}, $canonical);
+    my $pattern = $record->{pattern};
+    my $params = $arguments->{params};
+    # A mount target renders its prefix, or with path the remainder below it.
+    if ($record->{kind} eq 'mount' && exists $params->{path}) {
+        $pattern = $record->{remainder_pattern};
+        $params = { %$params };
+        $params->{path} =~ s{\A/+}{} if defined $params->{path} && !ref $params->{path};
+    }
+    my $path = $pattern->render($params, $canonical);
     my @pairs;
     for my $key (sort keys %{$arguments->{query}}) {
         my $value = $arguments->{query}{$key};
@@ -570,8 +622,9 @@ PAGI::Routing::Resolver - Composed slash addresses and reverse paths
 =head1 DESCRIPTION
 
 This internal routing value traverses direct routes and mounted first-party
-L<PAGI::Routing::Router> base applications. It indexes named leaves by
-canonical absolute slash addresses, retains each original leaf identity for
+L<PAGI::Routing::Router> base applications. It indexes named leaves and named
+Mounts by canonical absolute slash addresses, retains each original leaf
+identity for
 inspection, and renders application-relative paths for each outer placement.
 All other mounted applications remain opaque to reverse inspection, even when
 they happen to provide methods named C<routes>, C<path_for>, or C<to_app>.
@@ -582,8 +635,9 @@ predicate records are copied through its ancestry while retaining the original
 check and explanation coderefs. Effective named-route Patterns install those
 records directly; they do not reparse inline syntax, reinvoke providers, or
 renormalize explicit constraints. Every known Mount prefix is validated and
-receives placement metadata before opacity ends traversal. A named opaque
-Mount publishes no route target by itself. Duplicate canonical addresses
+receives placement metadata before opacity ends traversal. A named Mount,
+opaque or not, publishes its prefix as a reverse target; C<path> renders a
+path below it through a terminal wildcard. Duplicate canonical addresses
 report both effective paths, and a path parameter may occur only once along
 one ancestor-to-descendant effective path. Router identity is tracked only in
 the active ancestry, rejecting cycles while allowing sibling placement reuse.
@@ -629,11 +683,11 @@ included in public match metadata. References beginning with C</> are
 absolute; other references resolve from an explicit logical base (the Router
 root for public Router reverse calls). Components C<.> and C<..> normalize left-to-right,
 while dots inside a component remain literal. Empty components, repeated or
-trailing separators, traversal above root, and namespace-only results fail.
+trailing separators, traversal above root, and results ending at the root fail.
 References are never URI-decoded and lookup is exact: there is no ancestor
 search, absolute retry, prefix folding, or dotted hierarchy. C<named_routes>
 returns a defensive hashref, while C<route_named>
-preserves the original leaf identity and C<route_kind> returns the immutable
+preserves the original leaf or Mount identity and C<route_kind> returns the immutable
 indexed kind.
 
 C<reverse_for_scope> is the scope-bound request-aware entry point. It

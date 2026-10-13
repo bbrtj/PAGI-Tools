@@ -57,8 +57,8 @@ my @wrappers = (
       compose(routes => [ websocket('/x' => $ws_handler) ])->to_app ],
     [ 'sse route', sub { sse_scope(path => '/x') },
       compose(routes => [ sse('/x' => $sse_handler) ])->to_app ],
-    [ 'PAGI::Endpoint::WebSocket', sub { ws_scope(path => '/x') }, TestCleanupWS->to_app ],
-    [ 'PAGI::Endpoint::SSE', sub { sse_scope(path => '/x') }, TestCleanupSSE->to_app ],
+    [ 'PAGI::Endpoint::WebSocket', sub { ws_scope(path => '/x') }, TestCleanupWS->new->to_app ],
+    [ 'PAGI::Endpoint::SSE', sub { sse_scope(path => '/x') }, TestCleanupSSE->new->to_app ],
 );
 
 for my $wrapper (@wrappers) {

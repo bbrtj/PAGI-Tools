@@ -27,6 +27,7 @@ sub list_people($request) {
     }
 
     return response('HTML', MyApp::View->document(
+        $request,
         'People',
         "    <h1>People</h1>\n    <ul>\n"
             . join("\n", @items)
@@ -42,6 +43,7 @@ sub show_person($request) {
         my $people_path = path_for($request, 'index');
         return response('HTML',
             MyApp::View->document(
+                $request,
                 'Person not found',
                 qq{    <a href="$people_path">People</a>\n}
                     . '    <h1>Person not found</h1>',
@@ -55,6 +57,7 @@ sub show_person($request) {
     my $home_path = path_for($request, '/home');
 
     return response('HTML', MyApp::View->document(
+        $request,
         $person->{name},
         qq{    <a href="$home_path">Home</a>\n}
             . qq{    <h1>$person->{name}</h1>\n}

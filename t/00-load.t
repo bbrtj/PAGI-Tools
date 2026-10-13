@@ -29,15 +29,19 @@ my @load_modules = qw(
     PAGI::Middleware
     PAGI::Middleware::Authentication
     PAGI::Middleware::Builder
+    PAGI::Middleware::RequestClass
     PAGI::App::File
     PAGI::App::File::Result
     PAGI::App::WrapPSGI
+    PAGI::Endpoint
+    PAGI::Endpoint::_PerRequest
     PAGI::Endpoint::HTTP
     PAGI::Endpoint::SSE
     PAGI::Endpoint::WebSocket
     PAGI::Request
     PAGI::Request::BodyStream
     PAGI::Request::MultipartStream
+    PAGI::Request::_Factory
     PAGI::State
     PAGI::CSRF
     PAGI::Transport

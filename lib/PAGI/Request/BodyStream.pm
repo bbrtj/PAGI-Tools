@@ -361,6 +361,10 @@ async file library:
 async sub stream_to_file {
     my ($self, $path) = @_;
     croak("path is required") unless defined $path;
+    # Checked here, not only in next_chunk: after the last line the loop below
+    # never calls next_chunk, and the documented die would become a silent 0.
+    croak 'stream_to_file: line reading has started; use next_line'
+        if defined $self->{_lines};
     croak("stream_to_file() cannot be used with decode option - use stream_to() instead")
         if $self->{decode};
 
@@ -411,6 +415,8 @@ characters when C<decode> is set (C<bytes_read> is always the byte count).
 async sub stream_to {
     my ($self, $callback) = @_;
     croak("callback is required") unless $callback;
+    croak 'stream_to: line reading has started; use next_line'
+        if defined $self->{_lines};
 
     my $bytes_processed = 0;
 

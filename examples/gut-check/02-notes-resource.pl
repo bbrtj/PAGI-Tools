@@ -67,13 +67,13 @@ package Note {
 
 package main;
 
-use PAGI::Tools qw(compose route);
+use PAGI::Tools qw(compose endpoint route);
 use Types::Standard qw(Int);
 
 compose(
     routes => [
-        route('/notes' => Notes->new, name => 'notes'),
-        route('/notes/{id}' => Note->new, name => 'note', constraints => { id => Int }),
+        route('/notes' => endpoint('Notes'), name => 'notes'),
+        route('/notes/{id}' => endpoint('Note'), name => 'note', constraints => { id => Int }),
     ],
     lifespan => {
         startup => sub ($state, $scope) { $state->{notes} = NoteStore->new },

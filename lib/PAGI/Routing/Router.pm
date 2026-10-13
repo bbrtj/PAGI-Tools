@@ -81,43 +81,21 @@ PAGI::Routing::Router - Immutable declarative router description
 Routes describe endpoint leaves, Mount describes one prefixed application, and
 Router describes an ordered collection of Route and Mount descriptions.
 Construction accepts C<routes>, C<middleware>, C<desc>, and an optional
-C<http_default>. Its positional grammar is:
+C<http_default>.
 
-    Position                            Meaning
-    ----------------------------------  --------------------------------
-    HTTP Route endpoint / http_default CODE  one Request handler
-    HTTP Route endpoint / http_default object app object via to_app
-    WebSocket Route endpoint CODE             one WebSocket handler
-    WebSocket Route endpoint object           app object via to_app
-    SSE Route endpoint CODE                   one SSE handler
-    SSE Route endpoint object                 app object via to_app
-    Mount app CODE                       native PAGI application
-    Mount app object                     app object via to_app
-
-A source-free Pages application is the direct ordinary default. A bare CODE
-default receives one Request and can return a request-dependent Response. To
-use an advanced explicit native default, wrap it with
-L<PAGI::Utils/as_app_object>. C<request_response> remains for adapting a
-one-Request handler into Mount C<app>, not ordinary C<http_default> use. The
-Router validates direct nodes, middleware descriptors,
+The Router validates direct nodes, middleware descriptors,
 descriptions, canonical slash addresses, and child Router ancestry. A Router
 description remains placement-free: mounting it never writes a parent path or
 local name onto the child. This is compile-time configuration only; the object
 stores no request scope, match, or response state.
-
-Its C<middleware> list contains only explicit
-L<PAGI::Routing::Middleware> descriptions, normally created with
-C<middleware(...)>. A factory or C<wrap> result may be native CODE or an object
-with C<to_app>; the resulting native app runs at request time and returns the
-protocol completion.
 
 =head1 ACCESSORS
 
 C<routes> returns a shallow arrayref copy of direct children in declaration
 order. C<named_routes> returns a shallow hashref copy mapping canonical
 absolute addresses such as C</person/blog/show> to their original immutable
-leaves; C<route_named($address)> returns one such leaf or undef for an unknown
-address. C<path_for> renders the application-relative path for an address
+leaves and named Mounts; C<route_named($address)> returns one of them or undef
+for an unknown address. C<path_for> renders the application-relative path for an address
 without request state or protocol I/O. A child Router's own paths remain local
 to that Router, while each outer Router resolver composes the path for its
 particular mount placement.
@@ -136,15 +114,7 @@ exact declared value unchanged (a one-Request handler or app object), or undef
 when it was omitted. It is validated at construction but not compiled there.
 Inapplicable node metadata
 accessors C<name>, C<path>, C<methods>, and C<constraints> return undef. Router
-is a collection and has no leaf C<endpoint> accessor or retired target/mode
-accessors.
-
-L<PAGI::Compose> preserves this Router explicitly with
-C<< compose(routes => [mount('/' => app => $router)]) >>. The Mount retains the
-exact Router identity while Compose constructs and owns a distinct outer root
-Router. Compose's C<router> and C<routes> accessors describe that outer root;
-the direct child returned by C<routes> is the Mount. Its Resolver can still
-traverse this inspectable Router application for names and reverse routing.
+is a collection and has no leaf C<endpoint> accessor.
 
 =head1 METHODS
 
@@ -164,28 +134,12 @@ traverse this inspectable Router application for names and reverse routing.
         fragment => 'details',
     );
 
-The compact form accepts params, query, and fragment in that order. Its first
-trailing hashref selects compact form, and C<{}> placeholders are required for
-query-only or fragment-only calls. A first trailing defined plain scalar
-selects the order-independent named form with C<params>, C<query>, and
-C<fragment>. Other selectors fail, and the forms cannot be mixed. Params and
-query must be hashrefs. A fragment is a plain scalar or C<undef>; C<undef>
-omits it and an empty string emits a terminal C<#>.
-
 An initial C</> makes a reference absolute; otherwise it starts at this
-Router's root. C<.> and C<..> components normalize exactly, dots within a
-component remain literal, and references are never URI-decoded. Empty
-components, repeated or trailing separators, above-root traversal,
-namespace-only results, and unknown exact targets fail. There is no ancestor
-search, fuzzy fallback, dotted hierarchy, or overlapping-prefix folding.
-
-Query pairs are sorted and each UTF-8 key/value is percent-encoded as a URI
-component. A fragment is encoded once as one component and follows the query.
-C<path_for> returns a string or croaks and performs no protocol I/O. It does
-not redirect or mutate a response. It inherits no request captures. Inside a
-handler, import L<PAGI::Routing::URL/path_for> and pass the Request so relative
-generation can select the active placement of a reused child Router. Capture
-inheritance there is only URL-construction convenience, never authorization.
+Router's root. It inherits no request captures; inside a handler, import
+L<PAGI::Routing::URL/path_for> and pass the Request so relative generation can
+select the active placement of a reused child Router.
+L<PAGI::Routing::URL/REFERENCES> and L<PAGI::Routing::URL/ARGUMENTS> have the
+reference and argument rules. C<path_for> returns a string or croaks.
 
 =head2 to_app
 

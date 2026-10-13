@@ -207,4 +207,52 @@ returned by the factory or C<wrap> runs at request time and returns the
 protocol completion; that app owns whether it calls downstream and which
 receive/send events it awaits or emits.
 
+=head1 REUSING A DESCRIPTION
+
+The explicit description solves three practical problems. It keeps a target
+and its configuration together as one list entry, lets route trees remain
+inert until C<to_app>, and gives introspection one consistent object rather
+than a mixture of strings, coderefs, and configured objects. For example, this
+declaration records the class and its constructor arguments without loading or
+constructing the class yet:
+
+    my $request_id = middleware(
+        'RequestId',
+        header => 'X-Request-ID',
+    );
+
+    my $routing = router(
+        routes     => [route('/' => \&home)],
+        middleware => [$request_id],
+    );
+
+The same distinction applies to factory coderefs. If a variable contains a
+raw app-to-app factory, describe it at the point of use:
+
+    my $logging_factory = sub {
+        my ($inner) = @_;
+        return async sub {
+            my ($scope, $receive, $send) = @_;
+            warn "$scope->{method} $scope->{path}\n";
+            return await $inner->($scope, $receive, $send);
+        };
+    };
+
+    route('/one' => \&one,
+        middleware => [middleware($logging_factory)]);
+
+If the variable already contains the result of C<middleware(...)>, put that
+description directly in each list:
+
+    my $logging = middleware($logging_factory);
+
+    route('/one' => \&one, middleware => [$logging]);
+    route('/two' => \&two, middleware => [$logging]);
+
+Do not call C<middleware($logging)> again: C<$logging> is already a
+description, not a configured runtime middleware object. Reusing a description
+does not share a compiled wrapper. Each placement invokes the recorded factory
+when that application graph is compiled. A closure or configured object may
+still share state deliberately because the caller supplied that same value.
+
 =cut

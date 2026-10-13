@@ -8,7 +8,7 @@ use Future;
 use Future::AsyncAwait;
 use Scalar::Util qw(blessed);
 use PAGI::Auth qw(auth);
-use PAGI::Request;
+use PAGI::Request::_Factory ();
 use PAGI::Utils::Middleware qw(clone_scope);
 use PAGI::Utils ();
 
@@ -40,7 +40,7 @@ sub wrap {
             return;
         }
 
-        my $request = PAGI::Request->new($scope, $receive);
+        my $request = PAGI::Request::_Factory::request_for_scope($scope, $receive);
         my $returned = ref($backend) eq 'CODE'
             ? $backend->($request)
             : $backend->authenticate($request);
@@ -98,7 +98,11 @@ Construct with C<new(backend =E<gt> $backend)> and call C<wrap($next)> to get a
 native application. C<backend> is required and must be exactly a coderef or an
 object implementing C<authenticate>; unknown constructor options are errors.
 The same backend is reused across invocations. This middleware constructs one
-L<PAGI::Request> for each HTTP, WebSocket, or SSE invocation. A coderef receives
+L<PAGI::Request>, or the class L<PAGI::Middleware::RequestClass> set when that
+middleware is listed before this one, for each HTTP, WebSocket, or SSE
+invocation. The Request a backend receives has no C<pagi.auth> yet, so a
+subclass helper that calls C<auth($request)> must not be used from a backend.
+A coderef receives
 that Request as its only argument; an object's C<authenticate($request)> receives
 it after the normal invocant. Either form must return exactly one completed
 L<PAGI::Auth::Result>, directly or through a L<Future>. Bare users, C<undef>,

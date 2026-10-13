@@ -25,6 +25,23 @@ use PAGI::Routing::RequestResponse;
     }
 }
 
+{
+    package Local::OtherRequest;
+    use parent 'PAGI::Request';
+}
+
+{
+    package Local::HttpOnlyRequest;
+    use parent 'PAGI::Request';
+
+    sub new {
+        my ($class, $scope, $receive) = @_;
+        die "Local::HttpOnlyRequest takes HTTP scopes only\n"
+            unless $scope->{type} eq 'http';
+        return $class->SUPER::new($scope, $receive);
+    }
+}
+
 sub scope {
     my ($path, $type) = @_;
     return {
@@ -367,6 +384,63 @@ subtest 'SSE handler body consumption advances the receive stream without replay
     $app->($scope, $receive, sub { Future->done })->get;
     is(\@seen, ['first', 'second'],
         'SSE returned app receives only the remaining original event');
+};
+
+# The Request class each call of $app handed its handler.
+sub classes_seen {
+    my (@scopes) = @_;
+    my @seen;
+    my $app = request_response(sub {
+        my ($request) = @_;
+        push @seen, ref $request;
+        return sub { return };
+    })->to_app;
+    $app->($_, quiet_receive(), sub { Future->done })->get for @scopes;
+    return \@seen;
+}
+
+sub keyed_scope {
+    my ($type, $factory) = @_;
+    my $scope = scope("/$type", $type);
+    $scope->{'pagi.request.factory'} = $factory;
+    return $scope;
+}
+
+my $company_factory = sub { return Local::CompanyRequest->new(@_) };
+
+subtest 'without request_factory the scope key decides, on every call' => sub {
+    is(classes_seen(scope('/plain')), ['PAGI::Request'], 'no key: PAGI::Request');
+    is(classes_seen(keyed_scope('http', undef)), ['PAGI::Request'], 'an undef key: PAGI::Request');
+    is(classes_seen(map { keyed_scope($_, $company_factory) } qw(http websocket sse)),
+        [('Local::CompanyRequest') x 3], 'HTTP, WebSocket and SSE scopes honour the key');
+    is(classes_seen(keyed_scope('http', $company_factory), scope('/plain')),
+        ['Local::CompanyRequest', 'PAGI::Request'],
+        'one app object serves a keyed and an unkeyed scope');
+};
+
+subtest 'an explicit request_factory wins over the scope key' => sub {
+    my $seen;
+    my $app = request_response(
+        sub { my ($request) = @_; $seen = ref $request; return sub { return } },
+        request_factory => sub { return Local::OtherRequest->new(@_) },
+    )->to_app;
+    $app->(keyed_scope('http', $company_factory), quiet_receive(), sub { Future->done })->get;
+    is($seen, 'Local::OtherRequest', 'the explicit factory');
+};
+
+subtest 'a request_factory of undef is not a coderef' => sub {
+    like(dies { PAGI::Routing::RequestResponse->new(handler => sub { }, request_factory => undef) },
+        qr/request_response request_factory must be a coderef/,
+        'undef is refused, as an absent factory is not');
+};
+
+subtest 'the class constructor must accept WebSocket and SSE scopes' => sub {
+    my $http_only = sub { return Local::HttpOnlyRequest->new(@_) };
+    is(classes_seen(keyed_scope('http', $http_only)), ['Local::HttpOnlyRequest'],
+        'an HTTP scope builds it');
+    like(dies { classes_seen(keyed_scope('websocket', $http_only)) },
+        qr/\ALocal::HttpOnlyRequest takes HTTP scopes only/,
+        'a WebSocket scope (a deny handler) dies in its constructor');
 };
 
 done_testing;

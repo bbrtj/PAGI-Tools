@@ -321,4 +321,24 @@ subtest 'one middleware keeps reverse-order pending invocations isolated' => sub
     ], 'user, grants, and failure belong to their own completion';
 };
 
+{
+    package Local::AppRequest;
+    use parent 'PAGI::Request';
+}
+
+subtest 'the backend receives the class the scope key builds' => sub {
+    my @seen;
+    my $middleware = PAGI::Middleware::Authentication->new(backend => sub {
+        my ($request) = @_;
+        push @seen, ref $request;
+        return unauth_result();
+    });
+    my $factory = sub { return Local::AppRequest->new(@_) };
+    invocation($middleware, { type => $_, headers => [], 'pagi.request.factory' => $factory })->get
+        for qw(http websocket sse);
+    invocation($middleware, { type => 'http', headers => [] })->get;
+    is(\@seen, [('Local::AppRequest') x 3, 'PAGI::Request'],
+        'a key on HTTP, WebSocket and SSE scopes: its class; no key: PAGI::Request');
+};
+
 done_testing;

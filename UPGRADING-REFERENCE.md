@@ -298,6 +298,9 @@ my $person_route = route('/people/{id}' => MyApp::Person->new(repo => $repo),
 );
 ```
 
+In 0.003000 the taught spelling names the class:
+`endpoint('MyApp::Person', repo => $repo)`; see PAGI::Endpoint.
+
 Simple behavior stays a closure. Endpoint classes are best when HTTP verb
 dispatch, WebSocket/SSE connection lifecycle, or a long-lived configured
 dependency earns the class. They own one exact leaf, never a subtree.
@@ -311,11 +314,14 @@ websocket('/chat' => MyApp::Chat->new(hub => $hub));
 sse('/events' => MyApp::Events->new(bus => $bus));
 ```
 
-Calling `to_app` on a class constructs one receiver immediately. Calling it
-on an instance retains that same object. No receiver is reconstructed for each
-connection. The configured WebSocket and SSE instance may serve concurrent
-connections, so store configuration and long-lived services on it and keep
-connection-local state on each `PAGI::WebSocket` or `PAGI::SSE` object.
+`to_app` is called on an instance and retains that same object; calling it
+on a class name dies. No receiver is reconstructed for each connection. The
+configured WebSocket and SSE instance may serve concurrent connections, so
+store configuration and long-lived services on it and keep connection-local
+state on each `PAGI::WebSocket` or `PAGI::SSE` object.
+
+In 0.003000 the taught spelling names the class:
+`endpoint('MyApp::Chat', hub => $hub)`; see PAGI::Endpoint.
 
 ### HTTP endpoint method capability
 
@@ -869,7 +875,7 @@ its own buckets.
 | 0.002002 | Now |
 |---|---|
 | `enforce => 'header'` (the default) | the default; remove the option |
-| `enforce => 'app'` | `refuse => 0`; the handler still calls `csrf($request)->verify($token)` |
+| `enforce => 'app'` | remove it: the middleware reads the token from the form's `csrf_token` field (`form_field` names another) and refuses like a header; drop the handler's `verify` |
 
 Passing `enforce` dies, so a form application that relied on
 `enforce => 'app'` cannot silently start refusing its posts. The default
@@ -880,6 +886,21 @@ it with any application:
 middleware('CSRF',
     refuse => response('JSON', { detail => 'CSRF token validation failed' }, status => 403));
 ```
+
+The middleware now reads a form body (urlencoded or multipart) whenever an
+unsafe request sends no `X-CSRF-Token` header. The handler's `form_params`
+and `uploads` return that parse, as `body` does for a urlencoded form, but
+`body_stream` and `multipart_stream` on such a request die "Body already
+consumed". A route
+that streams a form upload gets its own `middleware('CSRF', form_field =>
+undef, refuse => 0)` and checks the token it streams with
+`csrf($request)->verify`, and it must sit outside every CSRF that reads the
+body: not under Compose's `middleware`, and not inside a mount or Router
+whose `middleware` carries one, because route middleware runs inside both.
+An application with CSRF in Compose's `middleware` moves it onto the form
+routes' mounts first. See "CSRF on a streamed upload" in
+`PAGI::Tools::Cookbook`. A client that sends the header never has its body
+read.
 
 ## Breaking: CSRF secret removed, cookie readable, origin checked
 

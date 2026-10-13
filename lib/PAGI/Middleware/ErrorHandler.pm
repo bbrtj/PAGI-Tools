@@ -8,7 +8,7 @@ use Encode qw(encode);
 use Future;
 use Future::AsyncAwait;
 use Scalar::Util 'blessed';
-use PAGI::Request;
+use PAGI::Request::_Factory ();
 use PAGI::ErrorContext ();
 use PAGI::Utils ();
 
@@ -120,8 +120,10 @@ says must carry a field the built-in answer cannot supply -- 401
 
 The answer to an error, given the scope with the error as C<pagi.error>; read
 it with L<PAGI::ErrorContext>. A coderef is a Request handler: it receives a
-L<PAGI::Request> and returns a Response or an application. A returned Response
-that set no status of its own is sent with the error's status. An object is an
+L<PAGI::Request>, or the class L<PAGI::Middleware::RequestClass> set when that
+middleware is listed before this one, and returns a Response or an application.
+A returned Response that set no status of its own is sent with the error's
+status. An object is an
 application; a native C<($scope, $receive, $send)> app is passed as
 C<as_app_object($app)>.
 
@@ -135,7 +137,7 @@ C<as_app_object($app)>.
     }
 
 The handler sees the request as this layer sees it: scope keys added further
-in (C<path_params>, a Request subclass, CSRF's token) are not there, and its
+in (C<path_params>, CSRF's token) are not there, and its
 answer does not pass through inner middleware's send wrappers.
 
 =back
@@ -260,7 +262,7 @@ async sub _answer {
     my $context = PAGI::ErrorContext->new($scope);
     my $answer = $context->default;
     if (my $handler = $self->{handler_code}) {
-        $answer = await Future->wrap($handler->(PAGI::Request->new($scope, $receive)));
+        $answer = await Future->wrap($handler->(PAGI::Request::_Factory::request_for_scope($scope, $receive)));
         PAGI::Utils::_validate_app_value($answer,
             'ErrorHandler handler must return a PAGI application:');
         # A Response that set no status of its own answers with the error's,

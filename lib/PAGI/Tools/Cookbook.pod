@@ -6,10 +6,6 @@
 
 PAGI::Tools::Cookbook - Recipes for Common PAGI Tasks
 
-Route matches a complete URL leaf. Mount composes an application under a
-prefix. Router selects and owns routing outcomes. Middleware wraps behavior.
-Compose owns the application root and lifespan.
-
 =head1 DESCRIPTION
 
 This cookbook provides ready-to-use solutions for common web development tasks
@@ -30,22 +26,13 @@ small runnable declarative app, see F<examples/declarative-routing>.
   Router                        ordered children and NONE/PARTIAL outcomes
   Compose                       root lifespan, middleware, and safety
 
-Callable meaning depends on its structural position:
-
-  Position                            Meaning
-  ----------------------------------  --------------------------------
-  HTTP Route endpoint / http_default CODE  one Request handler
-  HTTP Route endpoint / http_default object app object via to_app
-  WebSocket Route endpoint CODE             one WebSocket handler
-  WebSocket Route endpoint object           app object via to_app
-  SSE Route endpoint CODE                   one SSE handler
-  SSE Route endpoint object                 app object via to_app
-  Mount app CODE                       native PAGI application
-  Mount app object                     app object via to_app
+L<PAGI::Routing/HANDLERS> says what a coderef or object means in each
+position.
 
 =head2 HTTP Defaults: Pages, Request Handlers, and Native Applications
 
-Put a source-free Pages application directly in C<http_default> for the
+Without C<http_default> the Router answers HTTP NONE and PARTIAL in plain
+text. Put a source-free Pages application directly in C<http_default> for the
 ordinary custom 404:
 
   use PAGI::Pages qw(not_found);
@@ -55,6 +42,31 @@ ordinary custom 404:
       routes       => \@routes,
       http_default => not_found(detail => 'No route matched.'),
   );
+
+For the application's own presentation, give C<http_default> a page from a
+configured Pages instance instead of the function; PARTIAL remains the
+Router's plain-text 405 with authoritative C<Allow>:
+
+  use PAGI::Compose qw(compose);
+  use PAGI::Pages;
+  use PAGI::Routing qw(mount router);
+
+  my $pages = PAGI::Pages->new;
+
+  my $routing = router(
+      routes       => \@routes,
+      http_default => $pages->not_found(
+          detail => 'No application route matched.',
+      ),
+  );
+  my $app = compose(
+      routes => [mount('/' => app => $routing)],
+  )->to_app;
+
+Pages selects HTML, RFC 9457 problem JSON, or text from C<Accept>, adds
+C<Vary: Accept>, and defaults errors to C<Cache-Control: no-store>. Use a
+configured Pages instance or subclass here for application presentation; no
+Pages object is discovered through Compose or global state.
 
 When the response depends on the Request, use a bare one-Request handler:
 
@@ -75,6 +87,11 @@ Use C<as_app_object> only for an advanced native PAGI default. It marks the
 three-channel CODE explicitly. C<request_response> instead adapts a
 one-Request handler into Mount C<app>; ordinary C<http_default> use needs no
 adapter.
+
+A selected application's own 404 or 405 is left untouched. C<http_default>
+runs only for HTTP NONE: it never receives a method mismatch, WebSocket or SSE
+miss, selected handler exception, or handler-returned 404. GET contributes
+HEAD to the Router-generated 405 union.
 
 =head2 A Declarative Route Tree with Package Handlers
 
@@ -106,17 +123,48 @@ guessing:
       ],
   )->to_app;
 
-The final expression is the complete native PAGI app. If the same declarations
-are constructed as a separate Router, its direct C<to_app> already emits the
-Router's stock/custom 404 and built-in 405, but has no root ErrorHandler,
-response guard, or lifespan. Compile once for the application instance; do not
-call C<to_app> inside a request.
+The final expression is the complete native PAGI app; a Router compiled with
+its own C<to_app> instead has no root ErrorHandler, response guard, or
+lifespan (L<PAGI::Compose/RELATIONSHIP TO OTHER PAGI APIS>).
+
+=head2 An Application's Request Class
+
+Give every handler the application's own Request subclass with one
+middleware:
+
+  use v5.40;
+  use PAGI::Tools qw(compose middleware response route);
+
+  package MyCompany::Request {
+      use parent 'PAGI::Request';
+
+      sub company_name($self) { return 'Example Corp' }
+  }
+
+  package main;
+
+  my $app = compose(
+      middleware => [middleware('RequestClass', class => 'MyCompany::Request')],
+      routes     => [route('/reports' => sub ($request) {
+          return response('Text', $request->company_name . ' reports');
+      })],
+  );
+
+Route handlers, Endpoint::HTTP methods, C<refuse> handlers, WebSocket
+C<deny> / SSE C<decline> handlers, an ErrorHandler C<handler> listed after
+the middleware, and Authentication C<backend>s below it all receive a
+C<MyCompany::Request>, in mounted applications too. The class's C<new> must
+accept WebSocket and SSE scopes, and should be cheap and leave the body
+unread: an endpoint built per request calls it twice. For one or two
+helpers, a function that takes the request is simpler. See L<PAGI::Middleware::RequestClass> for the order, the costs, and
+the hand-written equivalent.
 
 =head2 Custom Request Route Helpers
 
-A project or higher-level framework can standardize a Request subclass without
-adding another routing engine. Build a named helper from C<request_response>
-and return an ordinary Route:
+A project or higher-level framework can give some routes a different Request
+class than the application's. Build a named helper from C<request_response>,
+whose C<request_factory> wins over the scope's class, and return an ordinary
+Route:
 
   use v5.40;
   use PAGI::Response qw(response);
@@ -244,17 +292,17 @@ full, partial, and no-match results. Its 404 or 405 flows through child Router,
 Mount-occurrence, and enclosing Router middleware; the root never resumes
 sibling scanning.
 
-An opaque application uses the same named option:
+An application mount uses the same C<app> option:
 
   mount('/admin', app => $admin_app)
 
-Once its prefix matches, it owns the outcome. Its 404/405 cannot resume parent
-scanning, it applies no HTTP method filter, and its child names are not visible
-to the parent.
+It applies no HTTP method filter, and its child names are not visible to the
+parent.
 
-An immutable Router in C<app> is inspectable. Other C<to_app> objects and
-native coderefs are opaque. Either kind may be named or unnamed; the name
-controls reverse-routing hierarchy, not dispatch mode.
+A Router in C<app> makes a Router mount, which the parent can inspect; any
+other C<to_app> object or native coderef makes an application mount, which it
+cannot. Either kind may be named or unnamed; the name controls
+reverse-routing hierarchy, not dispatch mode.
 
 A native Route leaf is different again:
 
@@ -265,13 +313,9 @@ That is one exact/wildcard HTTP leaf. It participates in methods, automatic
 HEAD, partial matching, and names, and receives the original routed path. A
 C<< mount('/files', app =E<gt> $file_app) >> owns a protocol-capable prefix,
 receives the implicit remainder in child C<path>, and extends C<root_path>.
-Without explicit methods, C<as_app_object($native)> contributes GET plus automatic
-HEAD. Use the scalar C<methods =E<gt> '*'> for unrestricted delegation.
 For an object endpoint, a finite explicit method declaration still consults
-C<allowed_methods> once and must be a restriction of that snapshot. Only the
-scalar C<< methods => '*' >> bypasses the capability. The Router owns method
-mismatch, the first-seen C<Allow> union, and selection. An Endpoint::HTTP object
-still owns its advertised OPTIONS behavior once selected.
+C<allowed_methods> once and must be a restriction of that snapshot.
+L<PAGI::Routing::Route> has the complete method rules.
 
 Mounts are declaration-ordered owners. Put a narrow mount before a broad one.
 C<mount('/api')> accepts both C</api> and C</api/> directly and passes child
@@ -291,7 +335,6 @@ A separately configured child can own local missing-route presentation:
       route('/api/missing' => \&unreachable),
   ]);
 
-After C</api> is selected, the child's custom 404 and built-in 405 are final;
 C<unreachable> is never considered.
 
 =head2 Serving behind a proxy prefix
@@ -527,18 +570,9 @@ and would change those method outcomes.
 
 =head2 Declarative Middleware Placement and Helpers
 
-Middleware entries are pure app-to-app PAGI wrappers. The complete order is:
-
-  outer Router middleware
-    -> Router-mount middleware
-      -> child Router middleware
-        -> inline-mount middleware
-          -> route middleware
-            -> handler
-
-Scope rewriting and match metadata happen before the matching mount/route
-wrapper. Mount middleware can therefore read dynamic mount captures. The first
-entry in each list is outermost.
+Middleware entries are pure app-to-app PAGI wrappers, nested in the order
+L<PAGI::Routing/MIDDLEWARE AND HEAD> shows; the first entry in each list is
+outermost.
 
 Use L<PAGI::Utils::Middleware> to keep channel ownership visible:
 
@@ -592,38 +626,6 @@ await the downstream Future when completion, failure, and backpressure must
 remain attached. Factory execution happens once during C<to_app>; returned
 wrappers run per request. Core Router, Route, Mount, and Compose lists contain
 only C<middleware(...)> descriptions.
-
-=head2 Branded 404 Responses
-
-Router owns HTTP NONE and PARTIAL, answering both in plain text. Supply a Pages
-endpoint through C<http_default> for a branded, negotiated NONE; PARTIAL remains
-the Router's plain-text 405 with authoritative C<Allow>:
-
-  use PAGI::Compose qw(compose);
-  use PAGI::Pages;
-  use PAGI::Routing qw(mount router);
-
-  my $pages = PAGI::Pages->new;
-
-  my $routing = router(
-      routes       => \@routes,
-      http_default => $pages->not_found(
-          detail => 'No application route matched.',
-      ),
-  );
-  my $app = compose(
-      routes => [mount('/' => app => $routing)],
-  )->to_app;
-
-Pages selects HTML, RFC 9457 problem JSON, or text from C<Accept>, adds
-C<Vary: Accept>, and defaults errors to C<Cache-Control: no-store>. Use a
-configured Pages instance or subclass here for application presentation; no
-Pages object is discovered through Compose or global state.
-
-A selected application's own 404 or 405 is left untouched. C<http_default>
-runs only for HTTP NONE: it never receives a method mismatch, WebSocket or SSE
-miss, selected handler exception, or handler-returned 404. GET contributes
-HEAD to the Router-generated 405 union.
 
 =head2 Compose Safety and Application Error Policy
 
@@ -815,32 +817,27 @@ C<middleware> list, inside that HEAD boundary.
 
 =head2 Constraint Forms and Wildcard Safety
 
-All constraints receive one decoded scalar and validate without coercion:
+All constraints receive one decoded scalar and validate without coercion;
+L<PAGI::Routing/Path parameters, wildcards, and constraints> lists the four
+ways to write one. With C<Int> from Types::Standard:
 
-  # Short path-local regex.
-  route('/regex/{id:\d+}' => \&show);
-
-  # Reusable named semantic constraint.
   use Types::Standard qw(Int);
   route('/typed/{id:&Int}' => \&show);
 
-  # Explicit reusable object chosen while building the route.
-  route('/object/{id}' => \&show,
-      constraints => { id => Int },
-  );
+C<Int> accepts signed integers, and the handler gets the text, not a
+number: C</typed/09> matches, and C<path_param('id')> is C<"09">, not C<9>.
+Numify at the boundary that needs a number:
 
-  # Explicit per-value predicate.
-  route('/predicate/{slug}' => \&show,
-      constraints => { slug => sub {
-          my ($value) = @_;
-          return $value =~ /\A[a-z0-9-]+\z/;
-      } },
-  );
+  async sub show ($request) {
+      my $id = 0 + $request->path_param('id');   # "09" -> 9
+      return response('JSON', { id => $id });
+  }
 
-The object form needs C<check($value)> and may provide
-C<get_message($value)>; Type::Tiny is not a hard runtime dependency. C<Int>
-accepts signed integers and PAGI retains the original string. A narrower local
-provider can close over it:
+or use a pattern with one spelling per number, C<{id:[1-9][0-9]*}>, when
+C</typed/09> should be a 404 instead (it also refuses C<0> and C<-3>).
+
+A local provider can narrow C<Int> further, here to positive numbers. It
+still receives the text, so C<"09"> passes it:
 
   sub PersonId {
       my $int = Int;
@@ -851,23 +848,6 @@ provider can close over it:
   }
 
   route('/people/{id:&PersonId}' => \&show);
-
-An unescaped inline source beginning with C<&> is always provider intent and
-must end in a capitalized package-function name. Use C<[&]Int> for a literal
-leading ampersand. The alternative C<\&Int> requires a single-quoted Perl
-path; C<< "\&Int" >> loses the backslash and requests the provider. Providers
-run once with no arguments during source construction and return a regex,
-predicate, or check object. The returned predicate, not the provider factory,
-runs during matching and reverse routing.
-
-Unqualified providers resolve as exact CODE slots in the package directly
-calling the routing constructor; qualified packages must already be loaded.
-There is no inherited method lookup, C<AUTOLOAD>, module loading, registry
-fallback, or regex fallback after provider intent. Regex and inline
-C<{id:\d+}> constraints are anchored over the complete value. Predicates must
-be synchronous; database/resource checks belong in selected middleware or the
-handler. The same rules select handler/application HTTP, WebSocket, SSE, and all mount
-forms, and C<path_for>/C<url_for> enforce them for named routes.
 
 C<*path> captures decoded values including C<..>, repeated separators, and
 backslashes. Never concatenate that value with a filesystem root. When no
@@ -921,136 +901,6 @@ confinement enforced by the helper. See the
 L<rooted file-serving upgrade guide|https://github.com/jjn1056/PAGI-Tools/blob/main/UPGRADING-REFERENCE.md#rooted-file-serving-security-contract>
 for changed status and option behavior.
 
-=head2 Handler, Application, WebSocket, and SSE Lifecycles
-
-A normal HTTP handler builds local response state and returns it. Routing owns
-the single emission:
-
-  route('/normal' => async sub {
-      my ($request) = @_;
-      return PAGI::Response::response('Text', 'Hello');
-  });
-
-A native application endpoint owns every event and receives all channels:
-
-  use PAGI::Utils qw(as_app_object);
-
-  route('/native' => as_app_object(async sub {
-      my ($scope, $receive, $send) = @_;
-      await $send->({
-          type => 'http.response.start', status => 200, headers => [],
-      });
-      await $send->({
-          type => 'http.response.body', body => 'Hello', more => 0,
-      });
-  }));
-
-Do not emit inside a normal handler. Return the Response, or choose an
-explicit application value for manual event ownership.
-
-A handler may return any native CODE or app object. That is
-dynamic delegation, not a nested Mount: the returned app receives the current
-scope unchanged and only the remaining receive stream. Consumed body events
-are not replayed, no separate lifespan is run, and its routes, names,
-constraints, and schema metadata remain opaque to the outer Router. An
-object's C<to_app> runs once per handler invocation. Immediate synchronous
-handlers run inline, so blocking or CPU-heavy work blocks the event-loop
-thread.
-
-Normal WebSocket and SSE handlers are imperative and their completion is
-awaited:
-
-  websocket('/chat/{room}' => async sub {
-      my ($websocket) = @_;
-      await $websocket->accept;
-      await $websocket->send_text('joined ' . $websocket->path_param('room'));
-      await $websocket->run;
-  });
-
-  sse('/events' => async sub {
-      my ($sse) = @_;
-      await $sse->start;
-      await $sse->send_event(data => 'ready');
-      await $sse->run;
-  });
-
-Use C<< websocket('/native' =E<gt> as_app_object($app)) >> or
-C<< sse('/native' =E<gt> as_app_object($app)) >> when a native application must own those
-protocol events. Their resolved return values are inert.
-
-=head2 Names, Reverse URLs, and Inspection
-
-Route and Mount names are local logical segments; slash alone forms hierarchy.
-Names are optional for C<routes> and C<app> mounts:
-
-  use PAGI::Routing::URL qw(path_for url_for);
-
-  my $routing = router(routes => [
-      mount('/api/v1', routes => $shared, name => 'v1'),
-      mount('/api/v2', routes => $shared, name => 'v2'),
-  ]);
-
-  $routing->path_for('/v1/user', { id => 42 });
-  path_for($request, '/v2/user', { id => 42 });
-  url_for($request, '/v2/user',  { id => 42 });
-
-An unnamed Mount leaves child addresses unprefixed. A dot such as
-C<v1.1> remains literal within one segment. Duplicate absolute addresses,
-duplicate parameters along one effective pattern, and defensive Router cycles
-croak during Router construction.
-
-Relative request-bound references start at the current containing namespace and use
-exact C<.>/C<..> normalization:
-
-  # Current address: /person/blog/show; captures person_id=42, blog_id=7
-  path_for($request, 'index');                    # inherits person_id
-  path_for($request, '../show');                  # parent namespace
-  path_for($request, 'show', { blog_id => 8 });  # explicit value wins
-  path_for($request, '/person/blog/show', {
-      person_id => 9,
-      blog_id   => 3,
-  });                                      # absolute: no inheritance
-
-Relative calls inherit only captures required by the target. Absolute request-bound
-references and all Router-object calls inherit nothing. Inheritance constructs
-a URL; it does not authorize the resource. Handlers must still enforce access.
-
-Compact reverse arguments are C<(\%params, \%query, $fragment)>. Use empty
-hashrefs as placeholders when skipping a component, or use named arguments:
-
-  url_for($request, 'show', { blog_id => 8 }, { view => 'full' }, 'comments');
-  url_for($request, 'show',
-      query    => { view => 'full' },
-      fragment => 'comments',
-  );
-
-Query keys are sorted; query and fragment components are UTF-8 encoded. The
-forms cannot be mixed. All reverse helpers return strings or croak. They emit
-no events, send no redirect, and do not mutate a response.
-
-Router C<path_for> has no request prefix or placement. Request-bound C<path_for>
-uses the active placement and includes the compiled-router entry C<root_path>
-exactly once. C<url_for> adds a scheme and authority validated by
-L<PAGI::Authority>.
-
-For HTTP behind a trusted proxy, wrap outer-to-inner:
-
-  ReverseProxy -> TrustedHosts -> PAGI::Routing
-
-Malformed or duplicate Host never falls back to C<server>. The shipped proxy
-and Host middleware remain HTTP-only, so WebSocket/SSE scopes must already be
-normalized and validated.
-
-Inspect direct children and named leaves without mutating the tree:
-
-  my $children = $routing->routes;
-  my $named    = $routing->named_routes;
-  my $leaf     = $routing->route_named('/v2/user');
-
-C<named_routes> maps absolute addresses to their original leaves. Immutable
-Router C<app> mounts are inspected recursively; other applications are opaque.
-C<desc> is a human note for listings and tools.
-
 =head2 Linking inside a mounted app
 
 Route names are logical addresses, not URL paths. A Mount named C<api>
@@ -1088,80 +938,117 @@ mounted:
 
 Mount the same routes again at C</v2> under the name C<v2>, and
 C<path_for($request, 'notes')> gives C</v2/notes> there with no change to the
-handlers. The full rules -- C<./> and C<../>, absolute references, and which
+handlers. The same routes mounted twice work the same way; an absolute
+reference names the placement:
+
+  use PAGI::Routing::URL qw(path_for url_for);
+
+  my $routing = router(routes => [
+      mount('/api/v1', routes => $shared, name => 'v1'),
+      mount('/api/v2', routes => $shared, name => 'v2'),
+  ]);
+
+  $routing->path_for('/v1/user', { id => 42 });
+  path_for($request, '/v2/user', { id => 42 });
+  url_for($request, '/v2/user',  { id => 42 });
+
+A relative reference inherits the captures its target needs, an explicit
+value wins, and an absolute reference inherits nothing:
+
+  # Current address: /person/blog/show; captures person_id=42, blog_id=7
+  path_for($request, 'index');                    # inherits person_id
+  path_for($request, '../show');                  # parent namespace
+  path_for($request, 'show', { blog_id => 8 });  # explicit value wins
+  path_for($request, '/person/blog/show', {
+      person_id => 9,
+      blog_id   => 3,
+  });                                      # absolute: no inheritance
+
+The full rules -- C<./> and C<../>, absolute references, and which
 captures a relative reference inherits -- are in
-L<PAGI::Routing/"REVERSE ROUTING AND INSPECTION">.
+L<PAGI::Routing::URL/REFERENCES> and L<PAGI::Routing::URL/PLACEMENT AND ROOT PATH>.
+
+=head2 Linking to static files
+
+Name the mount and its name is a link target: C<path_for> gives the
+mount's prefix, and with C<path> a file below it, with the proxy prefix
+applied. A page that hardcodes C</static/app.css> breaks under a root
+path; this does not:
+
+  use v5.40;
+  use PAGI::App::File;
+  use PAGI::Tools qw(compose mount path_for response route);
+  use PAGI::Test::Client;
+
+  my $app = compose(routes => [
+      route('/' => sub ($request) {
+          response('JSON', {
+              css    => path_for($request, 'static', { path => 'css/app.css' }),
+              prefix => path_for($request, 'static'),
+          });
+      }, name => 'home'),
+      mount('/static', app => PAGI::App::File->new(root => 'public'), name => 'static'),
+  ]);
+
+  # Served under the root path /app, as behind a proxy that strips it.
+  my $client = PAGI::Test::Client->new(app => $app, root_path => '/app');
+  my $links  = $client->get('/app/')->json;   # { css => '/app/static/css/app.css', prefix => '/app/static' }
+
+Leading slashes in C<path> are dropped, and each segment is
+percent-encoded; C<..> is not rewritten, so do not build C<path> from
+untrusted input. From a handler inside another mount, use the absolute
+name, C</static>. A route and a mount cannot share a name.
 
 =head2 Matched-Route Metadata
 
-Each compiled router publishes a request-local, read-only convention before
-router middleware:
+Each compiled Router records the route it selected in the request scope,
+under C<pagi.routing>. Middleware in that Router's own list can read it
+after the request has been answered, for example to log which route
+served each request:
 
-  $scope->{'pagi.routing'} = {
-      version => 1,
-      frames  => [{
-          resolver          => $resolver,
-          root_path         => '/proxy', # optional additive v1 field
-          logical_namespace => '/',
-          captures          => {},       # private reverse-routing snapshot
-          mounts            => [],
-          match             => undef,
-      }],
+  use v5.40;
+  use Future::AsyncAwait;
+  use PAGI::Tools qw(compose middleware mount response route router);
+  use PAGI::Test::Client;
+
+  # Logs the route that answered, after the response, for every request this
+  # Router owns. It must sit in the Router's own middleware list: middleware
+  # outside the compiled Router never sees the routing metadata.
+  my @log;
+  my $log_route = sub ($app) {
+      return async sub ($scope, $receive, $send) {
+          await $app->($scope, $receive, $send);
+          my $match = $scope->{'pagi.routing'}{frames}[-1]{match};
+          push @log, $match
+              ? "$scope->{path} -> $match->{route} (" . ($match->{name} // 'unnamed') . ')'
+              : "$scope->{path} -> no route";
+      };
   };
 
-A matched structural or inspectable Router Mount appends this exact Mount
-record to the current frame before its Mount middleware runs:
+  my $routing = router(
+      routes => [
+          route('/' => sub ($request) { response('Text', 'home') }, name => 'home'),
+          mount('/notes', routes => [
+              route('/{id}' => sub ($request) { response('Text', 'a note') }, name => 'show'),
+          ], name => 'notes'),
+      ],
+      middleware => [middleware($log_route)],
+  );
 
-  {
-      path      => '/tenants/{tenant_id}', # declared mount path
-      name      => 'tenant',                # declared value or undef
-      desc      => 'Tenant routes',         # declared value or undef
-  }
+  my $app = compose(routes => [mount('/' => app => $routing)]);
 
-All keys are present; nested records are outer-to-inner. A selected leaf sets
-this exact C<match> before route middleware:
+  my $client = PAGI::Test::Client->new(app => $app);
+  $client->get($_) for '/', '/notes/7', '/nowhere';
+  # @log is now:
+  #   / -> / (/home)
+  #   /notes/7 -> /notes/{id} (/notes/show)
+  #   /nowhere -> no route
 
-  {
-      kind              => 'route', # or websocket / sse
-      route             => '/tenants/{tenant_id}/users/{user_id}',
-      name              => '/tenant/show', # absolute or undef
-      logical_namespace => '/tenant',
-      desc              => 'Display one tenant user', # declared or undef
-  }
-
-C<< Route->name >> is the declaration-local final segment, such as C<show>;
-matched C<name> is the composed absolute address. C<logical_namespace> remains
-available for unnamed leaves.
-
-An opaque application mount instead sets terminal C<match> with
-C<kind =E<gt> 'mount'>, its complete effective mount path in C<route>,
-C<name =E<gt> undef>, its containing C<logical_namespace>, and its declared
-C<desc> or undef. It does not append a C<mounts> record for itself. A
-Router-owned NONE/PARTIAL outcome leaves C<match> undefined. See
-L<PAGI::Routing/MATCHED-ROUTE SCOPE CONVENTION> for the complete
-public schema.
-
-Each matched Mount first appends its Mount record to the current frame. Entering
-an inspectable Router Mount then appends a distinct child boundary frame. That
-frame retains the root Resolver and root entry C<root_path> while copying the
-selected placement's namespace, captures, and cumulative Mount chain.
-
-An opaque Mount instead leaves its terminal Mount match in the parent frame. If
-its native target happens to be another separately compiled Router, that Router
-appends its own child frame to a compatible container, using its own Resolver
-and its own entry C<root_path>. Child middleware can inspect the new innermost
-frame while parent middleware retains the terminal Mount frame.
-
-Each active frame is shared only through request-local shallow scopes within
-its boundary: router/mount middleware can inspect the final match after awaiting
-downstream. Middleware outside the compiled app keeps its original top-level
-scope and does not see downstream top-level additions.
-
-Opaque, malformed, or newer C<pagi.routing> data forms an incompatible
-boundary. The child installs a fresh v1 container, ignores foreign ancestry,
-and leaves the incoming data untouched; it does not croak. Older/manual v1
-frames may omit C<root_path>, and request-bound reverse routing then falls back to
-the current request value.
+C<match> holds the complete route pattern, its absolute name, its
+namespace and its C<desc>; it is undefined when the Router answered 404
+or 405 itself. Treat the data as read-only. The complete schema, with
+mount records and nested frames, is
+L<PAGI::Routing/MATCHED-ROUTE SCOPE CONVENTION>.
 
 =head2 Lifespan Around Declarative Routing
 
@@ -1252,7 +1139,7 @@ Router grammar. This complete shape keeps topology declarative:
   }
 
   package MyApp::API;
-  use PAGI::Routing qw(route router sse websocket);
+  use PAGI::Routing qw(endpoint route router sse websocket);
 
   sub new {
       my ($class, %args) = @_;
@@ -1264,11 +1151,11 @@ Router grammar. This complete shape keeps topology declarative:
       return router(
           desc => 'API routes',
           routes => [
-              route('/messages' => MessageAPI->new(store => $self->{store}),
+              route('/messages' => endpoint('MessageAPI', store => $self->{store}),
                   name => 'messages'),
-              websocket('/chat' => ChatEndpoint->new(hub => $self->{hub}),
+              websocket('/chat' => endpoint('ChatEndpoint', hub => $self->{hub}),
                   name => 'chat'),
-              sse('/events' => EventEndpoint->new(bus => $self->{bus}),
+              sse('/events' => endpoint('EventEndpoint', bus => $self->{bus}),
                   name => 'events'),
           ],
       );
@@ -1311,47 +1198,19 @@ Router grammar. This complete shape keeps topology declarative:
       bus   => bless({}, 'Example::Bus'),
   })->application;
 
-Each configured Endpoint object is resolved once and may serve concurrent
-work. Keep shared services and configuration on C<$self>; keep request and
-connection state on the Request, WebSocket, or SSE object. HTTP
-C<allowed_methods> is consulted once when the Route is built. A finite
-C<methods> declaration must be a restriction of that snapshot. Only scalar
-C<< methods => '*' >> bypasses the capability and lets the Endpoint own method dispatch.
-The Router otherwise owns OPTIONS participation, PARTIAL, and the final
-C<Allow> union.
+C<endpoint> loads each class and builds it once, so one object serves
+every request or connection on its route, concurrently. Keep shared
+services and configuration on C<$self>; keep request and connection state
+on the Request, WebSocket, or SSE object. A class whose C<BUILD_APP>
+returns a builder gets a fresh object per request or connection instead
+(L<PAGI::Endpoint>). HTTP C<allowed_methods> is consulted once when the
+Route is built. A finite C<methods> declaration must be a restriction of
+that snapshot. Only scalar C<< methods => '*' >> bypasses the capability
+and lets the Endpoint own method dispatch. The Router otherwise owns
+OPTIONS participation, PARTIAL, and the final C<Allow> union.
 
 The asset-owning module calls C<app_path> directly. The helper returns a path
 string; it does not construct a file application.
-
-=head2 Deliberate Starlette Differences
-
-PAGI follows Starlette's Route/Mount/Router/application topology, not every
-method on Starlette Request. L<PAGI::Request> owns HTTP input; imports identify
-the Router or middleware that supplies optional behavior. Keeping those
-capabilities separate also lets a higher-level framework retain its own URL or
-controller API.
-
-Ordinary PAGI route and C<http_default> handlers receive the direct Request;
-C<as_app_object> marks a native Route or C<http_default> CODE, while Mount
-C<app> CODE receives the native three-channel PAGI application contract.
-Compose accepts only route declarations through C<routes>;
-an existing immutable Router is preserved as an explicit Mount application in
-that list.
-Constraints validate without coercion. Logical names use slash
-addresses and relative L<PAGI::Routing::URL> lookup. SSE is a first-class scope, and
-middleware at Router, Mount, Route, and Compose boundaries is pure PAGI
-app-to-app wrapping.
-
-Current Starlette owns C<self.router> without subclassing Router and stores
-lifespan handling on that Router. A standalone Starlette Router is therefore
-lifecycle-capable, while mounted Starlette Routers do not receive lifespan.
-PAGI preserves one non-cascading root lifecycle but keeps it on Compose. A bare
-PAGI Router declines lifespan, and strict mode rejects that decline.
-Starlette's single multiprotocol Router C<default> was considered and
-deliberately not copied. PAGI's C<http_default> handles only HTTP NONE, leaving
-stock WebSocket and SSE misses intact.
-OpenAPI/schema generation and C<include_in_schema> remain deferred; the
-inspectable immutable tree is a future seam, not a shipped schema API.
 
 =head1 RESPONSE EXTENSIBILITY
 
@@ -2889,6 +2748,89 @@ without naming an event loop.
 
 See C<examples/10-forms-and-uploads/> for complete examples.
 
+=head2 CSRF on a streamed upload
+
+L<PAGI::Middleware::CSRF> reads the token from a form's C<csrf_token>
+field, and that read consumes the body. A route that streams a plain HTML
+form's upload with C<multipart_stream> runs its own CSRF middleware, which
+never reads the body or refuses, and checks the token itself:
+
+  use v5.40;
+  use Future::AsyncAwait;
+  use File::Temp qw(tempdir);
+  use PAGI::CSRF qw(csrf);
+  use PAGI::Tools qw(compose middleware mount response route);
+
+  my $uploads = tempdir(CLEANUP => 1);
+  my $files   = 0;
+
+  # The page's upload form puts its csrf_token field before the file, and
+  # browsers send fields in document order, so the token arrives first.
+  async sub notes ($request) {
+      my $token = csrf($request)->token;
+      return response('HTML', <<"HTML");
+  <form method="post" action="/upload" enctype="multipart/form-data">
+  <input type="hidden" name="csrf_token" value="$token">
+  <input type="file" name="file"> <button>Upload</button>
+  </form>
+  HTML
+  }
+
+  # A script whose X-CSRF-Token header matched has passed (valid), and one
+  # whose header did not match is refused. A request without the header must
+  # send the token as the first part, checked before any file.
+  async sub upload ($request) {
+      my $stream = $request->multipart_stream;
+      my $check  = csrf($request);
+      unless ($check->valid) {
+          return response('Text', 'CSRF token validation failed', status => 403)
+              unless ($check->failure // '') eq 'missing_token';
+          my $first = await $stream->next;
+          return response('Text', 'CSRF token validation failed', status => 403)
+              unless defined($first) && $first->name eq 'csrf_token' && !$first->is_file
+                  && $check->verify(await $first->value);
+      }
+      my $bytes = 0;
+      while (defined(my $part = await $stream->next)) {
+          next unless $part->is_file;
+          $bytes += await $part->stream_to_file("$uploads/upload-" . ++$files);
+      }
+      return response('Text', "Stored $bytes bytes");
+  }
+
+  my $app = compose(
+      routes => [
+          # The page and the app's form routes, under the default CSRF, which
+          # reads their csrf_token field.
+          mount('/notes', routes => [
+              route('/' => \&notes, methods => ['GET']),
+          ], middleware => [middleware('CSRF')]),
+          # The streamed upload: outside every middleware list that carries a
+          # body-reading CSRF, with its own that only records the check.
+          route('/upload' => \&upload, methods => ['POST'],
+              middleware => [middleware('CSRF', form_field => undef, refuse => 0)]),
+      ],
+  );
+
+=over 4
+
+=item * The route sits outside every CSRF that reads the body: not under
+Compose's C<middleware>, and not inside a mount or Router whose
+C<middleware> carries one, because route middleware runs inside both (the order is in
+L<PAGI::Routing/MIDDLEWARE AND HEAD>, and Compose's C<middleware> wraps
+the whole router). Under either, the outer CSRF reads the upload first and
+C<multipart_stream> dies "Body already consumed".
+
+=item * The two middlewares share the token: the same cookie, or under
+C<< session => 1 >> the same session key.
+
+=item * C<valid> is true when the route's own middleware matched an
+C<X-CSRF-Token> header, so a script that sends the header uploads in any
+part order. C<verify> also fails a request the middleware found to be
+cross-origin.
+
+=back
+
 =head2 A huge upload in a legacy encoding
 
 C<body_stream(decode =E<gt> ...)> decodes as the body arrives. For the
@@ -3456,7 +3398,7 @@ See L<PAGI::Test::Client> for the full API including WebSocket and SSE testing.
 
 =item * L<PAGI::Tools::Tutorial> - Guide to middleware, helpers, and built-in apps
 
-=item * L<PAGI::Routing> - Immutable declarative routing reference
+=item * L<PAGI::Routing> - Declarative routes for PAGI applications
 
 =item * L<PAGI::Pages> - Negotiated conventional HTTP responses and endpoints
 

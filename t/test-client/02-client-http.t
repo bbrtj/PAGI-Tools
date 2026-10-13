@@ -67,7 +67,7 @@ subtest 'captures filehandle response bodies' => sub {
 };
 
 subtest 'captures file response bodies' => sub {
-    my ($fh, $path) = tempfile();
+    my ($fh, $path) = tempfile(UNLINK => 1);
     print {$fh} 'Hello from file';
     close $fh;
 
@@ -123,7 +123,7 @@ subtest 'captures filehandle response offset and length' => sub {
 };
 
 subtest 'captures file response offset and length' => sub {
-    my ($fh, $path) = tempfile();
+    my ($fh, $path) = tempfile(UNLINK => 1);
     print {$fh} 'abcdefghij';
     close $fh;
 
@@ -356,6 +356,51 @@ subtest 'PUT and PATCH methods' => sub {
     is $client->put('/resource')->text, 'Method: PUT', 'PUT works';
     is $client->patch('/resource')->text, 'Method: PATCH', 'PATCH works';
     is $client->options('/resource')->text, 'Method: OPTIONS', 'OPTIONS works';
+};
+
+subtest 'QUERY sends the path, query and headers as get does, and a body as post does' => sub {
+    my $echo_app = async sub {
+        my ($scope, $receive, $send) = @_;
+        my $event = await $receive->();
+        my %header = map { lc($_->[0]) => $_->[1] } @{ $scope->{headers} };
+
+        require JSON::MaybeXS;
+        await $send->({
+            type    => 'http.response.start',
+            status  => 200,
+            headers => [['content-type', 'application/json']],
+        });
+        await $send->({
+            type => 'http.response.body',
+            body => JSON::MaybeXS::encode_json({
+                method       => $scope->{method},
+                path         => $scope->{path},
+                query_string => $scope->{query_string},
+                token        => $header{'x-token'},
+                content_type => $header{'content-type'},
+                body         => $event->{body},
+            }),
+            more => 0,
+        });
+    };
+
+    my $client = PAGI::Test::Client->new(app => $echo_app);
+
+    is $client->query('/search?page=2', query => { q => 'perl' },
+        headers => { 'X-Token' => 'abc' }, json => { where => 'title' })->json,
+        {
+            method       => 'QUERY',
+            path         => '/search',
+            query_string => 'page=2&q=perl',
+            token        => 'abc',
+            content_type => 'application/json',
+            body         => '{"where":"title"}',
+        },
+        'QUERY with a query string, a header and a JSON body';
+
+    my $res = $client->query('/search', body => 'select title');
+    is [$res->json->{method}, $res->json->{body}], ['QUERY', 'select title'],
+        'QUERY with a raw body';
 };
 
 subtest 'query parameter encoding' => sub {

@@ -17,6 +17,9 @@
   - PAGI::Routing (route, websocket, sse, mount, router, path_for,
     url_for) and PAGI::Compose (application root with lifespan, error
     handling and a response guard).
+  - A named mount is a path_for/url_for target: its prefix, or a path below
+    it with path (path_for($request, 'static', { path => 'app.css' })). A
+    route and a mount cannot share a name.
   - Response classes: Text, HTML, JSON, Problem, Redirect, Empty, File,
     Stream and NDJSON, built by name with response('Name', ...) -- resolved
     like middleware(), '+' for a Response class from another distribution.
@@ -60,7 +63,10 @@
     and replaces it when the session is regenerated (at login);
     an origin check (Sec-Fetch-Site, then Origin vs Host) on unsafe
     requests and on WebSocket handshakes (cross-site WebSocket hijacking),
-    with trusted_origins; httponly.
+    with trusted_origins; httponly. It reads the token from the form's
+    csrf_token field (form_field) when no header is sent, from urlencoded
+    and multipart bodies; a sent header decides and the body is then
+    never read; form_field => undef reads only the header.
   - PAGI::FutureOwner: own the Futures you start until they settle; await
     settled for all of them (in lifespan.shutdown, say). Replaces ->retain
     for background work.
@@ -83,6 +89,23 @@
   - examples/gut-check: everyday applications next to their Starlette
     versions, with measured behaviour and line counts, tested in
     t/example-gut-check.t.
+  - PAGI::Middleware::RequestClass: middleware('RequestClass', class =>
+    'MyApp::Request') gives every handler below it (routes, Endpoint::HTTP
+    methods, refuse, deny and decline handlers, an ErrorHandler handler
+    listed after it, Authentication backends) that Request class instead
+    of PAGI::Request, through the scope key pagi.request.factory;
+    request_response's request_factory still wins for its one handler.
+  - examples/request-class: an application's Request class set once by
+    middleware.
+  - PAGI::Endpoint and endpoint() (PAGI::Routing, PAGI::Tools):
+    route('/x' => endpoint('Class', %args)) loads the class and builds it
+    once with new, or with its BUILD_APP. A BUILD_APP that returns a coderef
+    builds the endpoint per request (per connection for WebSocket and SSE);
+    the builder may be async. Moose endpoint classes need MooseX::NonMoose,
+    and endpoint() says so.
+  - Endpoint::HTTP answers QUERY with a query method. A query helper method
+    on an existing subclass now answers QUERY too.
+  - PAGI::Test::Client has a query method for the QUERY verb.
 
   [Changed]
   - Request is_json is true for every +json media type
@@ -210,6 +233,9 @@
     strict sends for messages that must arrive, try_send_* for setup steps
     and broadcasts, start, accept and keepalive safe once the client has
     gone. The sse-dashboard example drops its is_closed checks.
+  - PAGI::Routing's POD leads with the everyday API and keeps the complete
+    rules in a REFERENCE part; component modules, the Cookbook and the
+    Tutorial link to one statement of each rule instead of restating it.
 
   [Breaking -- see UPGRADING.md]
   - body_stream over max_bytes is a BodyError 413 too_large (it was a plain
@@ -261,6 +287,10 @@
     dies, and its cleanup is skipped (the error is logged).
   - PAGI::Middleware::CSRF's enforce is removed: refuse => 0 replaces
     enforce => 'app', and passing enforce dies.
+  - PAGI::Middleware::CSRF reads the body of a header-less unsafe form
+    request, so body_stream and multipart_stream on such a request die; a
+    route that streams a form upload configures its own CSRF and sits
+    outside every CSRF that reads the body (see the Cookbook).
   - PAGI::Middleware::CSRF's secret is removed (tokens are random; passing
     it dies); its cookie is no longer HttpOnly unless httponly => 1;
     cross-origin unsafe requests are refused. PAGI::CSRF's verify fails a
@@ -298,6 +328,9 @@
     otherwise. The loop also ends once the socket is no longer connected,
     so nothing the peer sends after our Close reaches the callback.
     receive_json still dies on invalid JSON.
+  - Endpoint::HTTP, ::WebSocket and ::SSE to_app is an instance method: on a
+    class name it dies, pointing to endpoint('Class') or Class->new->to_app.
+    It used to build the class with new and no arguments, ignoring BUILD_APP.
 
   [Fixed]
   - PAGI::Test::Client drives the event loop while a request waits on real

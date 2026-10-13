@@ -59,6 +59,10 @@ sub _new_from {
             : $declaration_package,
     );
 
+    croak "named mount '$path' declares a 'path' parameter; path_for uses 'path' "
+        . "for the remainder below a named mount, so rename the parameter"
+        if defined $opts{name} && grep { $_ eq 'path' } @{$pattern->parameters};
+
     return bless {
         kind        => 'mount',
         _pattern    => $pattern,
@@ -132,35 +136,11 @@ unnamed mounts use this same representation:
     mount('/api', app => $api_app, name => 'api')
     mount('/public', routes => [ route('/status' => $handler) ])
 
-The ownership comparison is:
+A C<name> makes the Mount a reverse target (see
+L<PAGI::Routing/"REVERSE ROUTING AND INSPECTION">); a named Mount's path may
+not declare a C<path> parameter, which names the remainder below it.
 
-    Route('/x')       exact complete path leaf
-    Route('/*path')   explicit real catchall leaf
-    Mount('/x')       selected owner of /x and its complete subtree
-
-At the application root, choose construction, preservation, flattening, or
-direct deployment explicitly:
-
-    # New root Router from declarations
-    compose(routes => \@nodes);
-
-    # Preserve an existing Router application
-    compose(routes => [mount('/' => app => $router)]);
-
-    # Deliberately flatten direct child nodes
-    compose(routes => $router->routes);
-
-    # Deploy without Compose root services
-    $router->to_app;
-
-The preserving Mount retains the exact Router application. Compose constructs
-and owns a distinct outer root Router whose direct child is that Mount. By
-contrast, C<< $router->routes >> copies only direct nodes and discards the
-source Router's middleware, C<http_default>, C<desc>, identity, and Resolver.
-Direct C<to_app> omits Compose's root lifespan, ErrorHandler,
-response-completion guard, application middleware, and outer HEAD boundary.
-
-A terminal mounted Response therefore ignores the rewritten remaining child
+A terminal mounted Response ignores the rewritten remaining child
 path. That can be useful, but a developer who wants only one complete path
 normally wants Route. Package-name strings are not application values.
 Unlike Route, Mount has no HTTP method filter and contributes no C<Allow>
@@ -170,20 +150,9 @@ consumes a prefix, rewrites the child scope, and owns the selected subtree.
 Its normalized prefix pattern is compiled during construction. Constructor
 work validates/builds configuration only and emits no events.
 
-Its C<middleware> list contains only explicit
-L<PAGI::Routing::Middleware> descriptions, normally created with
-C<middleware(...)>. A factory or C<wrap> result may be native CODE or an object
-with C<to_app>; the resulting native app runs at request time and returns the
-protocol completion.
-
 An inline provider such as C<{id:&Int}> is resolved in the package that
-directly called C<mount> or C<new>. Re-exporting C<mount> preserves the
-consuming package as that caller; wrapping it in another sub makes the wrapper
-package the declaration package. A constructor called from a role method
-likewise resolves providers in the role package. The C<declaration_package>
-option names the package instead: a wrapper passes
-C<< declaration_package => scalar caller >> so providers resolve in the
-application that called it. It names one package; lookup never falls back.
+directly called C<mount> or C<new>, or in the package C<declaration_package>
+names (L<PAGI::Routing/Inline constraint providers>).
 
 Provider-backed and explicit prefix constraints run before mount middleware
 and the base application are selected. Named descendants reuse the same
@@ -212,15 +181,14 @@ captures, rewrites C<path>/C<root_path>, and then calls mount middleware and
 the child. C<raw_path> remains unchanged. A root mount consumes no prefix and
 leaves C<path>, C<root_path>, and C<raw_path> unchanged.
 
-A root Mount therefore consumes no path. An unnamed Mount adds no namespace to
-slash route names. Once that Mount is selected, its child Router owns its 404,
-405, and protocol misses; later root siblings cannot win.
+The decoded C<root_path> and consumed prefix are joined with exactly one slash
+at their boundary; existing internal slashes are not normalized.
 
 The selected base application remains the routing boundary after its prefix
 matches. A child Router renders its own NONE as a custom or stock 404 and its
 own PARTIAL as the built-in 405. Those responses unwind through Mount and
 parent Router middleware, but the parent does not resume sibling scanning or
-union methods after selecting the Mount. An opaque application is equally
+union methods after selecting the Mount. An application mount is equally
 authoritative; silence there is an application lifecycle error, not a parent
 routing miss.
 

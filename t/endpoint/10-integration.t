@@ -97,9 +97,9 @@ subtest 'SSE endpoint has keepalive configured' => sub {
 };
 
 subtest 'all endpoints produce PAGI apps' => sub {
-    my $http_app = MyApp::UserAPI->to_app;
-    my $ws_app = MyApp::ChatWS->to_app;
-    my $sse_app = MyApp::EventsSSE->to_app;
+    my $http_app = MyApp::UserAPI->new->to_app;
+    my $ws_app = MyApp::ChatWS->new->to_app;
+    my $sse_app = MyApp::EventsSSE->new->to_app;
 
     ref_ok($http_app, 'CODE', 'HTTP app is coderef');
     ref_ok($ws_app, 'CODE', 'WS app is coderef');

@@ -49,6 +49,13 @@ is \@seen, ['a', 'b'], 'and hands each line to the callback, awaiting it';
 my $mixed = stream_of(["a\nb\n"]);
 $mixed->next_line->get;
 like dies { $mixed->next_chunk->get }, qr/next_chunk: line reading has started; use next_line/, 'chunks after lines would lose the buffer';
+for my $method (qw(stream_to stream_to_file)) {
+    my $finished = stream_of(["a\n"]);
+    lines_of($finished);
+    my @argument = $method eq 'stream_to' ? (sub { }) : ('/dev/null');
+    like dies { $finished->$method(@argument)->get }, qr/\A$method: line reading has started; use next_line/,
+        "$method dies once lines were read, even after the last one";
+}
 
 # After a body error the lines end: a held fragment is not a line.
 for my $case (

@@ -34,14 +34,6 @@ sub csrf_field ($request) {
         html_escape(csrf($request)->token));
 }
 
-# The middleware runs with refuse => 0 because a form's token is in the
-# body, which it does not read: each POST handler checks the parsed field.
-# verify() also fails a request the middleware found to be cross-origin.
-sub csrf_refused ($request, $form) {
-    return undef if csrf($request)->verify($form->get('csrf_token') // '');
-    return response('Text', 'CSRF token validation failed', status => 403);
-}
-
 # Every URL comes from path_for, so the pages stay correct wherever the
 # account area is mounted or the whole app is served under a prefix.
 sub login_page ($request, $next, $error = undef) {
@@ -97,8 +89,6 @@ async sub login_form($request) {
 
 async sub login_submit($request) {
     my $form = await $request->form_params(strict => 1);
-    if (my $refused = csrf_refused($request, $form)) { return $refused }
-
     my $username = $form->get('username') // '';
     my $password = $form->get('password') // '';
     my $next = $form->get('next');
@@ -117,9 +107,6 @@ async sub login_submit($request) {
 }
 
 async sub logout($request) {
-    my $form = await $request->form_params(strict => 1);
-    if (my $refused = csrf_refused($request, $form)) { return $refused }
-
     session($request)->destroy;
     return redirect(path_for($request, 'login'), status => 303);
 }
@@ -142,8 +129,10 @@ compose(
             expire => 3600,
         ),
         # The token lives in the session, so a cookie planted by another
-        # site or subdomain cannot stand in for it.
-        middleware('CSRF', session => 1, refuse => 0),
+        # site or subdomain cannot stand in for it. The forms post it in the
+        # csrf_token field, which the middleware reads; a cross-site post, or
+        # one without the token, gets its 403.
+        middleware('CSRF', session => 1),
         middleware('Authentication', backend => \&session_user),
     ],
 );

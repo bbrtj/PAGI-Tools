@@ -20,12 +20,11 @@ PAGI::CSRF - Strict access to an issued CSRF token
     use Future::AsyncAwait;
     use PAGI::CSRF qw(csrf);
     use PAGI::Middleware::CSRF;
-    use PAGI::Request;
     use PAGI::Response qw(response);
 
-    # 1. The middleware handles it. For clients that can set a header (fetch,
-    #    XHR): an unsafe request without an X-CSRF-Token header matching the
-    #    csrf_token cookie gets a 403 and never reaches the application.
+    # 1. For clients that can set a header (fetch, XHR): an unsafe request
+    #    without an X-CSRF-Token header matching the csrf_token cookie gets a
+    #    403 and never reaches the application.
     my $api = PAGI::Middleware::CSRF->new->wrap(async sub {
         my ($scope, $receive, $send) = @_;
         # Only requests that passed the check get here.
@@ -36,27 +35,23 @@ PAGI::CSRF - Strict access to an issued CSRF token
     #   PAGI::Middleware::CSRF->new(
     #       refuse => response('JSON', { detail => 'CSRF token validation failed' }, status => 403));
 
-    # 2. The application handles it. A plain HTML form sends its token in the
-    #    body, which the middleware does not read: with refuse => 0 every
-    #    request reaches the application, which verifies the parsed field.
-    #    (csrf($scope)->valid and ->failure report the middleware's origin and
-    #    header checks, if any; verify also fails a cross-origin request.)
-    my $form = PAGI::Middleware::CSRF->new(refuse => 0)->wrap(async sub {
+    # 2. For a plain HTML form, which cannot set a header: the same
+    #    middleware reads the token from the form's csrf_token field and
+    #    refuses the same way. The parsed form stays cached for the
+    #    application's form_params.
+    my $form = PAGI::Middleware::CSRF->new->wrap(async sub {
         my ($scope, $receive, $send) = @_;
-        my $guard = csrf($scope);
         my $response;
         if ($scope->{method} eq 'GET') {
             # A plain form cannot read cookies or set headers, so the page hands it over.
-            my $token = $guard->token;
+            my $token = csrf($scope)->token;
             $response = response('HTML', qq{<form method="post">}
                 . qq{<input type="hidden" name="csrf_token" value="$token">}
                 . qq{<button>Save</button></form>});
         }
         else {
-            my $fields = await PAGI::Request->new($scope, $receive)->form_params;
-            $response = $guard->verify($fields->get('csrf_token') // '')
-                ? response('Text', 'Saved')
-                : response('Text', 'CSRF token validation failed', status => 403);
+            # Only a post carrying the right token gets here.
+            $response = response('Text', 'Saved');
         }
         await $response->to_app->($scope, $receive, $send);
     });
@@ -136,6 +131,11 @@ and false for a missing, empty, reference, or mismatching submitted value.
 It also returns false when the middleware found the request to be
 cross-origin, so a form handler's one call covers both checks.
 
+Use it when the application reads the token itself, from a body the
+middleware does not read -- an upload streamed with C<multipart_stream>,
+say, on a route whose middleware runs with C<< form_field => undef,
+refuse => 0 >> (see L<PAGI::Middleware::CSRF/Streamed uploads>).
+
 =cut
 
 sub verify {
@@ -155,10 +155,10 @@ sub verify {
 
     return $refused unless csrf($request)->valid;
 
-Returns 1 unless L<PAGI::Middleware::CSRF> recorded a failed origin or header check
-for this request, else 0. Safe methods are not checked and report valid. A
-token sent in a form field is not seen by the middleware: verify it with
-L</verify> once the form is parsed.
+Returns 1 unless L<PAGI::Middleware::CSRF> recorded a failed origin or token
+check for this request, else 0. Safe methods are not checked and report
+valid. The token check covers the header and, for a form body, the
+middleware's C<form_field>; verify a token it does not read with L</verify>.
 
 =cut
 

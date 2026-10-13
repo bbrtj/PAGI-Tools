@@ -84,8 +84,8 @@ subtest 'example sources require Perl 5.40 and use signatures' => sub {
     unlike($root_app, qr/use PAGI::Utils qw\(app_path\)/,
         'Root no longer needs the functional application path helper');
     like($root_app,
-        qr/mount\('\/static'\s*,\s*app\s*=>\s*PAGI::App::File->from_app_path\('static'\)\)/,
-        'static mount uses the concise App File component constructor');
+        qr/mount\('\/static'\s*,\s*app\s*=>\s*PAGI::App::File->from_app_path\('static'\)\s*,\s*name\s*=>\s*'static'\s*,\s*\)/,
+        'static mount uses the concise App File component constructor and is named');
     unlike($root_app, qr/PAGI::App::File->new\s*\(|File::Basename|File::Spec|__FILE__|\$STATIC_ROOT/,
         'Root contains no manual or expanded static-root construction');
     unlike($root_app, qr/request_response|sub root_not_found/,
@@ -105,7 +105,7 @@ subtest 'example sources require Perl 5.40 and use signatures' => sub {
         'Person handler uses a Request signature');
     like($blogs, qr/sub show_blog\(\$request\)/,
         'Blogs handler uses a Request signature');
-    like($view, qr/sub document\(\$class, \$title, \$body\)/,
+    like($view, qr/sub document\(\$class, \$request, \$title, \$body\)/,
         'View document helper uses a signature');
 
     like($person, qr/use Types::Standard qw\(Int\)/,
@@ -213,6 +213,10 @@ subtest 'component routing publishes the canonical composed address map' => sub 
             '/person/blog/show' => $root->path_for(
                 '/person/blog/show', { person_id => 2, blog_id => 201 },
             ),
+            '/static' => $root->path_for('/static'),
+            '/static/app.css' => $root->path_for(
+                '/static', { path => 'app.css' },
+            ),
         },
         {
             '/home' => '/',
@@ -222,20 +226,25 @@ subtest 'component routing publishes the canonical composed address map' => sub 
             '/person/show-negative' => '/person/-1',
             '/person/blog/index' => '/person/2/blog/',
             '/person/blog/show' => '/person/2/blog/201',
+            '/static' => '/static',
+            '/static/app.css' => '/static/app.css',
         },
-        'Root exposes the six canonical logical addresses and URL patterns',
+        'Root exposes the canonical logical addresses and URL patterns',
     );
     is(
         [sort keys %{$root->named_routes}],
         [qw(
             /home
             /pagi
+            /person
+            /person/blog
             /person/blog/index
             /person/blog/show
             /person/index
             /person/show
+            /static
         )],
-        'Root publishes exactly the six named leaves',
+        'Root publishes its six named leaves and three named mounts',
     );
 
     my ($home_source) = grep {
@@ -286,6 +295,7 @@ subtest 'component handlers keep application hrefs behind URL helper calls' => s
         ['Root', "$component_root/Root.pm", 0],
         ['Person', "$component_root/Person.pm", 0],
         ['Blogs', "$component_root/Person/Blogs.pm", 1],
+        ['View', "$component_root/View.pm", 0],
     );
 
     for my $component (@components) {
@@ -312,11 +322,14 @@ subtest 'component handlers keep application hrefs behind URL helper calls' => s
 };
 
 subtest 'application View owns the shared HTML document shell' => sub {
-    my $html = MyApp::View->document('Fixture title', '    <h1>Body</h1>');
+    my $client = PAGI::Test::Client->new(app => MyApp::Root->to_app, lifespan => 1);
+    $client->start;
+    my $html = $client->get('/')->text;
+    $client->stop;
     like($html, qr{<!doctype html>}, 'document declares HTML');
-    like($html, qr{<title>Fixture title</title>}, 'document uses its title');
-    like($html, qr{href="/static/app.css"}, 'document links shared CSS');
-    like($html, qr{    <h1>Body</h1>}, 'document includes owned body markup');
+    like($html, qr{<title>My PAGI People</title>}, 'document uses its title');
+    like($html, qr{href="/static/app.css"}, 'document links shared CSS through the static mount name');
+    like($html, qr{    <h1>My PAGI People</h1>}, 'document includes owned body markup');
 };
 
 subtest 'Root composes lifespan, Router links, and owned outcomes' => sub {

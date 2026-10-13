@@ -29,6 +29,7 @@ sub home($request) {
     my $count = scalar @{$state->get('data')->people};
 
     return response('HTML', MyApp::View->document(
+        $request,
         'My PAGI People',
         qq{    <h1>My PAGI People</h1>\n}
             . qq{    <p>This application contains $count people.</p>\n}
@@ -53,7 +54,9 @@ sub routing($class) {
                 desc => 'Pages Welcome response from Request',
             ),
             mount('/static',
-                app => PAGI::App::File->from_app_path('static')),
+                app  => PAGI::App::File->from_app_path('static'),
+                name => 'static',
+            ),
             mount('/person',
                 app  => MyApp::Person->routing,
                 name => 'person',

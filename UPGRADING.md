@@ -22,7 +22,7 @@ in [UPGRADING-REFERENCE.md](UPGRADING-REFERENCE.md).
 | ErrorHandler `content_type`; errors swallowed after start | a Request-handler `handler` reading `error_context($request)`; 5xx re-raised to the server ([details](UPGRADING-REFERENCE.md#breaking-errorhandler-re-raises-server-errors)) |
 | an unknown middleware option | now dies; check spelling and renamed options (`invalid` → `refuse`) |
 | Session `secret`, `cookie_name`, `cookie_options`; `State::Bearer` | `state => session_state('Cookie', ...)`; no secret ([details](UPGRADING-REFERENCE.md#breaking-the-session-cookie-is-configured-on-statecookie-not-on-the-middleware)) |
-| CSRF `enforce => 'header'` / `enforce => 'app'` | the default / `refuse => 0`; `enforce` now dies ([details](UPGRADING-REFERENCE.md#breaking-csrf-enforce-is-replaced-by-refuse)) |
+| CSRF `enforce => 'header'` / `enforce => 'app'` | the default / remove it: the middleware reads the form's `csrf_token` field; `enforce` now dies ([details](UPGRADING-REFERENCE.md#breaking-csrf-enforce-is-replaced-by-refuse)) |
 | CSRF `secret`; its `HttpOnly` cookie | remove `secret` (tokens are random; passing it dies); `httponly => 1` keeps the flag; `session => 1` binds the token to the session ([details](UPGRADING-REFERENCE.md#breaking-csrf-secret-removed-cookie-readable-origin-checked)) |
 | cross-origin unsafe requests through CSRF | refused; list legitimate callers in `trusted_origins` ([details](UPGRADING-REFERENCE.md#breaking-csrf-secret-removed-cookie-readable-origin-checked)) |
 | RateLimit `backend` | removed (it was never used); passing it dies ([details](UPGRADING-REFERENCE.md#breaking-ratelimit-backend-is-removed-limiters-no-longer-share-buckets)) |
@@ -54,6 +54,7 @@ in [UPGRADING-REFERENCE.md](UPGRADING-REFERENCE.md).
 | `body_stream` over `max_bytes` died with "Request body max_bytes exceeded" (a 500) | a `PAGI::Request::BodyError` 413 `too_large` (400 `invalid_body` past the Content-Length); the limit's name is in `->cause`, not the message |
 | `$request->text` decoded every body as UTF-8 | it decodes with the Content-Type charset, UTF-8 when none is declared; an unknown charset is a 415 |
 | `each_json` died (a 1011 server error) on a message that is not JSON | it closes 1007 and returns; pass `on_invalid_json`, or override `handle_invalid_json`, to answer otherwise |
+| `MyEndpoint->to_app` (an Endpoint class name) | `endpoint('MyEndpoint')->to_app`, or `MyEndpoint->new->to_app`; on a class name it now dies |
 
 Behaviour that changes without a code change: stock refusals and error
 responses are plain text, each replaceable by one option ([details](UPGRADING-REFERENCE.md#audit-changed-first-party-defaults));

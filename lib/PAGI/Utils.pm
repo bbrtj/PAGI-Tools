@@ -404,6 +404,22 @@ sub _application_option {
     return to_app($value);
 }
 
+# True when $package already has symbols of its own (a sub, a variable,
+# @ISA): it was declared inline or loaded, so it must not be required, since
+# a package defined in app.pl has no file. A stash that holds only nested
+# packages (MyApp:: when only MyApp::Request is loaded) does not count. The
+# walk starts at %main:: so the check itself creates no stash.
+sub _package_is_defined {
+    my ($package) = @_;
+    my $stash = \%main::;
+    for my $part (split /::/, $package) {
+        my $glob = $stash->{"${part}::"};
+        return 0 unless defined($glob) && ref(\$glob) eq 'GLOB';
+        $stash = *{$glob}{HASH};
+    }
+    return grep({ !/::\z/ } keys %$stash) ? 1 : 0;
+}
+
 # On a case-insensitive filesystem, require 'Foo/json.pm' opens Foo/JSON.pm
 # and compiles it a second time under a package name it does not define.
 # True when every component of the first @INC match has exactly this case,

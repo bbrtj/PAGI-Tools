@@ -15,7 +15,7 @@ use PAGI::App::File;
 use PAGI::Compose qw(compose);
 use PAGI::Middleware::AccessLog;
 use PAGI::Pages;
-use PAGI::Routing qw(middleware route sse websocket);
+use PAGI::Routing qw(endpoint middleware route sse websocket);
 use PAGI::Utils qw(invoke_app);
 
 
@@ -197,11 +197,11 @@ my $require_json = sub {
 # - $require_json: validates Content-Type for POST (coderef middleware)
 # - $timing: works for any protocol, so the WebSocket and SSE routes use it
 compose(routes => [
-    route('/api/messages' => MessageAPI->new,
+    route('/api/messages' => endpoint('MessageAPI'),
         middleware => [middleware($access_log), middleware($require_json)]),
-    websocket('/ws/echo' => EchoWS->new,
+    websocket('/ws/echo' => endpoint('EchoWS'),
         middleware => [middleware($timing)]),
-    sse('/events' => MessageEvents->new,
+    sse('/events' => endpoint('MessageEvents'),
         middleware => [middleware($timing)]),
     # Static files for every other HTTP path (no middleware). A Route is
     # HTTP-only, so a WebSocket or SSE request to an unknown path gets the

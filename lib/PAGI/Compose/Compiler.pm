@@ -163,8 +163,9 @@ PAGI::Compose::Compiler - Internal compiler for PAGI::Compose
 
 =head1 DESCRIPTION
 
-This module is the internal compilation engine used by
-L<PAGI::Compose/to_app>. It is not a public constructor; applications should
+This module is the internal compilation engine behind PAGI::Compose's
+C<to_app> (L<PAGI::Compose/COMPILATION AND MIDDLEWARE ORDER>). It is not a
+public constructor; applications should
 create a L<PAGI::Compose> description and compile that description instead.
 
 Each compilation builds one target, declared middleware graph, dispatcher,

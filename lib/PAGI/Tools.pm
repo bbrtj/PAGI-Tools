@@ -22,7 +22,7 @@ our $VERSION = '0.003000';
 my @SOURCES = (
     'PAGI::Compose'           => [qw(compose)],
     'PAGI::Response'          => [qw(response)],
-    'PAGI::Routing'           => [qw(router route websocket sse mount middleware request_response)],
+    'PAGI::Routing'           => [qw(router route websocket sse mount middleware request_response endpoint)],
     'PAGI::Routing::URL'      => [qw(url path_for url_for)],
     'PAGI::ErrorContext'      => [qw(error_context)],
     'PAGI::State'             => [qw(app_state)],
@@ -193,7 +193,7 @@ package that imported them from C<PAGI::Tools>.
     compose                                       PAGI::Compose
     response                                      PAGI::Response
     router route websocket sse mount
-      middleware request_response                 PAGI::Routing
+      middleware request_response endpoint        PAGI::Routing
     url path_for url_for                          PAGI::Routing::URL
     error_context                                 PAGI::ErrorContext
     app_state                                     PAGI::State
@@ -252,7 +252,8 @@ job:
 
 A L<Router|PAGI::Routing::Router> tries its children in order. When nothing
 matches it answers 404; when a path matches but not its method it answers 405
-with the C<Allow> header, and it answers HEAD and OPTIONS for you.
+with the C<Allow> header, and it answers HEAD for you; an Endpoint::HTTP class
+also answers OPTIONS.
 L<Compose|PAGI::Compose> builds the top Router from your routes and wraps it
 with application middleware, lifespan startup and shutdown, an error page for
 exceptions, HEAD handling, and a guard that finishes a response the
@@ -260,8 +261,11 @@ application left incomplete.
 
 L<PAGI::Endpoint::HTTP>, L<PAGI::Endpoint::WebSocket> and
 L<PAGI::Endpoint::SSE> are for when one route's behavior is big enough to
-want a class; they do not build routes. A class that owns a group of routes
-returns a Router instead, and the parent mounts it:
+want a class; they do not build routes. Name the class at its route with
+C<endpoint>, which loads and builds it:
+C<< route('/notes' => endpoint('MyApp::Notes', page_size => 50)) >>. A class
+that owns a group of routes returns a Router instead, and the parent mounts
+it:
 
     package MyApp::People;
     use PAGI::Tools qw(route router);
@@ -312,7 +316,8 @@ three-argument application so it can sit in a Route or C<http_default>.
 
 =item * C<request_response($handler)> (L<PAGI::Routing>) wraps a one-Request
 handler so it can be given to Mount. Its C<request_factory> option builds a
-L<PAGI::Request> subclass of your own for that handler.
+L<PAGI::Request> subclass of your own for that handler. For one Request class
+across the application, use L<PAGI::Middleware::RequestClass>.
 
 =back
 
@@ -321,9 +326,13 @@ Route asks once, when it is built, and a C<methods> option may only narrow
 that list. C<< methods => '*' >> hands all method handling, 405 included, to
 the application. WebSocket and SSE routes ignore C<allowed_methods>.
 
-An Endpoint object is created once and serves every request or connection on
-its route, concurrently. Keep only configuration and long-lived services on
-it; per-request state belongs on the Request, WebSocket or SSE object.
+C<endpoint('Class', %args)> builds an Endpoint once, with
+C<< Class->new(%args) >>, and that object serves every request or
+connection on its route, concurrently: keep only configuration and
+long-lived services on it, and per-request state on the Request, WebSocket
+or SSE object. A class that wants a fresh object per request (per
+connection for WebSocket and SSE) says so with C<BUILD_APP>; see
+L<PAGI::Endpoint>.
 
 =head1 ROOTED STATIC FILES
 

@@ -105,7 +105,7 @@ subtest 'lifecycle via to_app' => sub {
     ($EchoEndpoint::seen_connect, $EchoEndpoint::seen_receive,
         $EchoEndpoint::seen_disconnect) = ();
 
-    my $app = EchoEndpoint->to_app;
+    my $app = EchoEndpoint->new->to_app;
     my @sent;
     my $send = sub { push @sent, $_[0]; Future->done };
 
@@ -225,7 +225,7 @@ subtest 'immediate on_connect and on_receive results are normalized' => sub {
         }
     }
 
-    my $app = ImmediateEndpoint->to_app;
+    my $app = ImmediateEndpoint->new->to_app;
     my @sent;
     my $send = sub { push @sent, $_[0]; Future->done };
     my @events = (
@@ -282,7 +282,7 @@ subtest 'on_receive dispatches each declared message encoding' => sub {
         subtest "$case->{name} adapter" => sub {
             @{$case->{received}} = ();
             my @sent;
-            my $app = $case->{endpoint}->to_app;
+            my $app = $case->{endpoint}->new->to_app;
             my $scope = ws_scope(path => '/ws');
 
             $app->(
@@ -300,7 +300,7 @@ subtest 'on_receive dispatches each declared message encoding' => sub {
 subtest 'no on_connect override accepts the connection automatically' => sub {
     my @sent;
     my $scope = ws_scope(path => '/ws');
-    PAGI::Endpoint::WebSocket->to_app->(
+    PAGI::Endpoint::WebSocket->new->to_app->(
         $scope,
         receive_from($scope, { type => 'websocket.disconnect', code => 1000 }),
         sub { push @sent, $_[0]; Future->done },
@@ -321,7 +321,7 @@ subtest 'failed callback Future propagates through the endpoint app' => sub {
 
     my $scope = ws_scope(path => '/ws');
     like(dies {
-        FailingReceiveEndpoint->to_app->(
+        FailingReceiveEndpoint->new->to_app->(
             $scope,
             receive_from($scope, { type => 'websocket.receive', text => 'boom' }),
             sub { Future->done },
@@ -353,7 +353,7 @@ subtest 'on_disconnect Future is awaited by cleanup' => sub {
     $SynchronousDisconnectEndpoint::called = 0;
     $SynchronousDisconnectEndpoint::later_cleanup = 0;
     my $scope = ws_scope(path => '/ws');
-    my $running = SynchronousDisconnectEndpoint->to_app->(
+    my $running = SynchronousDisconnectEndpoint->new->to_app->(
         $scope,
         receive_from($scope, { type => 'websocket.disconnect', code => 1000 }),
         sub { Future->done },
