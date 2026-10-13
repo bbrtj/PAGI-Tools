@@ -29,7 +29,8 @@ my @SOURCES = (
     'PAGI::Stash'             => [qw(stash)],
     'PAGI::Session'           => [qw(session)],
     'PAGI::ContentNegotiation' => [qw(content_negotiation negotiated_type respond_to)],
-    'PAGI::Utils::Middleware' => [qw(clone_scope wrap_send wrap_receive wrap_response_headers)],
+    'PAGI::Utils::Middleware' => [qw(clone_scope wrap_send wrap_receive wrap_response_headers
+                                     record_receive)],
 );
 
 our @EXPORT_OK;
@@ -202,7 +203,7 @@ package that imported them from C<PAGI::Tools>.
     content_negotiation negotiated_type
       respond_to                                  PAGI::ContentNegotiation
     clone_scope wrap_send wrap_receive
-      wrap_response_headers                       PAGI::Utils::Middleware
+      wrap_response_headers record_receive        PAGI::Utils::Middleware
 
 =over 4
 

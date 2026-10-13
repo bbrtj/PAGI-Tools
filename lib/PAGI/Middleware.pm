@@ -216,6 +216,9 @@ Returns the complete body and the final http.request event.
 Croaks if the client disconnects mid-body rather than returning the partial
 body as if it were complete.
 
+The body is consumed: to pass it on to the inner app, read through
+L<PAGI::Utils::Middleware/record_receive> (see L</Reading the request body>).
+
 =cut
 
 async sub buffer_request_body {
@@ -284,6 +287,21 @@ application and can:
 =item * Perform actions before and after the inner app runs
 
 =back
+
+=head2 Reading the request body
+
+A request body can be received only once. A middleware that reads it must
+give the inner app a C<$receive> that delivers it again; given the C<$receive>
+the middleware read from, an app that reads the body waits for an event the
+client will never send. Read through L<PAGI::Utils::Middleware/record_receive>
+and pass on its replay:
+
+    my ($reading, $replaying) = record_receive($receive);
+    my $form = await PAGI::Request->new($scope, $reading)->form_params;
+    await $app->($scope, $replaying, $send);
+
+Every middleware that reads the body does this, each from the C<$receive> it
+was given.
 
 =head2 Example: Logging Middleware
 

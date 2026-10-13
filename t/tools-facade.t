@@ -34,6 +34,7 @@ my %SOURCE = (
     wrap_send             => 'PAGI::Utils::Middleware',
     wrap_receive          => 'PAGI::Utils::Middleware',
     wrap_response_headers => 'PAGI::Utils::Middleware',
+    record_receive        => 'PAGI::Utils::Middleware',
 );
 
 {
