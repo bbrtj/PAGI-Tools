@@ -13,9 +13,9 @@
   - PAGI::Utils::Middleware record_receive (also from PAGI::Tools): for
     middleware that reads the request body, a receive to read through and
     one that delivers what was read again, then the rest, to the
-    application. The events are kept in a PAGI::Utils::ReceiveBuffer --
-    64KB in memory, the rest in a temporary file -- or in any buffer with
-    its append and take methods. PAGI::Middleware's WRITING MIDDLEWARE
+    application. The events are kept in a
+    PAGI::Utils::ReceiveBuffer::TempFile -- 64KB in memory, the rest in a
+    temporary file -- or in any buffer with its append and take methods. PAGI::Middleware's WRITING MIDDLEWARE
     says when to use it.
   - PAGI::ContentNegotiation's handler side: respond_to, negotiated_type
     and content_negotiation (also from PAGI::Tools) read the

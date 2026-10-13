@@ -8,7 +8,7 @@ use Future;
 use Future::AsyncAwait;
 use Scalar::Util qw(blessed);
 use PAGI::Headers ();
-use PAGI::Utils::ReceiveBuffer ();
+use PAGI::Utils::ReceiveBuffer::TempFile ();
 
 our @EXPORT_OK = qw(clone_scope wrap_send wrap_receive wrap_response_headers record_receive);
 
@@ -78,7 +78,7 @@ sub record_receive {
     croak 'record_receive receive must be a coderef' unless ref($receive) eq 'CODE';
     my $buffer = delete $options{buffer};
     croak "record_receive has unknown option '$_'" for sort keys %options;
-    $buffer //= PAGI::Utils::ReceiveBuffer->new;
+    $buffer //= PAGI::Utils::ReceiveBuffer::TempFile->new;
     croak 'record_receive buffer must be an object with append and take'
         unless blessed($buffer) && $buffer->can('append') && $buffer->can('take');
 
@@ -233,12 +233,13 @@ read is delivered again too. Each kept event is released as it is
 delivered. Calling C<$reading> once C<$replaying> has been called fails: the
 two would interleave.
 
-The events are kept in a L<PAGI::Utils::ReceiveBuffer>, which holds 64KB in
-memory and spools the rest to a temporary file. C<buffer> gives another: a
-C<PAGI::Utils::ReceiveBuffer> with other options, or any object with its
-C<append> and C<take> methods, such as one that keeps the events in Redis
-(see L<PAGI::Utils::ReceiveBuffer/WRITING A BUFFER>). Give each request a
-buffer of its own.
+The events are kept in a L<PAGI::Utils::ReceiveBuffer::TempFile>, which
+holds 64KB in memory and spools the rest to a temporary file. C<buffer>
+gives another: a C<PAGI::Utils::ReceiveBuffer::TempFile> with other options,
+or any object with its C<append> and C<take> methods, such as one that keeps
+the events in Redis (see
+L<PAGI::Utils::ReceiveBuffer::TempFile/WRITING A BUFFER>). Give each request
+a buffer of its own.
 
 Each middleware that reads the body records it again, from the replay it
 was given. Events held in memory are handed on as the same hashes, so the

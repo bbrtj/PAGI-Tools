@@ -9,7 +9,7 @@ use PAGI::Auth qw(auth auth_result unauth_result);
 use PAGI::Auth::SimpleUser;
 use PAGI::Middleware::Authentication;
 use PAGI::Response;
-use PAGI::Utils::ReceiveBuffer;
+use PAGI::Utils::ReceiveBuffer::TempFile;
 
 {
     package Local::AuthBackend;
@@ -382,7 +382,7 @@ subtest 'body_buffer makes the buffer for each request' => sub {
     my @scopes;
     my $middleware = PAGI::Middleware::Authentication->new(
         backend     => sub { unauth_result() },
-        body_buffer => sub { push @scopes, $_[0]; PAGI::Utils::ReceiveBuffer->new(spool_threshold => 0) },
+        body_buffer => sub { push @scopes, $_[0]; PAGI::Utils::ReceiveBuffer::TempFile->new(spool_threshold => 0) },
     );
     my $by_app;
     $middleware->wrap(async sub { $by_app = await read_body($_[1]) })->(

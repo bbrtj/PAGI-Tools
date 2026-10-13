@@ -6,7 +6,7 @@ use Test2::V0;
 use Future;
 use Future::AsyncAwait;
 use PAGI::Utils::Middleware qw(record_receive);
-use PAGI::Utils::ReceiveBuffer;
+use PAGI::Utils::ReceiveBuffer::TempFile;
 
 # A receive that delivers the given events, then a disconnect for every
 # later call, as a server does once the body is complete.
@@ -89,7 +89,7 @@ subtest 'stacked layers hand on the same events' => sub {
 subtest 'a buffer may be given' => sub {
     my ($receive) = client_sending(@body);
     my ($reading, $replaying) = record_receive($receive,
-        buffer => PAGI::Utils::ReceiveBuffer->new(spool_threshold => 0));
+        buffer => PAGI::Utils::ReceiveBuffer::TempFile->new(spool_threshold => 0));
     my $read = drain($reading, 2);
     my $replayed = drain($replaying, 2);
     is($replayed, \@body, 'the replay delivers the body');
@@ -108,7 +108,7 @@ subtest 'the default buffer spools a large body' => sub {
 # A buffer whose Futures are still pending when returned, as one kept in
 # Redis returns them; settle completes what it was asked so far.
 package Local::DeferredBuffer {
-    sub new { bless { inner => PAGI::Utils::ReceiveBuffer->new, pending => [] }, shift }
+    sub new { bless { inner => PAGI::Utils::ReceiveBuffer::TempFile->new, pending => [] }, shift }
     sub append {
         my ($self, $event) = @_;
         my $f = Future->new;

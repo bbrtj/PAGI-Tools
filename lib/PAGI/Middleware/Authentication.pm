@@ -25,7 +25,7 @@ sub _init {
 
     $self->{backend} = $backend;
     $self->{body_buffer} = $config->{body_buffer};
-    croak 'Authentication body_buffer must be a coderef that returns a buffer, like PAGI::Utils::ReceiveBuffer->new'
+    croak 'Authentication body_buffer must be a coderef that returns a buffer, like PAGI::Utils::ReceiveBuffer::TempFile->new'
         if defined($self->{body_buffer}) && ref($self->{body_buffer}) ne 'CODE';
     PAGI::Utils::_reject_unknown_options('Authentication', $config,
         qw(backend body_buffer));
@@ -122,9 +122,9 @@ replay. A body the backend never reads passes straight through. C<body_buffer>
 chooses where a body that was read is kept until the application receives it:
 a coderef, called with the scope of each request (read or not, as the
 middleware cannot know in advance), returning a buffer for that request -- a
-L<PAGI::Utils::ReceiveBuffer> with other options, or any object with its
-C<append> and C<take> methods. Make the buffer do no work until C<append> is
-called. The default holds 64KB in memory and the rest in a temporary file.
+L<PAGI::Utils::ReceiveBuffer::TempFile> with other options, or any object
+with its C<append> and C<take> methods. Make the buffer do no work until
+C<append> is called. The default holds 64KB in memory and the rest in a temporary file.
 
 The result is installed under C<pagi.auth> in a shallow child scope and the
 downstream application always continues. Guest and rejected results do not

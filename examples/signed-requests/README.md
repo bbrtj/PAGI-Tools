@@ -43,21 +43,21 @@ calls should.
 ## Where the body waits
 
 Between the check and the route, the body has to be kept somewhere. By
-default `record_receive` uses a `PAGI::Utils::ReceiveBuffer` that holds
-64KB in memory and spools the rest to a temporary file with no name, so it
-is gone when the request is. This middleware takes a `buffer` option, a
-coderef that makes each request's buffer, and the application raises the
-threshold to 1MB:
+default `record_receive` uses a `PAGI::Utils::ReceiveBuffer::TempFile`,
+which holds 64KB in memory and spools the rest to a temporary file with no
+name, so it is gone when the request is. This middleware takes a `buffer`
+option, a coderef that makes each request's buffer, and the application
+raises the threshold to 1MB:
 
 ```perl
 buffer => sub ($scope) {
-    PAGI::Utils::ReceiveBuffer->new(spool_threshold => 1024 * 1024);
+    PAGI::Utils::ReceiveBuffer::TempFile->new(spool_threshold => 1024 * 1024);
 },
 ```
 
 A buffer is any object with `append` and `take` methods returning Futures,
 so one that keeps bodies in Redis, or writes with IO::AIO, drops in the same
-way. `ReceiveBuffer`'s own file writes block, as `PAGI::Request`'s upload
+way. `TempFile`'s own file writes block, as `PAGI::Request`'s upload
 spool does: a loop-agnostic module has no asynchronous way to write a
 regular file.
 

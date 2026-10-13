@@ -169,18 +169,21 @@ yourself, or Compose's answers it in plain text. A bare C<wrap> without Compose
 propagates it. C<undef> reads only the header, so the middleware never reads a
 body; anything else but a non-empty string dies.
 
-=item * body_buffer (default: a L<PAGI::Utils::ReceiveBuffer>)
+=item * body_buffer (default: a L<PAGI::Utils::ReceiveBuffer::TempFile>)
 
 Where a form body the middleware reads is kept until the application
 receives it. A coderef, called with the scope of each request whose body is
-read, returning a buffer for that request: a L<PAGI::Utils::ReceiveBuffer>
-with other options, or any object with its C<append> and C<take> methods,
-such as one that keeps the body in Redis. The default holds 64KB in memory
+read, returning a buffer for that request: a
+L<PAGI::Utils::ReceiveBuffer::TempFile> with other options, or any object
+with its C<append> and C<take> methods, such as one that keeps the body in
+Redis. The default holds 64KB in memory
 and the rest in a temporary file.
 
     middleware('CSRF', body_buffer => sub {
         my ($scope) = @_;
-        return PAGI::Utils::ReceiveBuffer->new(spool_threshold => 1024 * 1024);
+        return PAGI::Utils::ReceiveBuffer::TempFile->new(
+            spool_threshold => 1024 * 1024,
+        );
     });
 
 =item * refuse (default: a 403 text response)
@@ -226,7 +229,7 @@ sub _init {
     die 'CSRF form_field must be a field name, like csrf_token, or undef to read only the header'
         if defined($self->{form_field}) && (ref($self->{form_field}) || !length($self->{form_field}));
     $self->{body_buffer} = $config->{body_buffer};
-    die 'CSRF body_buffer must be a coderef that returns a buffer, like PAGI::Utils::ReceiveBuffer->new'
+    die 'CSRF body_buffer must be a coderef that returns a buffer, like PAGI::Utils::ReceiveBuffer::TempFile->new'
         if defined($self->{body_buffer}) && ref($self->{body_buffer}) ne 'CODE';
 
     # Absent: the default refusal. Exactly 0: the application decides.

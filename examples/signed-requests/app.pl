@@ -28,7 +28,7 @@ use Future::AsyncAwait;
 use Digest::SHA ();
 use File::Temp qw(tempdir);
 use PAGI::Tools qw(compose middleware mount response route);
-use PAGI::Utils::ReceiveBuffer;
+use PAGI::Utils::ReceiveBuffer::TempFile;
 
 package SignedRequests::VerifySignature {
     use parent 'PAGI::Middleware';
@@ -99,7 +99,9 @@ compose(
                 middleware(SignedRequests::VerifySignature->new(
                     secret => $SECRET,
                     buffer => sub ($scope) {
-                        PAGI::Utils::ReceiveBuffer->new(spool_threshold => 1024 * 1024);
+                        PAGI::Utils::ReceiveBuffer::TempFile->new(
+                            spool_threshold => 1024 * 1024,    # 1MB, then a temp file
+                        );
                     },
                 )),
             ],

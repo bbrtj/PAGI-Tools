@@ -319,11 +319,11 @@ subtest "a refused form's body reaches refuse" => sub {
 };
 
 subtest 'body_buffer makes the buffer for each request whose body is read' => sub {
-    require PAGI::Utils::ReceiveBuffer;
+    require PAGI::Utils::ReceiveBuffer::TempFile;
     my @scopes;
     my ($client, $token) = primed_native(body_buffer => sub {
         push @scopes, $_[0];
-        return PAGI::Utils::ReceiveBuffer->new(spool_threshold => 0);
+        return PAGI::Utils::ReceiveBuffer::TempFile->new(spool_threshold => 0);
     });
     is $client->post('/', body => 'title=hi', headers => { %urlencoded, 'X-CSRF-Token' => $token })->text,
         'read: title=hi', 'a request with the header';

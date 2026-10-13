@@ -4,7 +4,7 @@ use strict;
 use warnings;
 use Test2::V0;
 use File::Temp qw(tempdir);
-use PAGI::Utils::ReceiveBuffer;
+use PAGI::Utils::ReceiveBuffer::TempFile;
 
 sub take_all {
     my ($buffer) = @_;
@@ -22,7 +22,7 @@ sub dir_entries {
 }
 
 subtest 'a small body is kept in memory and handed back as the same events' => sub {
-    my $buffer = PAGI::Utils::ReceiveBuffer->new;
+    my $buffer = PAGI::Utils::ReceiveBuffer::TempFile->new;
     my @events = (
         { type => 'http.request', body => 'name=', more => 1 },
         { type => 'http.request', body => 'Ada', more => 0 },
@@ -39,8 +39,8 @@ subtest 'past spool_threshold the events move to a temp file and replay in order
     # Each request event counts 21 bytes (type 12, body 8, more 1), so the
     # first two stay in memory and the third moves all three to the file.
     my $dir = tempdir(CLEANUP => 1);
-    my $buffer = PAGI::Utils::ReceiveBuffer->new(spool_threshold => 50, temp_dir => $dir);
-    my $held = PAGI::Utils::ReceiveBuffer->new(spool_threshold => 50, temp_dir => $dir);
+    my $buffer = PAGI::Utils::ReceiveBuffer::TempFile->new(spool_threshold => 50, temp_dir => $dir);
+    my $held = PAGI::Utils::ReceiveBuffer::TempFile->new(spool_threshold => 50, temp_dir => $dir);
     my @events = (
         { type => 'http.request', body => 'a' x 8, more => 1 },
         { type => 'http.request', body => 'b' x 8, more => 1 },
@@ -61,7 +61,7 @@ subtest 'past spool_threshold the events move to a temp file and replay in order
 };
 
 subtest 'spool_threshold => 0 spools from the first event' => sub {
-    my $buffer = PAGI::Utils::ReceiveBuffer->new(spool_threshold => 0);
+    my $buffer = PAGI::Utils::ReceiveBuffer::TempFile->new(spool_threshold => 0);
     my $event = { type => 'http.request', body => 'x', more => 0 };
     $buffer->append($event)->get;
     my $taken = take_all($buffer);
@@ -70,18 +70,18 @@ subtest 'spool_threshold => 0 spools from the first event' => sub {
 };
 
 subtest 'bytes survive the temp file unchanged' => sub {
-    my $buffer = PAGI::Utils::ReceiveBuffer->new(spool_threshold => 0);
+    my $buffer = PAGI::Utils::ReceiveBuffer::TempFile->new(spool_threshold => 0);
     my $bytes = join '', map { chr } 0 .. 255;
     $buffer->append({ type => 'http.request', body => $bytes, more => 0 })->get;
     is($buffer->take->get->{body}, $bytes, 'every byte value round-trips');
 };
 
 subtest 'options are checked' => sub {
-    like(dies { PAGI::Utils::ReceiveBuffer->new(spool_threshold => -1) },
+    like(dies { PAGI::Utils::ReceiveBuffer::TempFile->new(spool_threshold => -1) },
         qr/spool_threshold must be a number of bytes/, 'a negative threshold dies');
-    like(dies { PAGI::Utils::ReceiveBuffer->new(spool_threshold => 'big') },
+    like(dies { PAGI::Utils::ReceiveBuffer::TempFile->new(spool_threshold => 'big') },
         qr/spool_threshold must be a number of bytes/, 'a word dies');
-    like(dies { PAGI::Utils::ReceiveBuffer->new(bogus => 1) },
+    like(dies { PAGI::Utils::ReceiveBuffer::TempFile->new(bogus => 1) },
         qr/unknown option 'bogus'/, 'an unknown option dies');
 };
 

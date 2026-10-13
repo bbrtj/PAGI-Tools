@@ -1,4 +1,4 @@
-package PAGI::Utils::ReceiveBuffer;
+package PAGI::Utils::ReceiveBuffer::TempFile;
 
 use strict;
 use warnings;
@@ -13,11 +13,11 @@ our $SPOOL_THRESHOLD = 64 * 1024;    # 64KB held in memory before spooling to di
 sub new {
     my ($class, %args) = @_;
     my $threshold = exists $args{spool_threshold} ? $args{spool_threshold} : $SPOOL_THRESHOLD;
-    croak 'PAGI::Utils::ReceiveBuffer spool_threshold must be a number of bytes, 0 or more'
+    croak 'PAGI::Utils::ReceiveBuffer::TempFile spool_threshold must be a number of bytes, 0 or more'
         unless defined($threshold) && !ref($threshold) && $threshold =~ /\A[0-9]+\z/;
     my $temp_dir = delete $args{temp_dir};
     delete $args{spool_threshold};
-    PAGI::Utils::_reject_unknown_options('PAGI::Utils::ReceiveBuffer', \%args);
+    PAGI::Utils::_reject_unknown_options('PAGI::Utils::ReceiveBuffer::TempFile', \%args);
 
     return bless {
         spool_threshold => $threshold,
@@ -65,20 +65,20 @@ sub _write {
     my ($self, $event) = @_;
     my $frozen = nfreeze($event);
     my $fh = $self->{fh};
-    seek($fh, 0, 2) or croak "PAGI::Utils::ReceiveBuffer cannot seek its temp file: $!";
+    seek($fh, 0, 2) or croak "PAGI::Utils::ReceiveBuffer::TempFile cannot seek its temp file: $!";
     print {$fh} pack('N', length $frozen), $frozen
-        or croak "PAGI::Utils::ReceiveBuffer cannot write its temp file: $!";
+        or croak "PAGI::Utils::ReceiveBuffer::TempFile cannot write its temp file: $!";
 }
 
 sub _read {
     my ($self) = @_;
     my $fh = $self->{fh};
-    seek($fh, $self->{read_at}, 0) or croak "PAGI::Utils::ReceiveBuffer cannot seek its temp file: $!";
+    seek($fh, $self->{read_at}, 0) or croak "PAGI::Utils::ReceiveBuffer::TempFile cannot seek its temp file: $!";
     my $got = read($fh, my $length, 4);
-    croak "PAGI::Utils::ReceiveBuffer cannot read its temp file: $!" unless defined $got;
+    croak "PAGI::Utils::ReceiveBuffer::TempFile cannot read its temp file: $!" unless defined $got;
     return undef unless $got;
     $length = unpack('N', $length);
-    croak 'PAGI::Utils::ReceiveBuffer temp file is truncated'
+    croak 'PAGI::Utils::ReceiveBuffer::TempFile temp file is truncated'
         unless $got == 4 && read($fh, my $frozen, $length) == $length;
     $self->{read_at} = tell $fh;
     return thaw($frozen);
@@ -90,22 +90,25 @@ __END__
 
 =head1 NAME
 
-PAGI::Utils::ReceiveBuffer - Holds received events for replay, spooling large bodies to disk
+PAGI::Utils::ReceiveBuffer::TempFile - Keeps received events for replay, in a temp file over a size
 
 =head1 SYNOPSIS
 
-    use PAGI::Utils::ReceiveBuffer;
+    use PAGI::Utils::ReceiveBuffer::TempFile;
     use PAGI::Utils::Middleware qw(record_receive);
 
-    my $buffer = PAGI::Utils::ReceiveBuffer->new(spool_threshold => 1024 * 1024);
+    my $buffer = PAGI::Utils::ReceiveBuffer::TempFile->new(
+        spool_threshold => 1024 * 1024,    # 1MB in memory, then a temp file
+    );
     my ($reading, $replaying) = record_receive($receive, buffer => $buffer);
 
 =head1 DESCRIPTION
 
 The buffer L<PAGI::Utils::Middleware/record_receive> keeps the events a
-middleware reads, so they can be handed on again. Events are held in memory
-until their size passes C<spool_threshold>; from then on every event, the
-ones already held included, lives in a temporary file.
+middleware reads, so they can be handed on again. Small bodies stay in
+memory; over a size they go to a temp file. Events are held in memory until
+their size passes C<spool_threshold> (64KB by default); from then on every
+event, the ones already held included, lives in a temporary file.
 
 The size counted is that of each event's plain values (a request body's
 bytes, its type, and so on). Events in memory are handed back as the same
@@ -125,7 +128,7 @@ when the process ends.
 
 =head2 new
 
-    my $buffer = PAGI::Utils::ReceiveBuffer->new(%options);
+    my $buffer = PAGI::Utils::ReceiveBuffer::TempFile->new(%options);
 
 Options:
 
