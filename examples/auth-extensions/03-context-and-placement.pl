@@ -22,7 +22,6 @@ use PAGI::Utils::Middleware qw(clone_scope);
         };
     }
 }
-BEGIN { $INC{'AuthExtensions/Observe.pm'} = __FILE__ }
 
 # Factory middleware at the Compose boundary: a completed result is installed
 # in a child scope, and the outer scope remains authoritative to this wrapper.

@@ -53,10 +53,8 @@ sub _wrap {
         $object = $target;
     } else {
         my $class = _resolve_class($target);
-        my $file = $class;
-        $file =~ s{::}{/}g;
-        $file .= '.pm';
-        require $file;
+        my $error = PAGI::Utils::_load_class($class, "middleware('$target')", sub { $_[0]->can('new') });
+        croak $error if defined $error;
 
         $object = $class->new(%{$self->{config}});
         croak "middleware class $class did not construct an object with wrap"

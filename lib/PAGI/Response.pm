@@ -154,9 +154,12 @@ client receives bytes.
 Builds a Response by class name. A short name is resolved under
 C<PAGI::Response::> (C<'JSON'> is L<PAGI::Response::JSON>), a name already
 under that namespace is kept, and a leading C<+> names an exact package, so a
-Response class from another distribution needs no change here. The class is
-loaded, must be a C<PAGI::Response>, and is constructed with the remaining
-arguments unchanged; each class documents its own arguments.
+Response class from another distribution needs no change here. A class
+already defined -- declared in the application file, or loaded before -- is
+used as it is; otherwise its file is loaded, and a name with no file, or a
+file that fails to load, dies C<response('...'): cannot load ...>. The class
+must be a C<PAGI::Response>, and is constructed with the remaining arguments
+unchanged; each class documents its own arguments.
 
 Dies with C<response('NAME'): cannot load CLASS: ...> when the class cannot
 be loaded -- including a name whose case differs from the file's, which a
@@ -316,13 +319,8 @@ sub response {
         unless defined($name) && !ref($name) && length($name);
     require PAGI::Utils;
     my $class = PAGI::Utils::_resolve_class('PAGI::Response', $name, 'response');
-    (my $file = "$class.pm") =~ s{::}{/}g;
-    unless ($INC{$file}) {
-        croak "response('$name'): cannot load $class: no file named exactly $file in \@INC"
-            unless PAGI::Utils::_file_name_matches_case($file);
-        eval { require $file; 1 }
-            or croak "response('$name'): cannot load $class: $@";
-    }
+    my $error = PAGI::Utils::_load_class($class, "response('$name')", sub { $_[0]->isa('PAGI::Response') });
+    croak $error if defined $error;
     croak "response('$name'): $class is not a PAGI::Response"
         unless $class->isa('PAGI::Response');
     return $class->new(@arguments);

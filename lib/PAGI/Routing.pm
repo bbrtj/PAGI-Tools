@@ -372,7 +372,11 @@ Class names may be short, nested short, already PAGI-qualified, or exact:
     middleware('+MyApp::Middleware::Audit')
 
 Short and nested short names resolve under C<PAGI::Middleware::>; a leading
-C<+> selects an exact fully qualified class. Configuration is captured for
+C<+> selects an exact fully qualified class. A class already defined --
+declared in the application file, or loaded before -- is used as it is;
+otherwise its file is loaded, and a name with no file, or a file that fails
+to load, dies C<middleware('...'): cannot load ...> when the application is
+built. Configuration is captured for
 deferred class construction or passed to the synchronous factory; a configured
 object accepts no additional description configuration. The C<middleware>
 accessors on routers, routes, and mounts expose descriptions only.

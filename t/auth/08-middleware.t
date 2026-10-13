@@ -9,6 +9,7 @@ use PAGI::Auth qw(auth auth_result unauth_result);
 use PAGI::Auth::SimpleUser;
 use PAGI::Middleware::Authentication;
 use PAGI::Response;
+use PAGI::Utils::ReceiveBuffer::TempFile;
 
 {
     package Local::AuthBackend;
@@ -52,7 +53,7 @@ subtest 'construction is lazy and invocation installs a child-scope result' => s
         my ($scope, $recv, $snd) = @_;
         $seen = auth($scope);
         isnt refaddr($scope), refaddr($outer), 'downstream receives a child scope';
-        is refaddr($recv), refaddr($receive), 'receive is preserved';
+        like dies { $recv->()->get }, qr/unexpected body read/, "receive reaches the client's receive";
         is refaddr($snd), refaddr($send), 'send is preserved';
         return Future->done;
     });
@@ -339,6 +340,60 @@ subtest 'the backend receives the class the scope key builds' => sub {
     invocation($middleware, { type => 'http', headers => [] })->get;
     is(\@seen, [('Local::AppRequest') x 3, 'PAGI::Request'],
         'a key on HTTP, WebSocket and SSE scopes: its class; no key: PAGI::Request');
+};
+
+# A client's receive delivering the given events, then a disconnect.
+sub client_receive {
+    my @events = @_;
+    return sub { Future->done(@events ? shift @events : { type => 'http.disconnect' }) };
+}
+
+# What an application that reads $receive itself gets as the body.
+async sub read_body {
+    my ($receive) = @_;
+    my $body = '';
+    while (1) {
+        my $event = await $receive->();
+        last unless $event->{type} eq 'http.request';
+        $body .= $event->{body} // '';
+        last unless $event->{more};
+    }
+    return $body;
+}
+
+subtest 'a body the backend reads reaches the application' => sub {
+    my ($by_backend, $by_app);
+    my $middleware = PAGI::Middleware::Authentication->new(backend => async sub {
+        my ($request) = @_;
+        $by_backend = await $request->body;    # a signed request, say
+        return unauth_result();
+    });
+    $middleware->wrap(async sub { $by_app = await read_body($_[1]) })->(
+        { type => 'http', method => 'POST', headers => [] },
+        client_receive({ type => 'http.request', body => 'payload=', more => 1 },
+                       { type => 'http.request', body => '1', more => 0 }),
+        sub { Future->done },
+    )->get;
+    is $by_backend, 'payload=1', 'the backend read the body';
+    is $by_app, 'payload=1', 'and the application receives it again';
+};
+
+subtest 'body_buffer makes the buffer for each request' => sub {
+    my @scopes;
+    my $middleware = PAGI::Middleware::Authentication->new(
+        backend     => sub { unauth_result() },
+        body_buffer => sub { push @scopes, $_[0]; PAGI::Utils::ReceiveBuffer::TempFile->new(spool_threshold => 0) },
+    );
+    my $by_app;
+    $middleware->wrap(async sub { $by_app = await read_body($_[1]) })->(
+        { type => 'http', method => 'POST', headers => [] },
+        client_receive({ type => 'http.request', body => 'x', more => 0 }),
+        sub { Future->done },
+    )->get;
+    is $by_app, 'x', 'the application receives the body';
+    is [map { $_->{type} } @scopes], ['http'], 'through one buffer, made from the scope';
+    like dies { PAGI::Middleware::Authentication->new(backend => sub {}, body_buffer => 'big') },
+        qr/Authentication body_buffer must be a coderef that returns a buffer/, 'body_buffer must be a coderef';
 };
 
 done_testing;

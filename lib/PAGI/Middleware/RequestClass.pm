@@ -18,23 +18,10 @@ sub _init {
         unless defined($class) && !ref($class)
             && $class =~ /\A[A-Za-z_]\w*(?:::[A-Za-z_]\w*)*\z/;
 
-    # A package already defined as a PAGI::Request (inline in app.pl, or
-    # loaded) is not required: it may have no file. Otherwise its file is
-    # loaded now, so a typo fails when the application is built rather than
-    # on every request. A package that is only named, because compiled code
-    # mentioned one of its symbols, is still required; when it has no file,
-    # the isa check below reports it.
-    my $named = PAGI::Utils::_package_is_defined($class);
-    unless ($named && $class->isa('PAGI::Request')) {
-        (my $file = "$class.pm") =~ s{::}{/}g;
-        croak "RequestClass cannot load $class: no file named exactly $file in \@INC"
-            unless PAGI::Utils::_file_name_matches_case($file);
-        eval { require $file; 1 } or do {
-            my $no_file = $@ =~ /\ACan't locate \Q$file\E in \@INC/;
-            croak "RequestClass cannot load $class: $@"
-                unless $named && $no_file;
-        };
-    }
+    # Loaded now, so a typo fails when the application is built rather than
+    # on every request.
+    my $error = PAGI::Utils::_load_class($class, 'RequestClass', sub { $_[0]->isa('PAGI::Request') });
+    croak $error if defined $error;
     croak "RequestClass $class is not a PAGI::Request"
         unless $class->isa('PAGI::Request');
 
@@ -178,7 +165,8 @@ A package name that is a L<PAGI::Request> subclass. A package already
 defined as a L<PAGI::Request>, inline in your application file or loaded
 earlier, is not loaded again; otherwise its file is loaded, even when other
 code has already named the package. Either way it must then be a
-L<PAGI::Request>. A name that cannot be loaded dies "cannot load", and a
+L<PAGI::Request>. A name that cannot be loaded dies "RequestClass: cannot
+load", and a
 package that is not a L<PAGI::Request>, inline or loaded, dies "is not a
 PAGI::Request", when the application is built, not on a request.
 

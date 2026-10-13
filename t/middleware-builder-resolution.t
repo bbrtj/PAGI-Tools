@@ -85,11 +85,11 @@ subtest 'loading real nested middleware' => sub {
     my $builder = PAGI::Middleware::Builder->new;
 
     # These should resolve and load correctly
-    my $class1 = $builder->_resolve_middleware('SSE::Retry');
+    my $class1 = $builder->_load_middleware('SSE::Retry', 'enable');
     is $class1, 'PAGI::Middleware::SSE::Retry', 'SSE::Retry resolves correctly';
     ok $class1->can('wrap'), 'SSE::Retry class loaded and has wrap method';
 
-    my $class2 = $builder->_resolve_middleware('RequestId');
+    my $class2 = $builder->_load_middleware('RequestId', 'enable');
     is $class2, 'PAGI::Middleware::RequestId', 'RequestId resolves correctly';
     ok $class2->can('wrap'), 'RequestId class loaded and has wrap method';
 };

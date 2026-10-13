@@ -6,9 +6,11 @@ use Carp qw(croak);
 use Exporter qw(import);
 use Future;
 use Future::AsyncAwait;
+use Scalar::Util qw(blessed);
 use PAGI::Headers ();
+use PAGI::Utils::ReceiveBuffer::TempFile ();
 
-our @EXPORT_OK = qw(clone_scope wrap_send wrap_receive wrap_response_headers);
+our @EXPORT_OK = qw(clone_scope wrap_send wrap_receive wrap_response_headers record_receive);
 
 sub clone_scope {
     my ($scope, $changes) = @_;
@@ -68,6 +70,38 @@ sub wrap_response_headers {
     };
 }
 
+# The reader records each event it delivers; the replay delivers the
+# recording, then continues with the live receive. Reading once the replay
+# has begun would interleave the two orders, so it fails instead.
+sub record_receive {
+    my ($receive, %options) = @_;
+    croak 'record_receive receive must be a coderef' unless ref($receive) eq 'CODE';
+    my $buffer = delete $options{buffer};
+    croak "record_receive has unknown option '$_'" for sort keys %options;
+    $buffer //= PAGI::Utils::ReceiveBuffer::TempFile->new;
+    croak 'record_receive buffer must be an object with append and take'
+        unless blessed($buffer) && $buffer->can('append') && $buffer->can('take');
+
+    my ($replay_begun, $recording_delivered);
+    my $reading = async sub {
+        croak 'record_receive: the recording receive was called after the replay began'
+            if $replay_begun;
+        my $event = await $receive->();
+        await $buffer->append($event);
+        return $event;
+    };
+    my $replaying = async sub {
+        $replay_begun = 1;
+        unless ($recording_delivered) {
+            my $event = await $buffer->take;
+            return $event if defined $event;
+            $recording_delivered = 1;
+        }
+        return await $receive->();
+    };
+    return ($reading, $replaying);
+}
+
 1;
 
 __END__
@@ -80,7 +114,7 @@ PAGI::Utils::Middleware - Functional middleware authoring helpers
 
     use Future::AsyncAwait;
     use PAGI::Utils::Middleware qw(clone_scope wrap_send wrap_receive
-                                   wrap_response_headers);
+                                   wrap_response_headers record_receive);
 
     my $inner_scope = clone_scope($scope, { authenticated => 1 });
 
@@ -110,6 +144,9 @@ observe any event family received by the enclosing middleware.
 
 C<wrap_response_headers> is specific: it acts only on C<http.response.start>,
 passing every other event straight on.
+
+C<record_receive> is for middleware that reads the request body: it keeps
+what the middleware reads, so the application can receive it again.
 
 Whichever you use, never modify an event you are given, or the header list
 and pairs it carries: they belong to the layer that built them, which may send
@@ -170,5 +207,45 @@ the editor to read only -- its status, for example; do not modify it. Use C<set>
 header, C<add> for one that repeats (C<Set-Cookie>), C<set_default> to keep a
 value the response already has, and C<add_vary> for C<Vary>. The editor may
 return a Future. Other events pass through unchanged.
+
+=head2 record_receive
+
+    my ($reading, $replaying) = record_receive($receive);
+    my ($reading, $replaying) = record_receive($receive, buffer => $buffer);
+
+For middleware that reads the request body. A body can be received only
+once, so a middleware that reads it and then gives the application the
+same C<$receive> leaves the application nothing to read: an application
+that reads it waits for an event the client will never send. Read through
+C<$reading> instead, and give the application C<$replaying>:
+
+    my ($reading, $replaying) = record_receive($receive);
+    my $request = PAGI::Request->new($scope, $reading);
+    my $form = await $request->form_params;
+    ...
+    await $app->($scope, $replaying, $send);
+
+C<$reading> receives from C<$receive> and keeps each event it delivers.
+C<$replaying> delivers the kept events, in order, then continues with
+C<$receive>. So the application receives the whole body however much the
+middleware read: all of it, part of it, or none. A disconnect the middleware
+read is delivered again too. Each kept event is released as it is
+delivered. Calling C<$reading> once C<$replaying> has been called fails: the
+two would interleave.
+
+The events are kept in a L<PAGI::Utils::ReceiveBuffer::TempFile>, which
+holds 64KB in memory and spools the rest to a temporary file. C<buffer>
+gives another: a C<PAGI::Utils::ReceiveBuffer::TempFile> with other options,
+or any object with its C<append> and C<take> methods, such as one that keeps
+the events in Redis (see
+L<PAGI::Utils::ReceiveBuffer::TempFile/WRITING A BUFFER>). Give each request
+a buffer of its own.
+
+Each middleware that reads the body records it again, from the replay it
+was given. Events held in memory are handed on as the same hashes, so the
+body is held once however many middleware record it; spooled events are
+copies. When the application never calls C<$replaying> to the end -- it
+reads the form a L<PAGI::Request> already parsed, say -- the buffer is
+released when the request is over.
 
 =cut

@@ -272,4 +272,69 @@ subtest 'bytes that are not UTF-8 in the field are a mismatch, not an error' => 
     is [$res->status, $res->text], [200, 'failure=mismatch'], 'decoded loosely and compared';
 };
 
+# An application that reads the body from $receive itself, as one written to
+# the PAGI spec does, and answers with what it read.
+async sub echo_body {
+    my ($scope, $receive, $send) = @_;
+    my $body = '';
+    if ($scope->{method} ne 'GET') {
+        while (1) {
+            my $event = await $receive->();
+            last unless $event->{type} eq 'http.request';
+            $body .= $event->{body} // '';
+            last unless $event->{more};
+        }
+    }
+    await $send->({ type => 'http.response.start', status => 200, headers => [['content-type', 'text/plain']] });
+    await $send->({ type => 'http.response.body', body => "read: $body", more => 0 });
+}
+
+sub primed_native {
+    my (%csrf) = @_;
+    my $client = PAGI::Test::Client->new(app => PAGI::Middleware::CSRF->new(%csrf)->wrap(\&echo_body));
+    $client->get('/');
+    return ($client, $client->cookie('csrf_token'));
+}
+
+subtest 'an application reading $receive gets the whole body the middleware read' => sub {
+    my ($client, $token) = primed_native();
+    my $form = "csrf_token=$token&title=hi";
+    is [map { $_->status, $_->text } $client->post('/', body => $form, headers => \%urlencoded)],
+        [200, "read: $form"], 'a urlencoded form';
+
+    my $multipart = multipart_body(csrf_token => $token, title => 'hi');
+    is [map { $_->status, $_->text } $client->post('/', body => $multipart, headers => \%multipart)],
+        [200, "read: $multipart"], 'a multipart form';
+
+    my ($open) = primed_native(refuse => 0);
+    is $open->post('/', body => 'title=hi', headers => \%urlencoded)->text, 'read: title=hi',
+        'under refuse => 0, a form without the field';
+};
+
+subtest "a refused form's body reaches refuse" => sub {
+    require PAGI::Utils;
+    my ($client) = primed_native(refuse => PAGI::Utils::as_app_object(\&echo_body));
+    is $client->post('/', body => 'csrf_token=forged', headers => \%urlencoded)->text,
+        'read: csrf_token=forged', 'the refuse application reads it';
+};
+
+subtest 'body_buffer makes the buffer for each request whose body is read' => sub {
+    require PAGI::Utils::ReceiveBuffer::TempFile;
+    my @scopes;
+    my ($client, $token) = primed_native(body_buffer => sub {
+        push @scopes, $_[0];
+        return PAGI::Utils::ReceiveBuffer::TempFile->new(spool_threshold => 0);
+    });
+    is $client->post('/', body => 'title=hi', headers => { %urlencoded, 'X-CSRF-Token' => $token })->text,
+        'read: title=hi', 'a request with the header';
+    is scalar @scopes, 0, 'is not read, so no buffer is made';
+
+    is $client->post('/', body => "csrf_token=$token", headers => \%urlencoded)->text,
+        "read: csrf_token=$token", 'a request with the field';
+    is [map { $_->{type} } @scopes], ['http'], 'gets one buffer, made from its scope';
+
+    like dies { PAGI::Middleware::CSRF->new(body_buffer => 'big') },
+        qr/CSRF body_buffer must be a coderef that returns a buffer/, 'body_buffer must be a coderef';
+};
+
 done_testing;

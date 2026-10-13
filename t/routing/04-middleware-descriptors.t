@@ -160,6 +160,8 @@ subtest 'class names auto-load, receive config, and follow naming rules' => sub 
         ['+Local::ExactMiddleware', 'Local::ExactMiddleware'],
     );
 
+    # A second spelling of a class an earlier one loaded uses it as defined.
+    my %loaded;
     for my $case (@cases) {
         my ($declared, $package) = @$case;
         (my $file = $package) =~ s{::}{/}g;
@@ -174,13 +176,19 @@ subtest 'class names auto-load, receive config, and follow naming rules' => sub 
             return Future->done;
         };
 
+        no strict 'refs';
+        ${"${package}::NEW_CALLS"} = 0 if $loaded{$package};
         my $descriptor = middleware($declared, label => $declared);
         ok(!$INC{$file}, "$declared remains unloaded during description construction");
         my $app = $descriptor->_wrap($inner);
         $app->($scope, sub { }, sub { })->get;
 
-        ok($INC{$file}, "$declared auto-loaded $package");
-        no strict 'refs';
+        if ($loaded{$package}++) {
+            ok(!$INC{$file}, "$declared uses $package as already defined, without requiring it again");
+        }
+        else {
+            ok($INC{$file}, "$declared auto-loaded $package");
+        }
         is(${"${package}::NEW_CALLS"}, 1,
             "$declared constructs its middleware once during _wrap");
         is($scope->{trace}, [$declared, 'inner'], "$declared passed config through new and wrapped app");

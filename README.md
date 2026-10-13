@@ -133,7 +133,7 @@ package that imported them from `PAGI::Tools`.
     content_negotiation negotiated_type
       respond_to                                  PAGI::ContentNegotiation
     clone_scope wrap_send wrap_receive
-      wrap_response_headers                       PAGI::Utils::Middleware
+      wrap_response_headers record_receive        PAGI::Utils::Middleware
 
 - `:routes` exports `router`, `route`, `websocket`, `sse` and
 `mount`, as [PAGI::Routing](https://metacpan.org/pod/PAGI%3A%3ARouting)'s `:routes` does.

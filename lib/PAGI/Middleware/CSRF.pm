@@ -10,6 +10,7 @@ use PAGI::Utils::SecureCompare qw(secure_compare);
 use PAGI::Request ();
 use PAGI::Response::Text ();
 use PAGI::Utils ();
+use PAGI::Utils::Middleware qw(record_receive);
 
 =head1 NAME
 
@@ -72,6 +73,10 @@ as not sent. The form is read through L<PAGI::Request> and stays cached in
 the scope, so the application's C<form_params> and C<uploads> return
 it, as C<body> does for a urlencoded form, while C<body_stream> and
 C<multipart_stream> die "Body already consumed" (see L</Streamed uploads>).
+An application that reads C<$receive> itself still receives the whole body:
+the middleware hands on what it read with
+L<PAGI::Utils::Middleware/record_receive>, holding up to 64KB in memory and
+the rest in a temporary file (C<body_buffer> changes where).
 
 Every unsafe request first passes an origin check, modelled on Go's
 C<CrossOriginProtection>: a C<Sec-Fetch-Site> header must be C<same-origin>
@@ -164,6 +169,23 @@ yourself, or Compose's answers it in plain text. A bare C<wrap> without Compose
 propagates it. C<undef> reads only the header, so the middleware never reads a
 body; anything else but a non-empty string dies.
 
+=item * body_buffer (default: a L<PAGI::Utils::ReceiveBuffer::TempFile>)
+
+Where a form body the middleware reads is kept until the application
+receives it. A coderef, called with the scope of each request whose body is
+read, returning a buffer for that request: a
+L<PAGI::Utils::ReceiveBuffer::TempFile> with other options, or any object
+with its C<append> and C<take> methods, such as one that keeps the body in
+Redis. The default holds 64KB in memory
+and the rest in a temporary file.
+
+    middleware('CSRF', body_buffer => sub {
+        my ($scope) = @_;
+        return PAGI::Utils::ReceiveBuffer::TempFile->new(
+            spool_threshold => 1024 * 1024,
+        );
+    });
+
 =item * refuse (default: a 403 text response)
 
 What answers an unsafe request that fails the origin or token check. Absent: a
@@ -206,6 +228,9 @@ sub _init {
     $self->{form_field} = exists $config->{form_field} ? $config->{form_field} : 'csrf_token';
     die 'CSRF form_field must be a field name, like csrf_token, or undef to read only the header'
         if defined($self->{form_field}) && (ref($self->{form_field}) || !length($self->{form_field}));
+    $self->{body_buffer} = $config->{body_buffer};
+    die 'CSRF body_buffer must be a coderef that returns a buffer, like PAGI::Utils::ReceiveBuffer::TempFile->new'
+        if defined($self->{body_buffer}) && ref($self->{body_buffer}) ne 'CODE';
 
     # Absent: the default refusal. Exactly 0: the application decides.
     my $refuse = PAGI::Utils::_refuse_option('CSRF', $config, 1);
@@ -215,8 +240,8 @@ sub _init {
         : ref($refuse) ? $refuse
         : undef;
     PAGI::Utils::_reject_unknown_options('CSRF', $config,
-        qw(cookie_name form_field httponly refuse safe_methods secure session token_header
-            trusted_origins));
+        qw(body_buffer cookie_name form_field httponly refuse safe_methods secure session
+            token_header trusted_origins));
 }
 
 # A 0-or-1 option; absent is 0.
@@ -268,8 +293,9 @@ sub wrap {
         my ($token, $stored) = $self->_token_for($scope);
         my %recorded = ('pagi.csrf_token' => $token);
         unless ($self->{safe_methods}{$scope->{method}}) {
-            my $failure = $self->_origin_failure($scope)
-                // await $self->_token_failure($scope, $receive, $stored);
+            my $failure = $self->_origin_failure($scope);
+            ($failure, $receive) = await $self->_token_failure($scope, $receive, $stored)
+                unless defined $failure;
             $recorded{'pagi.csrf_failure'} = $failure if defined $failure;
         }
 
@@ -299,27 +325,31 @@ sub wrap {
     };
 }
 
-# Why an unsafe request's token check fails, or undef when it passes. A
-# header that is sent decides, and the body is then never read. Only when
-# it is missing or empty, and there is a stored token to match, is the
-# token taken from form_field instead.
+# Why an unsafe request's token check fails, or undef when it passes, and
+# the receive to give the application. A header that is sent decides, and
+# the body is then never read. Only when it is missing or empty, and there
+# is a stored token to match, is the token taken from form_field instead.
 async sub _token_failure {
     my ($self, $scope, $receive, $stored) = @_;
     my $failure = $self->_failure_for($stored, $self->_get_submitted_token($scope));
-    return $failure unless defined($failure) && $failure eq 'missing_token';
-    return $self->_failure_for($stored, await $self->_form_token($scope, $receive));
+    return ($failure, $receive) unless defined($failure) && $failure eq 'missing_token';
+    my ($token, $downstream) = await $self->_form_token($scope, $receive);
+    return ($self->_failure_for($stored, $token), $downstream);
 }
 
-# The token in form_field of a form body (urlencoded or multipart), read
-# through PAGI::Request so the parsed form stays cached in the scope for the
-# application; undef when form_field is undef or the body is not a form.
+# The token in form_field of a form body (urlencoded or multipart), and the
+# receive to give the application, which delivers the body read here again.
+# The form is read through PAGI::Request so its parse stays cached in the
+# scope for the application. The token is undef, and $receive is given back
+# unread, when form_field is undef or the body is not a form.
 async sub _form_token {
     my ($self, $scope, $receive) = @_;
-    return undef unless defined $self->{form_field};
-    my $request = PAGI::Request->new($scope, $receive);
-    return undef unless $request->is_form;
-    my $form = await $request->form_params;
-    return $form->get($self->{form_field});
+    return (undef, $receive)
+        unless defined($self->{form_field}) && PAGI::Request->new($scope, $receive)->is_form;
+    my ($reading, $replaying) = record_receive($receive,
+        $self->{body_buffer} ? (buffer => $self->{body_buffer}->($scope)) : ());
+    my $form = await PAGI::Request->new($scope, $reading)->form_params;
+    return ($form->get($self->{form_field}), $replaying);
 }
 
 # Why a submitted token fails to match, or undef when it passes. Compared
@@ -496,8 +526,9 @@ parse the middleware cached:
 
 =head2 Streamed uploads
 
-The middleware's read consumes a form body, so a route that streams one
-with C<body_stream> or C<multipart_stream> is exempted the way other CSRF
+A form the middleware reads stays parsed for L<PAGI::Request>, which then
+refuses to stream it, so a route that streams one with C<body_stream> or
+C<multipart_stream> is exempted the way other CSRF
 libraries exempt a view: it runs its own CSRF middleware, configured not to
 read the body.
 
