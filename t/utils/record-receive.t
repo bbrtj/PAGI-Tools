@@ -105,6 +105,45 @@ subtest 'the default buffer spools a large body' => sub {
     ok($replayed != $read, 'as a copy, from the temp file');
 };
 
+# A buffer whose Futures are still pending when returned, as one kept in
+# Redis returns them; settle completes what it was asked so far.
+package Local::DeferredBuffer {
+    sub new { bless { inner => PAGI::Utils::ReceiveBuffer->new, pending => [] }, shift }
+    sub append {
+        my ($self, $event) = @_;
+        my $f = Future->new;
+        push @{$self->{pending}}, sub { $self->{inner}->append($event)->get; $f->done };
+        return $f;
+    }
+    sub take {
+        my ($self) = @_;
+        my $f = Future->new;
+        push @{$self->{pending}}, sub { $f->done($self->{inner}->take->get) };
+        return $f;
+    }
+    sub settle { my ($self) = @_; (shift @{$self->{pending}})->() while @{$self->{pending}} }
+}
+
+subtest 'a buffer whose Futures complete later' => sub {
+    my ($receive) = client_sending(@body);
+    my $buffer = Local::DeferredBuffer->new;
+    my ($reading, $replaying) = record_receive($receive, buffer => $buffer);
+
+    my $read = $reading->();
+    ok(!$read->is_ready, 'reading waits until the buffer has kept the event');
+    $buffer->settle;
+    is($read->get, $body[0], 'then delivers it');
+
+    my $replayed = $replaying->();
+    ok(!$replayed->is_ready, 'the replay waits for the buffer');
+    $buffer->settle;
+    is($replayed->get, $body[0], 'then delivers the kept event');
+
+    my $after = $replaying->();
+    $buffer->settle;
+    is($after->get, $body[1], 'an empty buffer, once it answers, hands over to the live receive');
+};
+
 subtest 'arguments are checked' => sub {
     like(dies { record_receive('not code') }, qr/record_receive receive must be a coderef/, 'receive');
     like(dies { record_receive(sub {}, buffer => {}) },
