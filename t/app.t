@@ -116,4 +116,97 @@ subtest 'loaded by path, as pagi-server --app does: builds nothing until to_app'
     is \@warnings, [], 'a later require compiled nothing again';
 };
 
+package Local::Echo {
+    use parent -norequire, 'PAGI::App';
+    use PAGI::Tools qw(compose response route);
+    our $STARTED = 0;
+    sub to_app {
+        compose(
+            routes => [
+                route('/echo' => sub {
+                    my ($r) = @_;
+                    response('JSON', { method => $r->method, query => $r->query_string,
+                        x => scalar $r->header('X-Thing'), auth => scalar $r->header('Authorization') });
+                }, methods => [qw(GET POST PUT)]),
+                route('/raw' => sub { my ($r) = @_; $r->body->then(sub { response('Text', "raw:$_[0]") }) },
+                    methods => ['POST']),
+                route('/cookies' => sub {
+                    response('Text', 'c', headers => ['Set-Cookie' => 'a=1', 'Set-Cookie' => 'b=2']) }),
+                route('/die' => sub { die "handler broke\n" }),
+            ],
+            lifespan => { startup => sub { $STARTED++ } },
+        )->to_app;
+    }
+}
+package main;
+
+# Run run() with STDOUT and STDERR captured.
+sub run_cli {
+    my ($app, @args) = @_;
+    my ($out, $err) = ('', '');
+    open my $o, '>', \$out or die; open my $e, '>', \$err or die;
+    my $status = do { local *STDOUT = $o; local *STDERR = $e; $app->run(@args) };
+    return ($status, $out, $err);
+}
+
+subtest 'the grammar' => sub {
+    my $app = Local::Echo->new;
+    is [($app->_parse_request('/echo'))[0, 1]], ['GET', '/echo'], 'the method defaults to GET';
+    my ($m, $p, %o) = $app->_parse_request(GET => '/echo?a=1', 'X-Thing:', 'v', 'b=2 3');
+    is [$m, $p, $o{headers}], ['GET', '/echo?a=1&b=2%203', [['X-Thing', 'v']]], 'a header; a field joins the query';
+    (undef, undef, %o) = $app->_parse_request(POST => '/echo', 'b=2');
+    is $o{form}, [['b', '2']], 'a field is a form body for POST';
+    (undef, undef, %o) = $app->_parse_request(POST => '/raw', 'Content:', 'hi');
+    is $o{body}, 'hi', 'Content: is the body';
+    (undef, $p, %o) = $app->_parse_request('ann:pw@/echo');
+    is [$p, $o{headers}[0]], ['/echo', ['Authorization', 'Basic YW5uOnB3']], 'user:pass@';
+    like dies { $app->_parse_request('FOO', '/x') }, qr/not a method or a path: 'FOO'/, 'unknown method';
+    like dies { $app->_parse_request('GET') }, qr/a path is required/, 'a method with no path';
+    like dies { $app->_parse_request(POST => '/x', 'Content:', 'a', 'b=1') }, qr/cannot be combined/, 'Content: with fields';
+};
+
+subtest 'run prints the response and returns the exit status' => sub {
+    $Local::Echo::STARTED = 0;
+    my ($status, $out, $err) = run_cli(Local::Echo->new, GET => '/echo', 'X-Thing:', 'v');
+    is $status, 0, 'exit 0';
+    like $out, qr/"x":"v"/, 'the body on STDOUT';
+    like $err, qr{\AHTTP/1\.1 200\n.*content-type: application/json}si, 'status and headers on STDERR';
+    is $Local::Echo::STARTED, 1, 'lifespan startup ran';
+
+    (undef, undef, $err) = run_cli(Local::Echo->new, '/cookies');
+    is [$err =~ /^Set-Cookie: (\S+)$/mg], ['a=1', 'b=2'], 'a repeated header once per value';
+
+    ($status) = run_cli(Local::Echo->new, '/nowhere');
+    is $status, 1, 'a 404 exits 1';
+
+    ($status, undef, $err) = run_cli(Local::Echo->new, '/die');
+    is $status, 1, 'a dying handler exits 1';
+    like $err, qr/handler broke/, 'and its exception is printed';
+
+    ($status, undef, $err) = run_cli(Local::Echo->new);
+    is [$status, $err =~ /\AUsage:/ ? 1 : 0], [2, 1], 'no arguments: usage on STDERR, exit 2';
+    ($status, $out) = run_cli(Local::Echo->new, '--help');
+    is [$status, $out =~ /\AUsage:/ ? 1 : 0], [0, 1], '--help: usage on STDOUT, exit 0';
+    ($status, undef, $err) = run_cli(Local::Echo->new, 'FOO', '/x');
+    is [$status, $err =~ /not a method or a path/ ? 1 : 0], [2, 1], 'a usage error exits 2';
+};
+
+subtest 'a failed startup exits 1' => sub {
+    package Local::BadStart {
+        use parent -norequire, 'PAGI::App';
+        sub to_app { PAGI::Tools::compose(routes => [], lifespan => { startup => sub { die "no db\n" } })->to_app }
+    }
+    my ($status, undef, $err) = run_cli(Local::BadStart->new, '/');
+    is $status, 1, 'exit 1';
+    like $err, qr/no db/, 'the error is printed';
+};
+
+subtest 'run as a script: the exit status reaches the shell' => sub {
+    my $script = "$dir/Local/Modulino.pm";
+    my $out = `$^X -Ilib -I$dir $script GET / 2>/dev/null`;
+    is [$? >> 8, $out], [0, 'modulino'], 'GET /';
+    `$^X -Ilib -I$dir $script /missing 2>/dev/null`;
+    is $? >> 8, 1, 'a 404 exits 1';
+};
+
 done_testing;

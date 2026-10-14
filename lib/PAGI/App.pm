@@ -5,6 +5,10 @@ use warnings;
 use Carp qw(croak);
 use PAGI::Utils ();
 
+our @METHODS = qw(GET HEAD POST PUT PATCH DELETE OPTIONS QUERY);
+my %IS_METHOD = map { $_ => 1 } @METHODS;
+my %HAS_BODY  = map { $_ => 1 } qw(POST PUT PATCH);
+
 # Arguments as a list or one hashref, as Plack::Component and Moo accept.
 sub new {
     my $class = shift;
@@ -49,6 +53,105 @@ sub run_if_script {
     }
     my $self = ref($proto) ? $proto : $proto->new;
     exit $self->run(@ARGV);
+}
+
+# What running the module does: one HTTP request, printed. Override it to
+# give the module commands of its own, and call SUPER::run for the request.
+# Returns the exit status: 0 for 1xx-3xx, 1 for 4xx-5xx or a failed startup,
+# 2 for a usage error.
+sub run {
+    my ($self, @args) = @_;
+    if (!@args || $args[0] =~ /\A(?:--help|-h)\z/) {
+        print { @args ? *STDOUT : *STDERR } $self->_usage;
+        return @args ? 0 : 2;
+    }
+    my @request = eval { $self->_parse_request(@args) };
+    unless (@request) { print STDERR $@, $self->_usage; return 2 }
+
+    my $response = eval { $self->_request(@request) };
+    unless ($response) { print STDERR $@; return 1 }
+
+    binmode STDOUT;
+    binmode STDERR;
+    print STDERR 'HTTP/1.1 ', $response->status, "\n";
+    print STDERR "$_->[0]: $_->[1]\n" for @{ $response->header_pairs };
+    print STDERR "\n";
+    print STDERR $response->exception, "\n" if defined $response->exception;
+    print STDOUT $response->content;
+    return $response->status >= 400 ? 1 : 0;
+}
+
+# [METHOD] PATH [Name: value | Content: text | name=value ...] -> the
+# arguments for one PAGI::Test::Client request. Dies with a usage message.
+sub _parse_request {
+    my ($self, @args) = @_;
+    my $method = @args && $IS_METHOD{ $args[0] } ? shift @args : 'GET';
+    my $target = shift @args;
+    die "a path is required\n" unless defined $target;
+    my ($credentials, $path) = $target =~ m{\A(?:([^/@\s]+)@)?(/.*)\z}s
+        or die "not a method or a path: '$target' (methods: @METHODS)\n";
+
+    my (@headers, @fields, $content);
+    while (@args) {
+        my $word = shift @args;
+        if ($word =~ /\A([^:=\s]+):\z/) {
+            my $name = $1;
+            die "$name: needs a value\n" unless @args;
+            if (lc($name) eq 'content') { $content = shift @args }
+            else                       { push @headers, [$name, shift @args] }
+        }
+        elsif ($word =~ /\A([^=]+)=(.*)\z/s) { push @fields, [$1, $2] }
+        else { die "not a header (Name: value) or a field (name=value): '$word'\n" }
+    }
+    die "a Content: body and form fields cannot be combined\n"
+        if defined($content) && @fields;
+
+    if (defined $credentials) {
+        require MIME::Base64;
+        push @headers,
+            [Authorization => 'Basic ' . MIME::Base64::encode_base64($credentials, '')];
+    }
+    my %options = (headers => \@headers);
+    if (@fields && $HAS_BODY{$method}) {
+        $options{form} = \@fields;
+    }
+    elsif (@fields) {
+        $path .= ($path =~ /\?/ ? '&' : '?')
+            . join '&', map { _escape($_->[0]) . '=' . _escape($_->[1]) } @fields;
+    }
+    $options{body} = $content if defined $content;
+    return ($method, $path, %options);
+}
+
+# One request through the application, in-process, with lifespan startup
+# before it and shutdown after. Returns the PAGI::Test::Response.
+sub _request {
+    my ($self, $method, $path, %options) = @_;
+    require PAGI::Test::Client;
+    my $response;
+    PAGI::Test::Client->run($self, sub {
+        my $call = lc $method;
+        $response = $_[0]->$call($path, %options);
+    });
+    return $response;
+}
+
+sub _escape {
+    my ($text) = @_;
+    $text =~ s/([^A-Za-z0-9\-._~])/sprintf('%%%02X', ord $1)/ge;
+    return $text;
+}
+
+sub _usage {
+    return <<"USAGE";
+Usage: perl -Ilib $0 [METHOD] PATH [Name: value] [Content: text] [name=value]
+  One request through the application, printed: status and headers on
+  STDERR, the body on STDOUT. METHOD is one of @METHODS (default GET).
+  user:pass\@/path sends Basic credentials. name=value is a form field: the
+  query string for GET, a urlencoded body for POST, PUT and PATCH.
+To serve it:
+  pagi-server -Ilib --app $0
+USAGE
 }
 
 package PAGI::App::_Deferred;
@@ -175,6 +278,65 @@ compile it again.
 
 When Perl runs the file as the program, it builds the application with
 C<new> and exits with what C<run> returns.
+
+=head2 run
+
+    my $exit_status = $app->run(@ARGV);
+
+What running the module does: one HTTP request through the application,
+printed (see L</THE COMMAND LINE>). It returns the exit status. Override it to
+give the module commands of its own, and call C<SUPER::run> for the request:
+
+    sub run {
+        my ($self, @args) = @_;
+        return $self->migrate if ($args[0] // '') eq 'migrate';  # perl lib/MyApp.pm migrate
+        return $self->SUPER::run(@args);
+    }
+
+=head1 THE COMMAND LINE
+
+    perl -Ilib lib/MyApp.pm [METHOD] PATH [ARGUMENT ...]
+
+One HTTP request through the application, in-process, with no server, after
+L<Web::Simple::Application>'s command line. WebSocket and SSE are tested with
+L<PAGI::Test::Client>.
+
+=over 4
+
+=item * The first argument is a method if it is one of GET, HEAD, POST, PUT,
+PATCH, DELETE, OPTIONS or QUERY; otherwise it is the path, which begins with
+C</>, after optional C<user:pass@> Basic credentials. A method with no path,
+or a first argument that is neither, is a usage error.
+
+=item * C<Name: value>, a word ending in C<:> and the next word, is a request
+header; C<Content: text> is the raw request body. C<name=value> is a form
+field: a urlencoded body for POST, PUT and PATCH, added to the query string
+otherwise. C<Content:> and form fields together are a usage error.
+
+=item * Lifespan startup runs before the request and shutdown after it.
+
+=item * The status line (C<HTTP/1.1 200>), every response header in order, a
+blank line and, if the application died, its exception go to STDERR; the
+body's bytes go to STDOUT, so C<< perl lib/MyApp.pm GET /x > out.json >>
+keeps only the body.
+
+=item * The exit status is 0 for 1xx to 3xx, 1 for 4xx and 5xx or a failed
+startup, and 2 for a usage error. With no arguments the usage goes to STDERR
+(exit 2); with C<--help> or C<-h>, to STDOUT (exit 0).
+
+=back
+
+Examples:
+
+    perl -Ilib lib/MyApp.pm /                          # GET /
+    perl -Ilib lib/MyApp.pm GET /search q=pagi         # GET /search?q=pagi
+    perl -Ilib lib/MyApp.pm POST /notes title=Milk     # a urlencoded form
+    perl -Ilib lib/MyApp.pm POST /notes Content-Type: application/json \
+        Content: '{"title":"Milk"}'
+    perl -Ilib lib/MyApp.pm GET ann:secret@/admin      # Basic credentials
+
+It never starts a server: which PAGI server runs the application is not the
+application's choice.
 
 =head1 SERVING
 
