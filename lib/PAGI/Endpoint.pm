@@ -76,19 +76,12 @@ sub per_request_app {
         request => $options{request} // 1);
 }
 
-# A Moose class extending a non-Moose base keeps the base's new, so its
-# required, default and BUILD would be silently ignored. The can('meta') gate
-# keeps Moo classes out: with Moose loaded, a Moo class's metaclass also
-# answers isa('Moose::Meta::Class').
+# A Moose class without MooseX::NonMoose (see PAGI::Utils); croaked here so
+# the error names the line that called endpoint().
 sub _check_moose_constructor {
     my ($class) = @_;
-    return unless $INC{'Moose.pm'} && $class->can('meta');
-    my $meta = eval { $class->meta };
-    return unless blessed($meta) && $meta->isa('Moose::Meta::Class');
-    return if $class->isa('Moose::Object');
-    croak "endpoint class $class is a Moose class whose new is not Moose's, so its"
-        . ' attributes (required, default, BUILD) would be ignored; add'
-        . ' "use MooseX::NonMoose" after "use Moose"';
+    my $error = PAGI::Utils::_moose_constructor_error($class, "endpoint class $class");
+    croak $error if defined $error;
 }
 
 1;

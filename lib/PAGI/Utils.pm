@@ -446,6 +446,22 @@ sub _load_class {
     return "$caller: cannot load $class: $error";
 }
 
+# A Moose class extending a non-Moose base keeps the base's new, so its
+# required, default and BUILD would be silently ignored. Returns the message,
+# naming $label, or undef; the caller croaks it, so the error names the
+# caller's caller. The can('meta') gate keeps Moo classes out: with Moose
+# loaded, a Moo class's metaclass also answers isa('Moose::Meta::Class').
+sub _moose_constructor_error {
+    my ($class, $label) = @_;
+    return undef unless $INC{'Moose.pm'} && $class->can('meta');
+    my $meta = eval { $class->meta };
+    return undef unless blessed($meta) && $meta->isa('Moose::Meta::Class');
+    return undef if $class->isa('Moose::Object');
+    return "$label is a Moose class whose new is not Moose's, so its"
+        . ' attributes (required, default, BUILD) would be ignored; add'
+        . ' "use MooseX::NonMoose" after "use Moose"';
+}
+
 # On a case-insensitive filesystem, require 'Foo/json.pm' opens Foo/JSON.pm
 # and compiles it a second time under a package name it does not define.
 # True when every component of the first @INC match has exactly this case,

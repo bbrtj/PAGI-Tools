@@ -192,6 +192,11 @@ sub headers {
     return \%h;
 }
 
+sub header_pairs {
+    my ($self) = @_;
+    return [ map { [@$_] } @{ $self->{headers} } ];
+}
+
 # Status helpers
 sub is_success  { my $s = shift->status; $s >= 200 && $s < 300 }
 sub is_redirect { my $s = shift->status; $s >= 300 && $s < 400 }
@@ -353,6 +358,14 @@ header is not present.
 
 Returns all headers as a hashref. Header names are lowercased.
 If a header appears multiple times, the last value wins.
+
+=head2 header_pairs
+
+    my $pairs = $res->header_pairs;    # [['Set-Cookie', 'a=1'], ...]
+
+Every response header as C<[name, value]> pairs, in the order sent, names as
+sent. A repeated header (C<Set-Cookie>) appears once per value. Returns a new
+arrayref each time.
 
 =head1 BODY METHODS
 

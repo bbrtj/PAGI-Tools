@@ -7,6 +7,8 @@
   UPGRADING-REFERENCE.md has the details. Needs PAGI::Server 0.003000.
 
   [New]
+  - PAGI::Test::Response header_pairs: every response header as
+    [name, value] pairs, in order, repeats (Set-Cookie) kept.
   - PAGI::Utils::TextDecoder: decodes a byte stream to text as it arrives
     (Encode's stateful decoder), strict or with U+FFFD; body_stream's decode
     is built on it.

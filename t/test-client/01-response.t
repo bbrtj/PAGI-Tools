@@ -247,4 +247,15 @@ subtest 'text decoding with charset' => sub {
     is $res6->text, '', 'empty body returns empty string';
 };
 
+subtest 'header_pairs keeps every header, in order' => sub {
+    my $response = captured_response(headers => [
+        ['Set-Cookie', 'a=1'], ['Content-Type', 'text/plain'], ['Set-Cookie', 'b=2'],
+    ]);
+    is $response->header_pairs,
+        [['Set-Cookie', 'a=1'], ['Content-Type', 'text/plain'], ['Set-Cookie', 'b=2']],
+        'repeats kept, in order';
+    push @{ $response->header_pairs }, ['X', 'y'];
+    is scalar @{ $response->header_pairs }, 3, 'a copy each time';
+};
+
 done_testing;
