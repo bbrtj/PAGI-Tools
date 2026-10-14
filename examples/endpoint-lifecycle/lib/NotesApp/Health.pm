@@ -1,9 +1,9 @@
 package NotesApp::Health;
 
-# A singleton by the author's choice: no BUILD_APP, so endpoint() builds
-# it once, with ->new and endpoint()'s arguments. A missing version fails
-# there, when app.pl loads, not on a request. Sharing is the
-# point here: the hit counter is on the one object (one per worker).
+# Shared on purpose: BUILD_APP returns one object, built when app.pl loads,
+# and that object answers every request, so the hit counter counts them all
+# (one per worker). A missing version fails there, at load. Without BUILD_APP
+# each request would get a fresh object and a count of 1.
 
 use v5.40;
 use Moo;
@@ -11,6 +11,8 @@ use Future::AsyncAwait;
 use PAGI::Tools qw(response);
 
 extends 'PAGI::Endpoint::HTTP';
+
+sub BUILD_APP ($class, %args) { $class->new(%args) }
 
 has version => (is => 'ro', required => 1);
 has hits    => (is => 'rw', default => 0);

@@ -6,32 +6,41 @@ author decides.
 
 | Class | How it is built | It answers |
 | --- | --- | --- |
-| `NotesApp::Health` | no `BUILD_APP`: `->new(version => '1.0')`, once, when app.pl loads | every request (its hit counter is shared, per worker) |
-| `NotesApp::Notes`, `NotesApp::Note` | `BUILD_APP` returns a builder; the builder runs per request | one request |
-| `NotesApp::Watch` | the same, per WebSocket connection | one connection |
+| `NotesApp::Note`, `NotesApp::Watch` | no `BUILD_APP`: `->new(%args)` for each request, or each WebSocket connection | one request, or one connection |
+| `NotesApp::Notes` | `BUILD_APP` returns a builder, which runs per request and fills `current_user` from it | one request |
+| `NotesApp::Health` | `BUILD_APP` returns `->new(version => '1.0')`, built once, when app.pl loads | every request (its hit counter is shared, per worker) |
 
 ## The contract
 
 `endpoint('Class', %args)` loads `Class` (a class defined in app.pl itself
 needs no file) and then:
 
-- calls `Class->BUILD_APP(%args)` if the class has one, otherwise
-  `Class->new(%args)`;
-- an object with `to_app` (an endpoint, a Response, any app object) is put at
-  the route as it is, and answers every request;
-- a coderef is a builder: it is called with a `PAGI::Request` for each request
-  (each connection, for WebSocket and SSE) and returns the app object that
-  answers it. It may return any app object, a refusal included:
+- with no `BUILD_APP`, calls `Class->new(%args)` for each request (each
+  connection, for WebSocket and SSE). The object belongs to that request, so
+  it may keep that request's state on `$self`;
+- otherwise calls `Class->BUILD_APP(%args)` once:
+  - an object with `to_app` (an endpoint, a Response, any app object) is put
+    at the route as it is, and answers every request, concurrently. This is
+    how a class shares one object:
 
-```perl
-sub BUILD_APP ($class, %args) {
-    return sub ($request) {
-        return response('Text', 'no token', status => 403)
-            unless $request->header('X-Token');
-        return $class->new(%args);
-    };
-}
-```
+    ```perl
+    sub BUILD_APP ($class, %args) { $class->new(%args) }
+    ```
+
+  - a coderef is a builder: it is called with a `PAGI::Request` for each
+    request (each connection, for WebSocket and SSE) and returns the app
+    object that answers it. It may return any app object, a refusal
+    included:
+
+    ```perl
+    sub BUILD_APP ($class, %args) {
+        return sub ($request) {
+            return response('Text', 'no token', status => 403)
+                unless $request->header('X-Token');
+            return $class->new(%args);
+        };
+    }
+    ```
 
 The builder reads only what the request already carries (headers, cookies,
 query and path parameters, state). The WebSocket builder gets a Request too,
@@ -44,10 +53,11 @@ built at startup is reached at request time through `$request->state` and
 ## Moo and Moose
 
 The framework calls only your `new` or `BUILD_APP`, so Moo's `required` and
-`default` work: `NotesApp::Notes` requires `current_user`, and a builder
-that forgot it fails on that request. A Moose class extending an Endpoint
-base needs `use MooseX::NonMoose` after `use Moose`; `endpoint()` refuses one
-without it.
+`default` work. `NotesApp::Notes` requires `current_user`, and a builder that
+forgot it fails on that request; `NotesApp::Health` requires `version`, and
+because its object is built once, a missing one fails when app.pl loads. A
+Moose class extending an Endpoint base needs `use MooseX::NonMoose` after
+`use Moose`; `endpoint()` refuses one without it.
 
 ## Methods
 
@@ -123,4 +133,5 @@ Server: PAGI::Server/0.003000
 
 The curl lines are in app.pl's header. `t/example-endpoint-lifecycle.t`
 proves the three lifecycles, including two overlapping POSTs that each answer
-with their own user.
+with their own user, and two requests to `NotesApp::Note` that each keep their
+own note on `$self`.

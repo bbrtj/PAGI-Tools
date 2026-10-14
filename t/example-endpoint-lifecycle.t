@@ -10,8 +10,8 @@ use Future;
 use JSON::MaybeXS ();
 use PAGI::Test::Client;
 
-# One endpoint() spelling, three lifecycles: a per-request HTTP class, a
-# per-connection WebSocket class and a singleton.
+# One endpoint() spelling, three lifecycles: classes built fresh per request
+# or connection (no BUILD_APP), a per-request builder, and one shared object.
 
 my $app = do "$Bin/../examples/endpoint-lifecycle/app.pl" or die $@ || $!;
 
@@ -70,6 +70,9 @@ PAGI::Test::Client->run($app, sub {
     $a->close;
     $b->close;
     is $client->state->{notes}->watch_log, [3, 2], "on_disconnect saw each connection's own state";
+
+    is [map { $client->get("/notes/$_")->json->{text} } 1, 2], ['buy milk', 'from a'],
+        "NotesApp::Note, no BUILD_APP, keeps each request's note on its own object";
 
     is $client->delete('/notes/1')->status, 204, 'DELETE /notes/1';
     is $client->delete('/notes/1')->status, 404, 'DELETE again is a 404';

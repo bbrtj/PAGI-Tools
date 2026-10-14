@@ -126,7 +126,6 @@ Server: PAGI::Server/0.003000
 | `PUT /httpp` | 405, `Allow: GET, POST` | 405, `Allow: GET, HEAD, OPTIONS, POST` |
 | `OPTIONS /httpp` | 405 (no `options` method) | 204 with `Allow` |
 | who answers the 405 | the endpoint | the Router, from the class's methods; the endpoint's `method_not_allowed` answers when it is mounted or routed with `methods => '*'` |
-| the endpoint object | built for every request | built once; a class that wants one per request says so with `BUILD_APP` (see `examples/endpoint-lifecycle`) |
 
 `examples/endpoint-lifecycle` shows the other lifecycles with the same
 `endpoint()` spelling.
