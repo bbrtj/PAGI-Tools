@@ -107,7 +107,8 @@ answers 405 with an `Allow` header. HEAD, disconnects and backpressure are
 handled for you.
 
 To keep the whole application in a module under `lib/`, with no `app.pl`,
-subclass [PAGI::App](https://metacpan.org/pod/PAGI%3A%3AApp) and end the module with `__PACKAGE__->run_if_script`
+subclass [PAGI::App::Compose](https://metacpan.org/pod/PAGI%3A%3AApp%3A%3ACompose) (or [PAGI::App](https://metacpan.org/pod/PAGI%3A%3AApp) for a classic application) and
+end the module with `__PACKAGE__->run_if_script`
 in place of `1;`: `pagi-server -Ilib --app lib/MyApp.pm` serves it, and
 `perl -Ilib lib/MyApp.pm GET /` runs one request from the shell.
 

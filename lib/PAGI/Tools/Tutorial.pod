@@ -1574,23 +1574,22 @@ covers lifespan.
 =head2 7.8 An Application in One Module
 
 An application can live in one module under F<lib/>, with no F<app.pl>.
-Subclass L<PAGI::App>, return the application from C<to_app>, and end the
+Subclass L<PAGI::App::Compose>, return the routes from C<routes>, and end the
 module with C<< __PACKAGE__->run_if_script >> in place of C<1;>:
 
     package MyApp;
     use strict;
     use warnings;
-    use parent 'PAGI::App';
-    use PAGI::Tools qw(compose response route);
+    use parent 'PAGI::App::Compose';
+    use PAGI::Tools qw(response route);
 
-    sub to_app {
-        my ($self) = @_;
-        return compose(routes => [
-            route('/' => sub { response('Text', 'hello') }),
-        ])->to_app;
-    }
+    sub routes { [ route('/' => sub { response('Text', 'hello') }) ] }
 
     __PACKAGE__->run_if_script;
+
+Middleware, a default response and lifespan are methods too
+(C<app_middleware>, C<http_default>, C<on_startup>, C<on_shutdown>); each runs
+once, when the application is built, never per request.
 
 Serve it:
 
@@ -1608,9 +1607,11 @@ C<use MyApp> is safe:
     my $client = PAGI::Test::Client->new(app => MyApp->new);
     is $client->get('/')->text, 'hello';
 
-A small application can write C<call>, the PAGI application itself, in place
-of C<to_app>. L<PAGI::App> has the details, and C<examples/endpoint-class-demo>
-a larger application in this shape.
+An application with C<on_startup> is tested with
+C<< PAGI::Test::Client->run >>, which runs lifespan. A classic application
+writes C<call>, the PAGI application itself, on L<PAGI::App>.
+L<PAGI::App::Compose> has the details, and C<examples/endpoint-class-demo> a
+larger application in this shape.
 
 =head1 SEE ALSO
 

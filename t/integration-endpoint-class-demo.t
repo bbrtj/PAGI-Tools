@@ -128,6 +128,15 @@ subtest 'the nested class demo preserves HTTP, WebSocket, SSE, and lifespan beha
     ok(blessed($app) && $app->can('to_app') && !$app->isa('MyApp'),
         'loading returns a provider that builds the application when asked');
 
+    my $composition = MyApp->new->composition;
+    isa_ok($composition, 'PAGI::Compose');
+    is([sort keys %{$composition->named_routes}], [qw(
+        /api /api/events /api/events/stream /api/index /api/show
+        /api/tools /api/tools/status /home /status_socket
+    )], 'nested local names form canonical absolute addresses');
+    is($composition->path_for('/api/tools/status'), '/api/tools/status',
+        'callback child publishes its composed reverse address');
+
     my ($resource, $metrics);
     PAGI::Test::Client->run($app, sub {
         my ($client) = @_;

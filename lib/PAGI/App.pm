@@ -177,32 +177,10 @@ PAGI::App - A base class for PAGI applications, runnable from their own module
 
 =head1 SYNOPSIS
 
-An application that replaces the whole application with C<to_app>, here a
-Compose application, in F<lib/MyApp.pm>:
+A classic application writes C<call>, the PAGI application itself, in
+F<lib/MyApp.pm>:
 
     package MyApp;
-    use strict;
-    use warnings;
-    use parent 'PAGI::App';
-    use PAGI::Tools qw(compose response route);
-
-    sub to_app {
-        my ($self) = @_;
-        return compose(routes => [
-            route('/' => sub { response('Text', 'hello') }),
-        ])->to_app;
-    }
-
-    __PACKAGE__->run_if_script;
-
-Serve it, or try one request from the shell without a server:
-
-    pagi-server -Ilib --app lib/MyApp.pm
-    perl -Ilib lib/MyApp.pm GET /
-
-A classic application writes C<call>, the PAGI application itself:
-
-    package MyApp::Ping;
     use strict;
     use warnings;
     use parent 'PAGI::App';
@@ -217,6 +195,14 @@ A classic application writes C<call>, the PAGI application itself:
 
     __PACKAGE__->run_if_script;
 
+Serve it, or try one request from the shell without a server:
+
+    pagi-server -Ilib --app lib/MyApp.pm
+    perl -Ilib lib/MyApp.pm GET /
+
+A Compose application subclasses L<PAGI::App::Compose> instead, and
+declares its routes, middleware and lifespan in methods.
+
 =head1 DESCRIPTION
 
 An optional base class for an application: anything with C<to_app> is an
@@ -226,20 +212,24 @@ L<Web::Simple::Application>: ending the module with
 C<< __PACKAGE__->run_if_script >> in place of C<1;> makes the same file an
 application a server loads and a program you can run.
 
-A subclass does one of two things:
+A subclass does one of three things:
 
 =over 4
 
 =item * writes C<call>, the application, called with
-C<($scope, $receive, $send)> and returning a L<Future>; or
+C<($scope, $receive, $send)> and returning a L<Future>;
 
-=item * overrides C<to_app> to return the whole application, as a Compose
-application does.
+=item * subclasses L<PAGI::App::Compose> and declares a Compose
+application's routes in methods; or
+
+=item * overrides C<to_app> to return the whole application.
 
 =back
 
 The C<PAGI::App::*> modules (L<PAGI::App::File>, L<PAGI::App::URLMap> and the
-rest) are applications shipped with PAGI::Tools, not subclasses of this one.
+rest) are applications shipped with PAGI::Tools, not subclasses of this one;
+PAGI::App::Compose is the exception, a subclass for writing a Compose
+application.
 
 =head1 METHODS
 
@@ -374,7 +364,7 @@ attributes would otherwise be ignored.
 
 =head1 SEE ALSO
 
-L<Plack::Component>, L<Web::Simple::Application>, L<PAGI::Compose>,
+L<PAGI::App::Compose>, L<Plack::Component>, L<Web::Simple::Application>, L<PAGI::Compose>,
 L<PAGI::Test::Client>
 
 =cut

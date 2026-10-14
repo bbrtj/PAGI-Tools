@@ -8,7 +8,7 @@ and SSE endpoint classes where their protocol lifecycle earns a class, and
 ## Package tree
 
 ```text
-lib/MyApp.pm              the application: a PAGI::App, run with run_if_script
+lib/MyApp.pm              the application: a PAGI::App::Compose, run with run_if_script
 lib/MyApp/Main.pm
 lib/MyApp/API.pm
 lib/MyApp/API/User.pm
@@ -18,23 +18,25 @@ public/
 ```
 
 `lib/MyApp.pm` is the whole application in one module, with no `app.pl`: it
-subclasses `PAGI::App`, builds the application's data and the root route list
-in `to_app`, and ends with `__PACKAGE__->run_if_script` in place of `1;`:
+subclasses `PAGI::App::Compose`, returns the root route list from `routes`,
+writes and closes the lifespan resources in `on_startup` and `on_shutdown`,
+and ends with `__PACKAGE__->run_if_script` in place of `1;`:
 
 ```perl
-sub to_app {
+sub routes {
     my ($self) = @_;
     my @users = (
         { id => 1, name => 'Alice' },
         { id => 2, name => 'Bob' },
     );
-    my $api  = MyApp::API->new(users => \@users);
-    my $main = MyApp::Main->new(api => $api);
+    my $api = MyApp::API->new(users => \@users);
+    return MyApp::Main->new(api => $api)->routes;
+}
 
-    return compose(
-        routes   => $main->routes,
-        lifespan => { startup => ..., shutdown => ... },
-    )->to_app;
+sub on_startup {
+    my ($self, $state) = @_;
+    $state->{resource} = { name => 'demo-resource', open => 1 };
+    $state->{metrics}  = { requests => 0, websocket_messages => 0 };
 }
 
 __PACKAGE__->run_if_script;

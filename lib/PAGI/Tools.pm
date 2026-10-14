@@ -177,7 +177,8 @@ answers 405 with an C<Allow> header. HEAD, disconnects and backpressure are
 handled for you.
 
 To keep the whole application in a module under F<lib/>, with no F<app.pl>,
-subclass L<PAGI::App> and end the module with C<< __PACKAGE__->run_if_script >>
+subclass L<PAGI::App::Compose> (or L<PAGI::App> for a classic application) and
+end the module with C<< __PACKAGE__->run_if_script >>
 in place of C<1;>: C<pagi-server -Ilib --app lib/MyApp.pm> serves it, and
 C<perl -Ilib lib/MyApp.pm GET /> runs one request from the shell.
 

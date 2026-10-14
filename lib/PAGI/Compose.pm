@@ -155,8 +155,8 @@ runs.
 
 The deliberately narrow name matters. C<PAGI::App> is the optional base
 class for applications, and C<PAGI::Application> would claim a central role
-this optional composer does not have; a Compose application is built in a
-L<PAGI::App> subclass's C<to_app>. Direct router C<to_app>,
+this optional composer does not have; a Compose application in a module
+subclasses L<PAGI::App::Compose>. Direct router C<to_app>,
 manual middleware, L<PAGI::Lifespan>, and hand-built protocol applications
 remain supported alternatives.
 
