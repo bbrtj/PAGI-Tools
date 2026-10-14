@@ -7,6 +7,12 @@
   UPGRADING-REFERENCE.md has the details. Needs PAGI::Server 0.003000.
 
   [New]
+  - PAGI::App: an optional base class for applications, in
+    Plack::Component's shape (new, prepare_app, to_app, call), whose
+    run_if_script, the module's last line in place of 1;, makes
+    lib/MyApp.pm both an application a server loads
+    (pagi-server -Ilib --app lib/MyApp.pm) and a program you can run.
+    Loading it builds nothing until a server calls to_app.
   - PAGI::Test::Response header_pairs: every response header as
     [name, value] pairs, in order, repeats (Set-Cookie) kept.
   - PAGI::Utils::TextDecoder: decodes a byte stream to text as it arrives
