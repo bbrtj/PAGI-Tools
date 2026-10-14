@@ -8,7 +8,7 @@ and SSE endpoint classes where their protocol lifecycle earns a class, and
 ## Package tree
 
 ```text
-app.pl
+lib/MyApp.pm              the application: a PAGI::App, run with run_if_script
 lib/MyApp/Main.pm
 lib/MyApp/API.pm
 lib/MyApp/API/User.pm
@@ -17,20 +17,27 @@ lib/MyApp/StatusSocket.pm
 public/
 ```
 
-`app.pl` constructs the application's data and the root route list explicitly:
+`lib/MyApp.pm` is the whole application in one module, with no `app.pl`: it
+subclasses `PAGI::App`, builds the application's data and the root route list
+in `to_app`, and ends with `__PACKAGE__->run_if_script` in place of `1;`:
 
 ```perl
-my @users = (
-    { id => 1, name => 'Alice' },
-    { id => 2, name => 'Bob' },
-);
-my $api  = MyApp::API->new(users => \@users);
-my $main = MyApp::Main->new(api => $api);
+sub to_app {
+    my ($self) = @_;
+    my @users = (
+        { id => 1, name => 'Alice' },
+        { id => 2, name => 'Bob' },
+    );
+    my $api  = MyApp::API->new(users => \@users);
+    my $main = MyApp::Main->new(api => $api);
 
-my $app = compose(
-    routes => $main->routes,
-    lifespan => { startup => \&startup, shutdown => \&shutdown },
-);
+    return compose(
+        routes   => $main->routes,
+        lifespan => { startup => ..., shutdown => ... },
+    )->to_app;
+}
+
+__PACKAGE__->run_if_script;
 ```
 
 `Main` is an ordinary assembler. Its `routes` method returns four immutable
@@ -181,10 +188,19 @@ objects neither receive nor mirror mutable lifespan state.
 
 ```bash
 cd examples/endpoint-class-demo
-pagi-server --app app.pl --port 5000
+pagi-server -I lib --app lib/MyApp.pm --port 5000
 ```
 
 Open <http://localhost:5000/>. API pages require the `X-Demo-Token:
-demo-token` header; the integration test demonstrates HTTP, WebSocket, SSE,
-middleware, reverse routing, custom API 404, and lifespan behavior with
-`PAGI::Test::Client`.
+demo-token` header.
+
+The module runs one request from the command line too, without a server
+(status and headers on STDERR, the body on STDOUT):
+
+```bash
+perl -I lib lib/MyApp.pm GET /
+perl -I lib lib/MyApp.pm GET /api/index X-Demo-Token: demo-token
+```
+
+The integration test demonstrates HTTP, WebSocket, SSE, middleware, reverse
+routing, custom API 404, and lifespan behavior with `PAGI::Test::Client`.

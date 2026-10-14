@@ -60,7 +60,7 @@ subtest 'maintained examples use direct declarative assembly' => sub {
     for my $file (
         'examples/starlette-apples/app.pl',
         'examples/endpoint-demo/app.pl',
-        'examples/endpoint-class-demo/app.pl',
+        'examples/endpoint-class-demo/lib/MyApp.pm',
         'examples/chat/app.pl',
     ) {
         my $source = slurp_file($file);

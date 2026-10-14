@@ -1571,6 +1571,47 @@ L<PAGI::Routing/DELIBERATE DIFFERENCES FROM STARLETTE> lists where PAGI
 routing departs from Starlette, and L<PAGI::Compose/STARLETTE COMPARISON>
 covers lifespan.
 
+=head2 7.8 An Application in One Module
+
+An application can live in one module under F<lib/>, with no F<app.pl>.
+Subclass L<PAGI::App>, return the application from C<to_app>, and end the
+module with C<< __PACKAGE__->run_if_script >> in place of C<1;>:
+
+    package MyApp;
+    use strict;
+    use warnings;
+    use parent 'PAGI::App';
+    use PAGI::Tools qw(compose response route);
+
+    sub to_app {
+        my ($self) = @_;
+        return compose(routes => [
+            route('/' => sub { response('Text', 'hello') }),
+        ])->to_app;
+    }
+
+    __PACKAGE__->run_if_script;
+
+Serve it:
+
+    pagi-server -Ilib --app lib/MyApp.pm
+
+Try one request from the shell, without a server; the status and headers go
+to STDERR and the body to STDOUT:
+
+    perl -Ilib lib/MyApp.pm GET /
+
+Test it with L<PAGI::Test::Client>. Loading the module builds nothing, so
+C<use MyApp> is safe:
+
+    use MyApp;
+    my $client = PAGI::Test::Client->new(app => MyApp->new);
+    is $client->get('/')->text, 'hello';
+
+A small application can write C<call>, the PAGI application itself, in place
+of C<to_app>. L<PAGI::App> has the details, and C<examples/endpoint-class-demo>
+a larger application in this shape.
+
 =head1 SEE ALSO
 
 =over 4

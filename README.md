@@ -106,6 +106,11 @@ An unmatched path answers 404, and a matched path with the wrong method
 answers 405 with an `Allow` header. HEAD, disconnects and backpressure are
 handled for you.
 
+To keep the whole application in a module under `lib/`, with no `app.pl`,
+subclass [PAGI::App](https://metacpan.org/pod/PAGI%3A%3AApp) and end the module with `__PACKAGE__->run_if_script`
+in place of `1;`: `pagi-server -Ilib --app lib/MyApp.pm` serves it, and
+`perl -Ilib lib/MyApp.pm GET /` runs one request from the shell.
+
 # IMPORTS
 
 `PAGI::Tools` exports the toolkit's everyday functions by name. Nothing is
