@@ -153,16 +153,65 @@ subtest 'a cancelled build is dropped' => sub {
     is scalar @builds, 2, 'the next get builds again';
 };
 
-subtest 'a pending per_request build is freed with its request' => sub {
+subtest 'a pending per_request build is cancelled when its request goes away' => sub {
     my $build;
     my %worker = (who => per_request { $build = Future->new });
     my $scope  = request_scope(\%worker);
     my $waiter = app_state($scope)->get('who');
-    weaken(my $weak = $build);
-    undef $build;
     undef $waiter;
     undef $scope;
-    ok !defined $weak, 'the build is freed with the request state copy';
+    ok $build->is_cancelled, 'cancelled with the request state copy';
+};
+
+subtest 'an async per_request build whose request went away: cancelled, no warning' => sub {
+    my @warnings;
+    my $query = Future->new;    # the I/O the builder awaits
+    {
+        local $SIG{__WARN__} = sub { push @warnings, @_ };
+        my %worker = (viewer => per_request async sub { await $query });   # keeps no view
+        my $scope  = request_scope(\%worker);
+        my $waiter = app_state($scope)->get('viewer');
+        undef $waiter;
+        undef $scope;           # the handler gave up and the request ended
+        $query->done('ada') unless $query->is_ready;
+    }
+    ok $query->is_cancelled, 'the I/O nobody wants was cancelled';
+    is \@warnings, [], 'no "lost its returning future" warning';
+};
+
+subtest "a finished build's kept view has no live chain" => sub {
+    my %worker = (
+        a => singleton { my ($s) = @_; { state => $s } },          # keeps its view
+        b => singleton { my ($s) = @_; { a => $s->get('a') } },
+        f => factory   { my ($s) = @_; { state => $s } },
+        g => singleton { my ($s) = @_; $s->get('f') },
+    );
+    my $a = view(\%worker)->get('a');
+    is refaddr($a->{state}->get('b')->{a}), refaddr($a), 'a kept view asks for a key that asks for it: no cycle';
+    my $product = view(\%worker)->get('f');
+    ok lives { $product->{state}->get('g') }, 'nor through a factory product';
+
+    my $gate = Future->new;
+    my %async = (
+        a => (singleton async sub { my ($s) = @_; await $gate; { state => $s } }),
+        b => singleton { my ($s) = @_; $s->get('a') },
+    );
+    my $pending = view(\%async)->get('a');
+    $gate->done;
+    my $built = $pending->get;
+    ok lives { $built->{state}->get('b') }, 'nor through a view kept by an async build once it settled'
+        or diag $@;
+};
+
+subtest 'a cycle across a real suspension still croaks' => sub {
+    my $gate = Future->new;
+    my %worker = (
+        a => (singleton async sub { my ($s) = @_; await $s->get('b') }),
+        b => (singleton async sub { my ($s) = @_; await $gate; await $s->get('a') }),
+    );
+    my $a = view(\%worker)->get('a');
+    $gate->done;
+    like scalar $a->failure, qr/State key cycle: a -> b -> a/, 'a awaits b, b asks a: a deadlock refused';
 };
 
 subtest 'async per_request: one build per request' => sub {

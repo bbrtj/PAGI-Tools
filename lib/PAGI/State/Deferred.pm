@@ -73,6 +73,7 @@ sub resolve {
     # here would be kept for the life of the worker. The caller gets what was
     # built even when _keep drops it at once (an already-failed Future).
     my $value = $self->{builder}->($state->_without_request);
+    $state->_expire_with($value);
     PAGI::State::Deferred::_keep($value, $self->{kept} //= {}, 'value');
     return PAGI::State::Deferred::_shared($value, $self->{name});
 }
@@ -100,6 +101,7 @@ sub resolve {
     my $id    = Scalar::Util::refaddr($self);
     return PAGI::State::Deferred::_shared($cache->{$id}, $name) if exists $cache->{$id};
     my $value = $self->{builder}->($state, $source);
+    $state->_expire_with($value);
     PAGI::State::Deferred::_keep($value, $cache, $id);
     return PAGI::State::Deferred::_shared($value, $name);
 }
@@ -110,7 +112,23 @@ our @ISA = ('PAGI::State::Deferred');
 # Nothing kept: the caller owns what it gets.
 sub resolve {
     my ($self, $state, $source) = @_;
-    return $self->{builder}->($state, $source);
+    my $value = $self->{builder}->($state, $source);
+    $state->_expire_with($value);
+    return $value;
+}
+
+package PAGI::State::Deferred::RequestCache;
+
+# A request's per_request values, in its own copy of the state. When the
+# request goes away, a build still pending is cancelled: nothing can ask for
+# it again, its I/O is not wanted, and a dropped suspended build would warn.
+sub DESTROY {
+    my ($self) = @_;
+    return if ${^GLOBAL_PHASE} eq 'DESTRUCT';
+    for my $value (values %$self) {
+        $value->cancel
+            if PAGI::State::Deferred::_is_future($value) && !$value->is_ready;
+    }
 }
 
 1;
@@ -173,7 +191,8 @@ It has C<built>, true once a build has started and has not failed or been
 cancelled, and C<value>, what was kept as C<get> gives it (dies if not built).
 
 =item * C<PAGI::State::Deferred::PerRequest> (from C<per_request>): built once
-per request and kept in that request's own copy of the state.
+per request and kept in that request's own copy of the state; a build still
+pending when the request goes away is cancelled.
 
 =item * C<PAGI::State::Deferred::Factory> (from C<factory>): built on every
 C<get>; nothing is kept.

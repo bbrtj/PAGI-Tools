@@ -130,16 +130,21 @@ call. A pending build is shared: two requests asking at once await one build,
 each through a Future of its own, so a caller that goes away (its request is
 cancelled) cancels only its own and the build runs on for the others. A build
 that fails or is cancelled is not kept: everyone waiting gets the failure, and
-the next C<get> builds again. A builder that dies keeps nothing either.
+the next C<get> builds again. A builder that dies keeps nothing either. A
+C<per_request> build still pending when its request goes away is cancelled:
+nothing can ask for it again, and its I/O is not wanted.
 
 B<Singletons and requests.> A singleton outlives the request that first asks
 for it, so it builds with no request: its builder gets no C<$source>, asking
 it for a C<per_request> value dies (it would be kept for the life of the
 worker), and a C<factory> it asks for gets no C<$source> either.
 
-B<Cycles.> A builder that, through other builders, asks for its own key dies
-naming the chain: C<State key cycle: a -E<gt> b -E<gt> a>. Inside an async
-builder that fails its Future.
+B<Cycles.> A builder that, through other builders, asks for its own key while
+it is still being built dies naming the chain:
+C<State key cycle: a -E<gt> b -E<gt> a>. Inside an async builder that fails
+its Future, which also refuses the deadlock of C<a> awaiting C<b> while C<b>
+awaits C<a>. A built value may keep the C<$state> its builder got: once the
+build has finished, asking through it builds and returns as any view does.
 
 B<Shutdown.> A singleton has C<built>, true once a build has started and has
 not failed or been cancelled, and C<value>, what was kept as C<get> gives it.
@@ -241,19 +246,46 @@ sub get {
     }
     my $value = $data->{$key};
     return $value unless blessed($value) && $value->isa('PAGI::State::Deferred');
-    my @chain = @{ $self->[5] // [] };
-    croak 'State key cycle: ' . join(' -> ', @chain, $key)
-        if grep { $_ eq $key } @chain;
-    return $value->resolve($self->_building($key), $self->[2]);
+    my @live = grep { $_->{live} } @{ $self->[5] // [] };
+    croak 'State key cycle: ' . join(' -> ', (map { $_->{key} } @live), $key)
+        if grep { $_->{key} eq $key } @live;
+
+    # This lookup's link in the chain. A build ties it to itself (see
+    # _expire_with); a lookup that builds nothing expires it at once.
+    my $link = { key => $key, live => 1 };
+    my $result;
+    unless (eval { $result = $value->resolve($self->_building($link), $self->[2]); 1 }) {
+        $link->{live} = 0;
+        die $@;
+    }
+    $link->{live} = 0 unless $link->{bound};
+    return $result;
 }
 
 # The key whose builder this view was made for: the end of the chain.
-sub _building_key { return $_[0][5][-1] }
+sub _building_key { return $_[0][5][-1]{key} }
 
-# The view a builder works through: the same state, with $key on the chain.
+# The view a builder works through: the same state, with $link on the chain.
 sub _building {
-    my ($self, $key) = @_;
-    return bless [@{$self}[0 .. 4], [@{ $self->[5] // [] }, $key]], ref $self;
+    my ($self, $link) = @_;
+    return bless [@{$self}[0 .. 4], [@{ $self->[5] // [] }, $link]], ref $self;
+}
+
+# Ties this view's build to the end of its chain: the link expires when the
+# build finishes, so a view a built value keeps carries no live chain, while
+# a build still running (an async one awaiting) keeps its link and still sees
+# a cycle back to it.
+sub _expire_with {
+    my ($self, $build) = @_;
+    my $link = $self->[5] && $self->[5][-1] or return;
+    $link->{bound} = 1;
+    if (blessed($build) && $build->isa('Future') && !$build->is_ready) {
+        $build->on_ready(sub { $link->{live} = 0 });
+    }
+    else {
+        $link->{live} = 0;
+    }
+    return;
 }
 
 # The same state, seen with no request: what a singleton builds through.
@@ -270,7 +302,8 @@ sub _request_cache {
         if $self->[4];
     croak 'a per_request value was asked for outside a request (lifespan startup or shutdown)'
         if ($self->[3]{type} // '') eq 'lifespan';
-    return $self->[0]{'pagi.state.per_request'} //= {};
+    return $self->[0]{'pagi.state.per_request'}
+        //= bless {}, 'PAGI::State::Deferred::RequestCache';
 }
 
 =head2 exists
