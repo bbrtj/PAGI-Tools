@@ -150,6 +150,7 @@ reader then sees where each function comes from.
 Loading `PAGI::Tools` loads those modules. Importing from each module
 directly still works, and each module documents its own exports. Not exported
 here: [PAGI::Pages](https://metacpan.org/pod/PAGI%3A%3APages)' factories (generic names such as `not_found`),
+[PAGI::State](https://metacpan.org/pod/PAGI%3A%3AState)'s lifetimes (`singleton`, `per_request`, `factory`),
 [PAGI::Utils](https://metacpan.org/pod/PAGI%3A%3AUtils) (plumbing), [PAGI::Middleware::Builder](https://metacpan.org/pod/PAGI%3A%3AMiddleware%3A%3ABuilder) (its own DSL, whose
 default export `mount` collides with this `mount`; import Builder
 selectively, as ["IMPORTS" in PAGI::Routing](https://metacpan.org/pod/PAGI%3A%3ARouting#IMPORTS) shows), and the `PAGI::Exception::*`

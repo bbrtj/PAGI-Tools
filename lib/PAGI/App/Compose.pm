@@ -179,6 +179,10 @@ A class gets lifespan only for a hook it overrides, directly, through an
 intermediate class, or through a role: Compose's lifespan callbacks require
 server state support, and an application without them runs without it.
 
+C<on_startup> may declare values instead of building them -- built on first
+use, once per worker, once per request, or on every use, sync or async: see
+L<PAGI::State/LIFETIMES>.
+
 =head1 METHODS
 
 =head2 composition
