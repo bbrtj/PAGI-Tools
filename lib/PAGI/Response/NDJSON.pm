@@ -56,7 +56,9 @@ usual options.
 
 =cut
 
-my $JSON = JSON::MaybeXS->new(utf8 => 1);
+# allow_nonref: a line may be any JSON value (null, a string, a number), and
+# not every backend JSON::MaybeXS picks enables it by default.
+my $JSON = JSON::MaybeXS->new(utf8 => 1, allow_nonref => 1);
 
 sub default_content_type { 'application/x-ndjson' }
 

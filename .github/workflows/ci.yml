@@ -77,6 +77,7 @@ jobs:
         run: |
           perl -I../PAGI-Server/lib -MPAGI::Server -e 'PAGI::Server->VERSION("0.003000"); print "PAGI::Server $PAGI::Server::VERSION (PAGI-Server main)\n"'
           perl -MFuture -e 'print "Future $Future::VERSION\n"'
+          perl -MJSON::MaybeXS -e 'print "JSON::MaybeXS backend ", JSON::MaybeXS::JSON(), " ", JSON::MaybeXS::JSON()->VERSION, "\n"'
           perl -e 'print "Net::HTTP2::nghttp2 ", (eval { require Net::HTTP2::nghttp2; Net::HTTP2::nghttp2->VERSION } // "not installed"), "\n"'
 
       - name: Run tests
