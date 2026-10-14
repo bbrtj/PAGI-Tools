@@ -407,8 +407,8 @@ L<PAGI::Routing::RequestResponse> has the details.
 
 Loads the class by its exact package name and returns the app object for a
 route or mount; it is C<< PAGI::Endpoint->new($class, %args)->endpoint >>.
-The class decides how it is built: once with C<new>, or through its
-C<BUILD_APP>. There is no default namespace and no leading C<+>, unlike
+The class decides how it is built: with C<new> for each request or
+connection, or through its C<BUILD_APP>. There is no default namespace and no leading C<+>, unlike
 C<middleware>. See L<PAGI::Endpoint>.
 
 =head1 MATCHING

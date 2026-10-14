@@ -226,16 +226,15 @@ The selected handler runs inline. Immediate results are normalized with
 C<Future-E<gt>wrap>, but blocking synchronous work still blocks the event-loop
 thread. A returned object's C<to_app> is invoked once for that request.
 
-B<Built once by default:> named at a route with C<endpoint>, the class is
-built once, and that one object serves every request for the application's
-lifetime (within the same worker process), concurrently.
+B<A fresh object per request by default:> named at a route with
+C<endpoint>, the class is built with C<new> for each request, so C<$self>
+belongs to that one request and may keep its state.
 
-B<Do not store per-request state on C<$self>> of an endpoint built once:
-request-scoped data on C<$self> would leak between concurrent requests. Keep
-configuration and long-lived services on C<$self>, and request-scoped data on
-C<$request> or scope-bound helpers. A class that wants a fresh object for
-every request says so with C<BUILD_APP> (L<PAGI::Endpoint>); C<$self> then
-belongs to that one request.
+A class that shares one object across every request says so with
+C<BUILD_APP> (L<PAGI::Endpoint>). B<Do not store per-request state on
+C<$self>> of a shared object: request-scoped data on it would leak between
+concurrent requests. Keep configuration and long-lived services on such an
+object, and request-scoped data on C<$request> or scope-bound helpers.
 
 =head1 INSTANCE METHODS
 

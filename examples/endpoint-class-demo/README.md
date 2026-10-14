@@ -127,11 +127,9 @@ mismatches and their `Allow` header.
 
 `MyApp::API::User` subclasses `PAGI::Endpoint::HTTP`. The route names it
 with `endpoint('MyApp::API::User', users => $self->{users})`, which loads
-the class and builds it once with that shared user collection. It
-advertises its `get` capability when the route is constructed and handles
-the exact `/show/{user_id}` leaf. Request state stays on the
-`PAGI::Request`; the one endpoint object holds only its long-lived
-dependency.
+the class and builds a fresh object for each request, each given that one
+shared user collection. It advertises its `get` capability when the route
+is constructed and handles the exact `/show/{user_id}` leaf.
 
 `MyApp::StatusSocket` subclasses `PAGI::Endpoint::WebSocket` and selects
 JSON input. `on_connect` accepts the connection and sends resource

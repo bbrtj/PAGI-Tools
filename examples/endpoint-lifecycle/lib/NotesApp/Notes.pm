@@ -1,8 +1,8 @@
 package NotesApp::Notes;
 
 # The collection: GET lists one page, POST adds a note by the current user.
-# A Moo class built once per request. The builder pulls what this object
-# needs out of the request (who is asking) and hands it over as an
+# A Moo class built per request by its own builder, which pulls what this
+# object needs out of the request (who is asking) and hands it over as an
 # attribute; the request itself stays an argument to the handlers.
 
 use v5.40;

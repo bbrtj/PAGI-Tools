@@ -124,15 +124,15 @@ PAGI::Endpoint::SSE - Class-based Server-Sent Events endpoint handler
 PAGI::Endpoint::SSE provides a class-based approach to handling
 Server-Sent Events connections with lifecycle hooks.
 
-Named at a route with C<endpoint>, the class is built once by default, and
-that one object serves every connection. Configuration and long-lived
-dependencies may therefore live on the endpoint object. Each C<PAGI::SSE>
-protocol object and all connection-local state must stay local to C<handle>,
-because one endpoint instance can serve concurrent connections.
+Named at a route with C<endpoint>, the class is built with C<new> for each
+connection by default, and that object lives as long as the connection, so
+connection state may live on C<$self>.
 
-A class whose C<BUILD_APP> returns a builder (L<PAGI::Endpoint>) gets a
-fresh object for each connection instead, which lives as long as that
-connection, so connection state may live on C<$self>.
+A class that shares one object across every connection says so with
+C<BUILD_APP> (L<PAGI::Endpoint>). Configuration and long-lived dependencies
+may then live on the object, but each C<PAGI::SSE> protocol object and all
+connection-local state must stay local to C<handle>, because one endpoint
+instance serves concurrent connections.
 
 =head1 LIFECYCLE METHODS
 

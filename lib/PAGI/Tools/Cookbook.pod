@@ -1198,11 +1198,10 @@ Router grammar. This complete shape keeps topology declarative:
       bus   => bless({}, 'Example::Bus'),
   })->application;
 
-C<endpoint> loads each class and builds it once, so one object serves
-every request or connection on its route, concurrently. Keep shared
-services and configuration on C<$self>; keep request and connection state
-on the Request, WebSocket, or SSE object. A class whose C<BUILD_APP>
-returns a builder gets a fresh object per request or connection instead
+C<endpoint> loads each class and builds a fresh object for each request or
+connection, so request and connection state may live on C<$self>. A class
+that shares one object across every request says so with C<BUILD_APP>, and
+then keeps only configuration and shared services on C<$self>
 (L<PAGI::Endpoint>). HTTP C<allowed_methods> is consulted once when the
 Route is built. A finite C<methods> declaration must be a restriction of
 that snapshot. Only scalar C<< methods => '*' >> bypasses the capability

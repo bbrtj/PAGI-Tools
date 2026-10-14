@@ -4,11 +4,13 @@
 #
 # The caller names each class with endpoint() and gives it arguments. The
 # class decides how it is built:
-#   - a class without BUILD_APP is built once, with ->new(%args), and that
-#     object answers every request;
+#   - a class without BUILD_APP gets a fresh object for every request (every
+#     WebSocket connection), built with ->new(%args);
 #   - a class whose BUILD_APP returns a coderef gets it called once per
-#     request (or per WebSocket connection) with the request, to build the
-#     object that answers it.
+#     request (or connection) with the request, to build the object that
+#     answers it;
+#   - a class whose BUILD_APP returns an object shares that one object
+#     across every request.
 # endpoint() loads each class itself.
 # The route looks the same either way. The request or connection is never
 # stored on the object: every handler receives it as an argument.

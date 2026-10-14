@@ -1,8 +1,8 @@
 package NotesApp::Watch;
 
-# A WebSocket endpoint: a fresh object per connection, so what one hook
-# leaves for the next (how many messages this connection was sent) lives
-# on $self. Clients send {"op":"list"} or {"op":"add","text":"..."}.
+# A WebSocket endpoint with no BUILD_APP: a fresh object per connection, so
+# what one hook leaves for the next (how many messages this connection was
+# sent) lives on $self. Clients send {"op":"list"} or {"op":"add","text":"..."}.
 
 use v5.40;
 use Moo;
@@ -11,13 +11,6 @@ use Future::AsyncAwait;
 extends 'PAGI::Endpoint::WebSocket';
 
 sub encoding { 'json' }
-
-# The builder runs once per connection. It gets the connection's
-# PAGI::Request (headers, cookies, state), not the WebSocket: only the
-# handlers below accept, send and close.
-sub BUILD_APP ($class, %args) {
-    return sub ($request) { $class->new(%args) };
-}
 
 # Configuration, from endpoint().
 has greeting => (is => 'ro', default => 'hello');

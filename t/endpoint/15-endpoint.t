@@ -83,6 +83,43 @@ package Local::Ticker {
     }
 }
 
+# Keeps a value on $self, as NotesApp::Note does: right only when each request
+# has its own object.
+package Local::Memo {
+    use parent 'PAGI::Endpoint::HTTP';
+
+    sub get {
+        my ($self, $request) = @_;
+        $self->{seen} //= $request->query_param('id');
+        return PAGI::Response::Text->new("id=$self->{seen}");
+    }
+}
+
+# Counts messages on $self: right only when each connection has its own object.
+package Local::Counter {
+    use parent 'PAGI::Endpoint::WebSocket';
+    use Future::AsyncAwait;
+
+    async sub on_receive {
+        my ($self, $websocket, $text) = @_;
+        $self->{count}++;
+        await $websocket->send_text("$self->{count}");
+    }
+}
+
+package Local::SSEBuilt {
+    use parent 'PAGI::Endpoint::SSE';
+    use Future::AsyncAwait;
+    our $BUILT = 0;
+
+    sub new { my ($class, %args) = @_; $BUILT++; return $class->SUPER::new(%args) }
+
+    async sub on_connect {
+        my ($self, $sse) = @_;
+        await $sse->send_event(data => 'hi');
+    }
+}
+
 package Local::Neither {
     sub BUILD_APP { return 'oops' }
 }
@@ -402,28 +439,31 @@ unshift @INC, $lib;
 
 my $this_file = __FILE__;
 
-subtest 'without BUILD_APP the class is built once, with new and the arguments' => sub {
+subtest 'without BUILD_APP each request gets a fresh object, with new and the arguments' => sub {
     $Local::Greeter::BUILT = 0;
     my $greeter = endpoint('Local::Greeter', greeting => 'hi');
-    is($Local::Greeter::BUILT, 1, 'new runs once, when endpoint() is called');
-    isa_ok($greeter, ['Local::Greeter'], 'endpoint() returns the object itself');
-    ok(!$greeter->isa('PAGI::Endpoint::_PerRequest'), 'not a per-request wrapper');
+    is($Local::Greeter::BUILT, 0, 'endpoint() builds nothing');
+    isa_ok($greeter, ['PAGI::Endpoint::_PerRequest'], 'it returns the per-request wrapper');
 
     my $client = PAGI::Test::Client->new(
         app => compose(routes => [route('/greet' => $greeter)]));
-    is([map { $client->get('/greet')->text } 1 .. 2],
-        [('hi from ' . refaddr($greeter)) x 2], 'that one object answers every request');
-    is($Local::Greeter::BUILT, 1, 'no request builds another');
+    my @answers = map { $client->get('/greet')->text } 1 .. 2;
+    like($_, qr/\Ahi from \d+\z/, 'with the arguments') for @answers;
+    is($Local::Greeter::BUILT, 2, 'one object per request');
+    isnt(($answers[0] =~ /(\d+)\z/)[0], ($answers[1] =~ /(\d+)\z/)[0], 'two objects');
 };
 
 subtest 'the arguments reach new unchanged and in order' => sub {
     my $repo = {};
-    endpoint('Local::ArgsRecorder', b => 2, a => 1, repo => $repo);
+    my $client = PAGI::Test::Client->new(app => compose(routes => [
+        route('/' => endpoint('Local::ArgsRecorder', b => 2, a => 1, repo => $repo)),
+    ]));
+    $client->options('/');    # the class has no get: OPTIONS is what reaches it
     is(\@Local::ArgsRecorder::ARGS, [b => 2, a => 1, repo => exact_ref($repo)],
-        'the same list, the same references');
+        'the same list, the same references, on each request');
 };
 
-subtest 'the same class at two routes is two objects' => sub {
+subtest 'the same class at two routes keeps two configurations' => sub {
     my $app = compose(routes => [
         route('/en' => endpoint('Local::Greeter', greeting => 'hello')),
         route('/fr' => endpoint('Local::Greeter', greeting => 'bonjour')),
@@ -432,7 +472,6 @@ subtest 'the same class at two routes is two objects' => sub {
     my ($en, $fr) = map { $client->get($_)->text } '/en', '/fr';
     like($en, qr/\Ahello from \d+\z/, 'one with its arguments');
     like($fr, qr/\Abonjour from \d+\z/, 'the other with its own');
-    isnt(($en =~ /(\d+)\z/)[0], ($fr =~ /(\d+)\z/)[0], 'two objects');
 };
 
 subtest 'BUILD_APP returning an app object' => sub {
@@ -467,7 +506,10 @@ subtest 'one spelling at route, websocket, sse and mount' => sub {
         my ($sse) = @_;
         is($sse->receive_event->{data}, 'tick', 'sse');
     });
+    $Local::Greeter::BUILT = 0;
     like($client->get('/mounted')->text, qr/\Amounted from /, 'mount');
+    $client->get('/mounted');
+    is($Local::Greeter::BUILT, 2, 'a mounted class is built per request too');
     is($client->get('/file')->text, 'from a file', 'a class with a file is loaded by name');
     ok($INC{'PAGITestTmp/FileGreeter.pm'}, 'which required it');
 };
@@ -484,11 +526,67 @@ subtest 'mistakes fail at endpoint(), with their own messages' => sub {
     like(dies { endpoint('Local::Neither') },
         qr/\ALocal::Neither->BUILD_APP must return an app object \(one with to_app\) or a coderef that builds one per request at /,
         'BUILD_APP returning a string');
-    like(dies { endpoint('Local::NewReturnsJunk') },
-        qr/\ALocal::NewReturnsJunk->new must return an app object \(one with to_app\) or a coderef that builds one per request at /,
-        'new returning a hashref');
-    like(dies { endpoint('Local::MooHealth') }, qr/\AMissing required arguments: version/,
-        "a singleton missing a required Moo attribute: Moo's own error");
+};
+
+subtest 'a class without BUILD_APP whose new fails answers that request with a 500' => sub {
+    my $client = PAGI::Test::Client->new(app => compose(routes => [
+        route('/junk' => endpoint('Local::NewReturnsJunk')),
+        route('/moo'  => endpoint('Local::MooHealth')),
+    ]));
+    my %case = (
+        '/junk' => qr/\Aexception after response completed: Local::NewReturnsJunk->new must return an app object \(one with to_app\); a native PAGI application goes through as_app_object\(\) at /,
+        '/moo'  => qr/\Aexception after response completed: Missing required arguments: version at /,
+    );
+    # Local::MooHealth has no get, so a GET would be the Router's 405 and
+    # build nothing; OPTIONS reaches the endpoint.
+    my %method = ('/junk' => 'get', '/moo' => 'options');
+    for my $path (sort keys %case) {
+        my $res;
+        my $call = $method{$path};
+        like(warnings { $res = $client->$call($path) }, [$case{$path}], "$path: the error");
+        is($res->status, 500, "$path: a 500");
+    }
+};
+
+subtest 'an object that keeps state on $self answers each request with its own' => sub {
+    my $client = PAGI::Test::Client->new(app => compose(routes => [
+        route('/memo' => endpoint('Local::Memo')),
+    ]));
+    is([map { $client->get("/memo?id=$_")->text } 1, 2], ['id=1', 'id=2'],
+        'the second request does not see the first one\'s value');
+};
+
+subtest 'WebSocket and SSE classes without BUILD_APP get one object per connection' => sub {
+    $Local::SSEBuilt::BUILT = 0;
+    my $client = PAGI::Test::Client->new(app => compose(routes => [
+        websocket('/count' => endpoint('Local::Counter')),
+        sse('/sse' => endpoint('Local::SSEBuilt')),
+    ]));
+    for my $connection (1, 2) {
+        $client->websocket('/count', sub {
+            my ($ws) = @_;
+            $ws->send_text('x') for 1, 2;
+            is([$ws->receive_text, $ws->receive_text], ['1', '2'], "connection $connection counts from 1");
+        });
+    }
+    $client->sse('/sse', sub { is($_[0]->receive_event->{data}, 'hi', 'sse') }) for 1, 2;
+    is($Local::SSEBuilt::BUILT, 2, 'one SSE object per connection');
+};
+
+subtest 'the default path builds no Request of its own' => sub {
+    my $made = 0;
+    no warnings 'redefine';
+    my $original = \&PAGI::Request::_Factory::request_for_scope;
+    local *PAGI::Request::_Factory::request_for_scope = sub { $made++; goto &$original };
+    my $client = PAGI::Test::Client->new(app => compose(routes => [
+        route('/plain' => endpoint('Local::Greeter')),
+        route('/built' => endpoint('Local::Guarded', greeting => 'hi')),
+    ]));
+    $client->get('/plain');
+    is($made, 1, 'no BUILD_APP: one Request, the endpoint\'s own');
+    $made = 0;
+    $client->get('/built', headers => { 'X-Token' => 'yes' });
+    is($made, 2, 'a builder: the builder\'s and the endpoint\'s, as before');
 };
 
 subtest 'a class that cannot be loaded' => sub {
@@ -514,7 +612,8 @@ sub get { return PAGI::Response::Text->new('mentioned') }
 PERL
     my $app;
     ok(lives { $app = endpoint('PAGITestTmp::Mentioned') }, 'the file is required');
-    isa_ok($app, ['PAGITestTmp::Mentioned'], 'and built');
+    is(PAGI::Test::Client->new(app => compose(routes => [route('/' => $app)]))->get('/')->text,
+        'mentioned', 'and the class answers');
 
     write_module('PAGITestTmp/MentionedBroken.pm', "package PAGITestTmp::MentionedBroken;\nsub new {\n1;\n");
     like(dies { endpoint('PAGITestTmp::MentionedBroken') },
@@ -650,6 +749,15 @@ subtest "who answers a method the class does not have" => sub {
     is($Local::Picky::BUILDS, 2, 'the builder ran for each');
 };
 
+subtest 'a 405 for a class without BUILD_APP builds no object' => sub {
+    $Local::Greeter::BUILT = 0;
+    my $client = PAGI::Test::Client->new(app => compose(routes => [
+        route('/greet' => endpoint('Local::Greeter')),
+    ]));
+    is($client->put('/greet')->status, 405, 'the Router answers from the class');
+    is($Local::Greeter::BUILT, 0, 'and nothing was built');
+};
+
 subtest 'a builder may be async' => sub {
     my $client = PAGI::Test::Client->new(app => compose(routes => [
         route('/async' => endpoint('Local::AsyncBuilt')),
@@ -765,9 +873,8 @@ subtest 'the steps are methods a subclass may override' => sub {
     is([$endpoint->args], [greeting => 'hi'], 'args');
 
     my $app = Local::FixedEndpoint->new('Local::Greeter')->endpoint;
-    isa_ok($app, ['PAGI::Response::Text'], 'an overridden build goes through app_from');
     is(PAGI::Test::Client->new(app => $app)->get('/')->text, 'built by the subclass',
-        'and answers');
+        'an overridden build answers, per request, for a class without BUILD_APP');
 };
 
 subtest 'endpoint is exported by PAGI::Routing and PAGI::Tools' => sub {
