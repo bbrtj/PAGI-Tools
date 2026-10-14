@@ -1227,6 +1227,14 @@ response's producer, that awaits real off-loop I/O through L<Future::IO>
 completes in-process. A request still pending after 5 seconds dies with
 C<PAGI request did not complete within 5 seconds>.
 
+The loop driven is L<Future::IO>'s. An application that waits on another
+event loop directly -- a timer on its own L<IO::Async::Loop>, say -- never
+resumes unless Future::IO runs on that loop, and its requests die with that
+timeout. Load the matching implementation in the test, as C<pagi-server>
+binds Future::IO to the loop it serves on:
+
+    use Future::IO::Impl::IOAsync;    # Future::IO runs on IO::Async's loop
+
 =head2 get
 
     my $res = $client->get($path, %options);
