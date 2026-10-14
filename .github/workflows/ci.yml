@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Perl ${{ matrix.perl }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        perl: ['5.42', '5.40', '5.38', '5.36']
+
+    # The real-server tests run against a PAGI-Server checkout beside this one
+    # (prove -I../PAGI-Server/lib), as they are run locally: the PAGI::Server
+    # release line this cycle targets is not on CPAN yet.
+    defaults:
+      run:
+        working-directory: PAGI-Tools
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: PAGI-Tools
+
+      - uses: actions/checkout@v4
+        with:
+          repository: jjn1056/PAGI-Server
+          ref: main
+          path: PAGI-Server
+
+      - name: Setup Perl ${{ matrix.perl }}
+        uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: ${{ matrix.perl }}
+
+      # libnghttp2 for Net::HTTP2::nghttp2, which the HTTP/2 integration tests
+      # use; on macOS those tests skip.
+      - name: Install system libraries
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libnghttp2-dev
+
+      # --mirror-only: resolve versions from the mirror's own index rather than
+      # cpanm's metadata service, which can name a release the mirrors have
+      # not synced yet.
+      - name: Install dependencies
+        run: |
+          cpanm --notest --mirror https://cpan.metacpan.org --mirror-only --installdeps .
+          cpanm --notest --mirror https://cpan.metacpan.org --mirror-only --installdeps ../PAGI-Server
+
+      # Tests that need these skip when they are missing, which on CI would
+      # pass silently; installed on their own so a failure fails the job.
+      - name: Install modules the tests skip without
+        run: >
+          cpanm --notest --mirror https://cpan.metacpan.org --mirror-only
+          Future::IO Future::IO::Impl::IOAsync MooseX::NonMoose Template Crypt::JWT
+
+      # PAGI::Server needs Net::HTTP2::nghttp2 0.011. Until the CPAN mirrors
+      # carry it, the pinned commit is the 0.011 tree from the binding's repo,
+      # as in PAGI-Server's own CI.
+      - name: Install Net::HTTP2::nghttp2 0.011
+        if: runner.os == 'Linux'
+        run: |
+          cpanm --notest --mirror https://cpan.metacpan.org --mirror-only Alien::nghttp2
+          cpanm --notest --mirror https://cpan.metacpan.org --mirror-only 'Net::HTTP2::nghttp2~0.011' \
+            || cpanm --notest https://github.com/jjn1056/Net-HTTP2-nghttp2/archive/92e7f9e.tar.gz
+
+      # Fails the job when the checkout's PAGI::Server is not loadable at the
+      # release line the real-server tests need, instead of letting every one
+      # of them skip.
+      - name: Report what the tests see
+        run: |
+          perl -I../PAGI-Server/lib -MPAGI::Server -e 'PAGI::Server->VERSION("0.003000"); print "PAGI::Server $PAGI::Server::VERSION (PAGI-Server main)\n"'
+          perl -MFuture -e 'print "Future $Future::VERSION\n"'
+          perl -e 'print "Net::HTTP2::nghttp2 ", (eval { require Net::HTTP2::nghttp2; Net::HTTP2::nghttp2->VERSION } // "not installed"), "\n"'
+
+      - name: Run tests
+        env:
+          RELEASE_TESTING: 1
+        run: prove -I../PAGI-Server/lib -lr t/
