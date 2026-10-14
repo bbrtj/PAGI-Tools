@@ -153,9 +153,10 @@ constructor returns an immutable, inspectable description; C<to_app> is the
 explicit compilation boundary that returns the native PAGI coderef a server
 runs.
 
-The deliberately narrow name matters. C<PAGI::App> would look like the base
-class for the C<PAGI::App::*> package family, while C<PAGI::Application> would claim
-a central role this optional composer does not have. Direct router C<to_app>,
+The deliberately narrow name matters. C<PAGI::App> is the optional base
+class for applications, and C<PAGI::Application> would claim a central role
+this optional composer does not have; a Compose application is built in a
+L<PAGI::App> subclass's C<to_app>. Direct router C<to_app>,
 manual middleware, L<PAGI::Lifespan>, and hand-built protocol applications
 remain supported alternatives.
 

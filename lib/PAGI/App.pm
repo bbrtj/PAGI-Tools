@@ -90,6 +90,8 @@ sub _parse_request {
     die "a path is required\n" unless defined $target;
     my ($credentials, $path) = $target =~ m{\A(?:([^/@\s]+)@)?(/.*)\z}s
         or die "not a method or a path: '$target' (methods: @METHODS)\n";
+    # The argument is bytes; a URL carries them percent-encoded.
+    $path =~ s/([\x80-\xFF])/sprintf('%%%02X', ord $1)/ge;
 
     my (@headers, @fields, $content);
     while (@args) {
@@ -124,15 +126,19 @@ sub _parse_request {
 }
 
 # One request through the application, in-process, with lifespan startup
-# before it and shutdown after. Returns the PAGI::Test::Response.
+# before it and shutdown after, as a server's default (auto) mode runs it:
+# an application that declines lifespan runs without it. Returns the
+# PAGI::Test::Response.
 sub _request {
     my ($self, $method, $path, %options) = @_;
     require PAGI::Test::Client;
-    my $response;
-    PAGI::Test::Client->run($self, sub {
-        my $call = lc $method;
-        $response = $_[0]->$call($path, %options);
-    });
+    my $client = PAGI::Test::Client->new(app => $self, lifespan => 'auto');
+    $client->start;
+    my $call = lc $method;
+    my $response = eval { $client->$call($path, %options) };
+    my $error = $@;
+    $client->stop;
+    die $error unless $response;
     return $response;
 }
 
@@ -232,6 +238,9 @@ application does.
 
 =back
 
+The C<PAGI::App::*> modules (L<PAGI::App::File>, L<PAGI::App::URLMap> and the
+rest) are applications shipped with PAGI::Tools, not subclasses of this one.
+
 =head1 METHODS
 
 =head2 new
@@ -313,7 +322,11 @@ header; C<Content: text> is the raw request body. C<name=value> is a form
 field: a urlencoded body for POST, PUT and PATCH, added to the query string
 otherwise. C<Content:> and form fields together are a usage error.
 
-=item * Lifespan startup runs before the request and shutdown after it.
+=item * Lifespan startup runs before the request and shutdown after it, as a
+server's default (auto) mode runs them: an application that declines
+lifespan, by raising on the C<lifespan> scope or returning without
+signalling startup, runs without it; one that sends
+C<lifespan.startup.failed> exits 1.
 
 =item * The status line (C<HTTP/1.1 200>), every response header in order, a
 blank line and, if the application died, its exception go to STDERR; the

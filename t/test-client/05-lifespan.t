@@ -330,4 +330,116 @@ subtest 'each request, WebSocket and SSE scope gets a shallow copy of state' => 
     ], 'every scope starts from the lifespan values; only shared containers carry changes');
 };
 
+# ---------------------------------------------------------------------------
+# lifespan => 'auto': PAGI::Spec::Lifespan's default (auto) server mode. An
+# application that declines -- raises on the lifespan scope, or returns
+# without signalling startup -- runs without lifespan; only
+# lifespan.startup.failed stops startup. lifespan => 1 stays strict.
+# ---------------------------------------------------------------------------
+
+# A classic application that knows only http and dies on any other scope,
+# as PAGI's raw-protocol examples do.
+my $http_only_app = async sub {
+    my ($scope, $receive, $send) = @_;
+    die "Unsupported scope type: $scope->{type}\n" if $scope->{type} ne 'http';
+    await $send->({ type => 'http.response.start', status => 200,
+                    headers => [['content-type', 'text/plain']] });
+    await $send->({ type => 'http.response.body', body => 'hello', more => 0 });
+};
+
+subtest "auto: an application that raises on the lifespan scope runs without it" => sub {
+    my $client = PAGI::Test::Client->new(app => $http_only_app, lifespan => 'auto');
+    ok lives { with_timeout(20, sub { $client->start }) }, 'start() continues past the decline'
+        or diag $@;
+    is $client->get('/')->text, 'hello', 'requests are served';
+    ok lives { with_timeout(20, sub { $client->stop }) },
+        'stop() delivers no shutdown to an application that declined' or diag $@;
+};
+
+subtest 'auto: an application answering every scope with HTTP events declines' => sub {
+    # The lifespan $send stays strict: the http.response.start it refuses
+    # fails the application's await, and that raise is the decline.
+    my $app = async sub {
+        my ($scope, $receive, $send) = @_;
+        await $send->({ type => 'http.response.start', status => 200,
+                        headers => [['content-type', 'text/plain']] });
+        await $send->({ type => 'http.response.body', body => 'pong', more => 0 });
+    };
+    my $client = PAGI::Test::Client->new(app => $app, lifespan => 'auto');
+    ok lives { with_timeout(20, sub { $client->start }) }, 'start() continues' or diag $@;
+    is $client->get('/')->text, 'pong', 'requests are served';
+    ok lives { $client->stop }, 'stop() returns' or diag $@;
+};
+
+subtest 'auto: an application that returns on the lifespan scope declines' => sub {
+    my $app = async sub {
+        my ($scope, $receive, $send) = @_;
+        return if $scope->{type} eq 'lifespan';
+        await $http_only_app->($scope, $receive, $send);
+    };
+    my $client = PAGI::Test::Client->new(app => $app, lifespan => 'auto');
+    ok lives { with_timeout(20, sub { $client->start }) }, 'start() continues' or diag $@;
+    is $client->get('/')->text, 'hello', 'requests are served';
+    ok lives { $client->stop }, 'stop() returns' or diag $@;
+};
+
+subtest 'auto: lifespan.startup.failed still stops startup' => sub {
+    my $lifespan = PAGI::Lifespan->new;
+    $lifespan->on_startup(async sub { die "database unreachable\n" });
+    my $app = async sub {
+        my ($scope, $receive, $send) = @_;
+        return await $lifespan->handle($scope, $receive, $send);
+    };
+    my $client = PAGI::Test::Client->new(app => $app, lifespan => 'auto');
+    like dies { with_timeout(20, sub { $client->start }) }, qr/database unreachable/,
+        'start() dies with the failure message';
+    ok !$client->{started}, 'the client is not started';
+};
+
+subtest 'auto: an application that supports lifespan gets all of it' => sub {
+    ($startup_called, $shutdown_called) = (0, 0);
+    my $client = PAGI::Test::Client->new(app => $lifespan_app, lifespan => 'auto');
+    $client->start;
+    is $startup_called, 1, 'startup delivered';
+    is $client->get('/')->text, 'DB: connected', 'startup state reaches the request';
+    $client->stop;
+    is $shutdown_called, 1, 'shutdown delivered';
+};
+
+subtest 'lifespan => 1 stays strict: a decline is a startup failure' => sub {
+    my $client = PAGI::Test::Client->new(app => $http_only_app, lifespan => 1);
+    like dies { with_timeout(20, sub { $client->start }) },
+        qr/Unsupported scope type: lifespan/, 'start() dies with the raise';
+    ok !$client->{started}, 'the client is not started';
+};
+
+subtest 'a decline that arrives after off-loop I/O resolves promptly' => sub {
+    unless (eval { require Future::IO::Impl::IOAsync; 1 }) {
+        skip_all('Future::IO::Impl::IOAsync required to drive real off-loop I/O');
+    }
+    require Future::IO;
+    my $app = async sub {
+        my ($scope, $receive, $send) = @_;
+        if ($scope->{type} eq 'lifespan') {
+            await Future::IO->sleep(0.05);   # real off-loop I/O
+            die "no lifespan here\n";
+        }
+        await $http_only_app->($scope, $receive, $send);
+    };
+
+    my $client = PAGI::Test::Client->new(app => $app, lifespan => 'auto');
+    my $t0 = Time::HiRes::time();
+    ok lives { with_timeout(20, sub { $client->start }) }, 'auto: start() continues'
+        or diag $@;
+    ok Time::HiRes::time() - $t0 < 2, 'auto: promptly, not after the drive timeout';
+    is $client->get('/')->text, 'hello', 'auto: requests are served';
+    $client->stop;
+
+    $client = PAGI::Test::Client->new(app => $app, lifespan => 1);
+    $t0 = Time::HiRes::time();
+    like dies { with_timeout(20, sub { $client->start }) }, qr/no lifespan here/,
+        "strict: start() dies with the application's raise";
+    ok Time::HiRes::time() - $t0 < 2, 'strict: promptly, not after the drive timeout';
+};
+
 done_testing;

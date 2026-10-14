@@ -163,6 +163,8 @@ subtest 'the grammar' => sub {
     like dies { $app->_parse_request('FOO', '/x') }, qr/not a method or a path: 'FOO'/, 'unknown method';
     like dies { $app->_parse_request('GET') }, qr/a path is required/, 'a method with no path';
     like dies { $app->_parse_request(POST => '/x', 'Content:', 'a', 'b=1') }, qr/cannot be combined/, 'Content: with fields';
+    (undef, $p) = $app->_parse_request("/caf\xC3\xA9?q=\xC3\xA9");
+    is $p, '/caf%C3%A9?q=%C3%A9', 'non-ASCII path bytes are percent-encoded, not encoded twice';
 };
 
 subtest 'run prints the response and returns the exit status' => sub {
@@ -199,6 +201,27 @@ subtest 'a failed startup exits 1' => sub {
     my ($status, undef, $err) = run_cli(Local::BadStart->new, '/');
     is $status, 1, 'exit 1';
     like $err, qr/no db/, 'the error is printed';
+};
+
+subtest 'a classic application that declines lifespan runs, as a server runs it' => sub {
+    my ($status, $out, $err) = run_cli(Local::Native->new(name => 'cli'), '/');
+    is $status, 0, 'exit 0' or diag $err;
+    is $out, 'hello cli', 'the body on STDOUT';
+};
+
+subtest 'a classic application that sends lifespan.startup.failed exits 1' => sub {
+    package Local::NativeBadStart {
+        use parent -norequire, 'PAGI::App';
+        use Future::AsyncAwait;
+        async sub call {
+            my ($self, $scope, $receive, $send) = @_;
+            await $receive->();
+            await $send->({ type => 'lifespan.startup.failed', message => "no db\n" });
+        }
+    }
+    my ($status, undef, $err) = run_cli(Local::NativeBadStart->new, '/');
+    is $status, 1, 'exit 1';
+    like $err, qr/no db/, 'the message is printed';
 };
 
 subtest 'run as a script: the exit status reaches the shell' => sub {
