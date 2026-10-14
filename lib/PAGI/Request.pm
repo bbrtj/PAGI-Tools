@@ -1424,11 +1424,14 @@ B<Key differences from L<PAGI::Stash>:>
 
 =over 4
 
-=item * C<state> is read-only, set during lifespan startup
+=item * C<state> is read-only, written (or declared) during lifespan startup
 
-=item * C<state> is shared across all requests in a worker
+=item * C<state> values are shared across all requests in a worker, except a
+C<per_request> value, built on its first C<get> in a request and shared by
+every view of that request (L<PAGI::State/LIFETIMES>)
 
-=item * L<PAGI::Stash> is per-request, writable by middleware/handlers
+=item * L<PAGI::Stash> is per-request, written by middleware and handlers and
+read below them
 
 =back
 

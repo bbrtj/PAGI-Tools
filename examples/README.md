@@ -85,6 +85,7 @@ Lifespan and background work:
 - `lifespan-utils` - lifespan hooks via `PAGI::Utils`
 - `test-lifespan-shutdown` - testing graceful lifespan shutdown hooks
 - `background-tasks` - work the client does not wait for: started at once, or after the response is delivered (`on_complete`)
+- `state-lifetimes` - Perl 5.40 a members list whose application state declares how long each value lives: an async connection and store built once per worker on first use (`singleton`), who is asking looked up once per request and shared by a middleware and the handler (`per_request`), a fresh form per submission (`factory`), and shutdown closing only what a request opened
 
 Each example has its own `README.md` explaining how to run it.
 

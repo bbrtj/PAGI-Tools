@@ -226,6 +226,7 @@ reader then sees where each function comes from.
 Loading C<PAGI::Tools> loads those modules. Importing from each module
 directly still works, and each module documents its own exports. Not exported
 here: L<PAGI::Pages>' factories (generic names such as C<not_found>),
+L<PAGI::State>'s lifetimes (C<singleton>, C<per_request>, C<factory>),
 L<PAGI::Utils> (plumbing), L<PAGI::Middleware::Builder> (its own DSL, whose
 default export C<mount> collides with this C<mount>; import Builder
 selectively, as L<PAGI::Routing/IMPORTS> shows), and the C<PAGI::Exception::*>

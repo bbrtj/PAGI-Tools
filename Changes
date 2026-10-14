@@ -18,6 +18,12 @@
     http_default, on_startup and on_shutdown; to_app builds them once into
     a PAGI::Compose application, composition returns the description for
     tests, and writing call is refused.
+  - PAGI::State lifetimes: singleton { }, per_request { } and factory { }
+    values in application state, built on first get -- once per worker,
+    once per request, or on every get -- by a builder that may be async (get
+    then gives a Future, shared by every caller of a pending build; a failed
+    or cancelled build is built again by the next get). PAGI::State::Deferred
+    is the seam for other lifetimes.
   - PAGI::Test::Response header_pairs: every response header as
     [name, value] pairs, in order, repeats (Set-Cookie) kept.
   - PAGI::Test::Client lifespan => 'auto': a server's default lifespan mode.
