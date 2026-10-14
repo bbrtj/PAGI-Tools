@@ -3,7 +3,7 @@ use warnings;
 use Test2::V0;
 use File::Spec;
 use FindBin qw($Bin);
-use Scalar::Util qw(blessed refaddr);
+use Scalar::Util qw(blessed);
 use lib "$Bin/../examples/endpoint-class-demo/lib";
 use lib "$Bin/../lib";
 
@@ -89,23 +89,23 @@ subtest 'ordinary assemblers expose immutable configured endpoint leaves' => sub
     is([sort keys %{$api_mount->app->named_routes}], [qw(
         /events /events/stream /index /show /tools /tools/status
     )], 'Main mounts the API object configured as one immutable Router');
-    isa_ok($status_socket->endpoint, 'MyApp::StatusSocket');
+    # endpoint() leaves a per-request wrapper: each connection or request
+    # builds its own object (behaviour in the next subtest).
+    isa_ok($status_socket->endpoint, 'PAGI::Endpoint::_PerRequest');
     isa_ok($static->endpoint, 'PAGI::App::File');
 
     my ($index, $show, $tools, $event_mount) = @{$api_routing->routes};
     is(ref($index->endpoint), 'CODE', 'API index uses an explicit binding closure');
-    isa_ok($show->endpoint, 'MyApp::API::User');
+    isa_ok($show->endpoint, 'PAGI::Endpoint::_PerRequest::HTTP');
     is($show->methods, [qw(GET HEAD OPTIONS)],
         'HTTP endpoint capability supplies exact leaf methods');
-    is(refaddr($show->endpoint->{users}), refaddr(\@users),
-        'configured HTTP endpoint retains the application user collection');
     is(scalar @{$index->middleware}, 1, 'API index retains token middleware');
     is(scalar @{$show->middleware}, 1, 'API user retains token middleware');
     is(ref($tools->app->routes->[0]->endpoint), 'CODE',
         'tool status uses an explicit binding closure');
 
     my $stream = $event_mount->app->routes->[0];
-    isa_ok($stream->endpoint, 'MyApp::API::Events');
+    isa_ok($stream->endpoint, 'PAGI::Endpoint::_PerRequest');
 
     for my $leaf ($home, $status_socket, $index, $show,
         $tools->app->routes->[0], $stream) {

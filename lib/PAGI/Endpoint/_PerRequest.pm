@@ -1,9 +1,12 @@
 package PAGI::Endpoint::_PerRequest;
 
-# The app object endpoint('Class') returns when the class's BUILD_APP returns
-# a builder (PAGI::Endpoint per_request_app). Each request, or each WebSocket
-# or SSE connection, gets the Request (the class RequestClass set, or a plain
-# PAGI::Request), the builder's app object built from it, and that object run.
+# The app object endpoint('Class') returns for a class built per request
+# (PAGI::Endpoint per_request_app): a class without BUILD_APP, built with
+# new, or one whose BUILD_APP returns a builder. Each request, or each
+# WebSocket or SSE connection, gets its own app object from the builder, and
+# that object run. A builder from BUILD_APP is given the Request (the class
+# RequestClass set, or a plain PAGI::Request); a class built with new needs
+# none, so none is built here: the object's own to_app makes what it needs.
 # Internal: not constructed directly, not public API.
 
 use strict;
@@ -17,20 +20,23 @@ use PAGI::Utils qw(invoke_app);
 
 sub new {
     my ($class, %args) = @_;
-    return bless { class => $args{class}, build => $args{build} }, $class;
+    return bless { class => $args{class}, build => $args{build},
+        request => $args{request} // 1 }, $class;
 }
 
 sub to_app {
     my ($self) = @_;
-    my $class = $self->{class};
-    my $build = $self->{build};
+    my ($class, $build, $wants_request) = @{$self}{qw(class build request)};
+    my $made_by = $wants_request ? "$class->BUILD_APP's builder" : "$class->new";
 
     return async sub {
         my ($scope, $receive, $send) = @_;
-        my $request = PAGI::Request::_Factory::request_for_scope($scope, $receive);
+        my $request = $wants_request
+            ? PAGI::Request::_Factory::request_for_scope($scope, $receive)
+            : undef;
         # A builder returns an app object, or a Future of one (an async builder).
         my $app = await Future->wrap($build->($request));
-        croak "$class->BUILD_APP's builder must return an app object (one with to_app);"
+        croak "$made_by must return an app object (one with to_app);"
             . ' a native PAGI application goes through as_app_object()'
             unless blessed($app) && $app->can('to_app');
         await invoke_app($app, $scope, $receive, $send);
