@@ -47,6 +47,10 @@ for keys that may or may not be present.
 The stash lives in the PAGI scope hashref and is shared across all
 middleware, handlers, and protocol objects processing the same request.
 
+The stash holds what code I<writes> for the layers below it. A value the
+application declares once and wants built on first use, per request, is a
+C<per_request> value in L<PAGI::State> instead (L<PAGI::State/LIFETIMES>).
+
 =head1 FUNCTIONS
 
 =head2 stash
@@ -226,5 +230,7 @@ __END__
 =head1 SEE ALSO
 
 L<PAGI::Session> - Session data helper with the same accessor conventions
+
+L<PAGI::State/LIFETIMES> - values built on first use, per request among them
 
 =cut

@@ -4,11 +4,13 @@ use strict;
 use warnings;
 use Carp qw(croak);
 use Exporter qw(import);
+use Scalar::Util qw(blessed);
+use PAGI::State::Deferred ();
 use PAGI::Utils::Scope ();
 use overload '%{}' => '_deprecated_hashref', fallback => 1;
 
 our @EXPORT = ();
-our @EXPORT_OK = qw(app_state);
+our @EXPORT_OK = qw(app_state singleton per_request factory);
 our %EXPORT_TAGS = (all => [@EXPORT_OK]);
 
 my %WARNED;
@@ -31,6 +33,22 @@ PAGI::State - Strict read-oriented access to application state
     my $state = app_state($event_stream); # PAGI::SSE
     my $db = $state->get('db');
     my $optional = $state->get('optional', undef);
+
+Values built on first use, for as long as they should live (see
+L</LIFETIMES>):
+
+    use PAGI::State qw(singleton per_request factory);
+
+    # in lifespan startup
+    $state->{db}     = singleton { my ($state) = @_; MyDB->connect };          # a Future
+    $state->{viewer} = per_request async sub ($state, $request) {
+        my $db = await $state->get('db');
+        await $db->user_by_token($request->cookie('token'));
+    };
+    $state->{form}   = factory { my ($state) = @_; MyForm->new };
+
+    # in a handler
+    my $viewer = await $request->state->get('viewer');
 
 =head1 DESCRIPTION
 
@@ -61,6 +79,81 @@ later does C<< $state->{count}++ >> or C<< $state->{queue} = [] >> changes
 only the lifespan's copy, and request scopes desync. Store a container at
 startup and change what is inside it.
 
+Startup may also I<declare> a value instead of building it: see
+L</LIFETIMES>.
+
+=head1 LIFETIMES
+
+A value in state can be declared with how long it lives, and built the first
+time something asks for it, as a Moo lazy attribute is:
+
+    $state->{db}      = singleton   { my ($state) = @_; ... };
+    $state->{viewer}  = per_request { my ($state, $source) = @_; ... };
+    $state->{form}    = factory     { my ($state, $source) = @_; ... };
+
+=over 4
+
+=item * C<singleton>: built on the first C<get>, then the same value for the
+life of the worker. Each worker runs its own lifespan, so each has its own.
+
+=item * C<per_request>: built on the first C<get> in a request, then the same
+value for that request, whichever view asks: a middleware's
+C<< app_state($scope) >> and the handler's C<< $request->state >> share it. On
+a WebSocket or SSE connection, a request is the connection: the value lives for
+the connection and is not refreshed during it. Asked for during lifespan
+startup or shutdown, it dies.
+
+=item * C<factory>: built on every C<get>.
+
+=back
+
+Every builder receives C<$state>, a view of the same state through which it
+C<get>s what it depends on, in any order. Get other keys through that
+C<$state>, never through C<< $source->state >>, which would escape the cycle
+check. C<per_request> and C<factory> builders also receive C<$source>, what
+the asking view was made from: the L<PAGI::Request> (or L<PAGI::WebSocket>,
+L<PAGI::SSE>) for C<< $request->state >>, the scope hashref for
+C<< app_state($scope) >>. A middleware that wants its builders to get a
+Request asks through one: C<< PAGI::Request->new($scope, $receive)->state >>.
+
+A builder may be a block, a C<sub {...}> or an C<async sub {...}>. In the
+middle of a list, a C<sub> or C<async sub> builder takes the rest of the list
+as arguments, so parenthesise it there; a block never needs it:
+
+    my %declared = (a => (singleton async sub ($state) { ... }), b => ...);
+
+B<Async builders.> C<get> returns what the builder returns, so an async
+builder's value is a L<Future>, which the caller awaits:
+C<< my $db = await $request->state->get('db') >>. Forgetting the C<await>
+gives a Future where an object was expected, which fails at the first method
+call. A pending build is shared: two requests asking at once await one build,
+each through a Future of its own, so a caller that goes away (its request is
+cancelled) cancels only its own and the build runs on for the others. A build
+that fails or is cancelled is not kept: everyone waiting gets the failure, and
+the next C<get> builds again. A builder that dies keeps nothing either.
+
+B<Singletons and requests.> A singleton outlives the request that first asks
+for it, so it builds with no request: its builder gets no C<$source>, asking
+it for a C<per_request> value dies (it would be kept for the life of the
+worker), and a C<factory> it asks for gets no C<$source> either.
+
+B<Cycles.> A builder that, through other builders, asks for its own key dies
+naming the chain: C<State key cycle: a -E<gt> b -E<gt> a>. Inside an async
+builder that fails its Future.
+
+B<Shutdown.> A singleton has C<built>, true once a build has started and has
+not failed or been cancelled, and C<value>, what was kept as C<get> gives it.
+Close what a request opened without opening it to close it:
+
+    async sub on_shutdown ($self, $state, $scope) {
+        (await $state->{db}->value)->disconnect if $state->{db}->built;
+    }
+
+Awaiting a build still pending at shutdown holds shutdown until it settles.
+
+L<PAGI::State::Deferred> is the seam: a subclass with its own C<resolve> is
+another lifetime, or a bridge to a richer container.
+
 =head1 FUNCTIONS
 
 =head2 app_state
@@ -75,9 +168,21 @@ C<scope> method, including L<PAGI::Request>, L<PAGI::WebSocket>, and
 L<PAGI::SSE>. This function is an opt-in named export and is also available
 through the C<:all> tag. Nothing is exported by default.
 
+=head2 singleton, per_request, factory
+
+    $state->{db} = singleton { my ($state) = @_; ... };
+
+Each takes a builder (a block, C<sub {...}> or C<async sub {...}>) and returns
+a L<PAGI::State::Deferred> for lifespan startup to store; see L</LIFETIMES>.
+Opt-in exports, also in C<:all>; L<PAGI::Tools> does not re-export them.
+
 =cut
 
 sub app_state { return __PACKAGE__->new(@_) }
+
+sub singleton (&)   { return PAGI::State::Deferred::Singleton->new($_[0]) }
+sub per_request (&) { return PAGI::State::Deferred::PerRequest->new($_[0]) }
+sub factory (&)     { return PAGI::State::Deferred::Factory->new($_[0]) }
 
 =head1 CONSTRUCTOR
 
@@ -96,7 +201,9 @@ sub new {
     return undef unless exists $scope->{state};
     croak 'PAGI::State requires scope state to be a hashref'
         unless ref($scope->{state}) eq 'HASH';
-    return bless [$scope->{state}], $class;
+    # The state, whether it is the empty view, what the view was made from,
+    # the scope, whether a singleton builds through it, the keys being built.
+    return bless [$scope->{state}, 0, $arguments[0], $scope], $class;
 }
 
 # The facade a handler gets on a scope with no application state: empty, and
@@ -128,39 +235,73 @@ sub get {
     if (!exists $data->{$key}) {
         return $default[0] if @default;
         croak "State key '$key' does not exist: $NO_STATE" if $self->[1];
-        my @keys = sort CORE::keys %{$data};
+        my @keys = sort $self->keys;
         croak "State key '$key' does not exist. Available keys: "
             . (@keys ? join(', ', @keys) : '(none)');
     }
-    return $data->{$key};
+    my $value = $data->{$key};
+    return $value unless blessed($value) && $value->isa('PAGI::State::Deferred');
+    my @chain = @{ $self->[5] // [] };
+    croak 'State key cycle: ' . join(' -> ', @chain, $key)
+        if grep { $_ eq $key } @chain;
+    return $value->resolve($self->_building($key), $self->[2]);
+}
+
+# The key whose builder this view was made for: the end of the chain.
+sub _building_key { return $_[0][5][-1] }
+
+# The view a builder works through: the same state, with $key on the chain.
+sub _building {
+    my ($self, $key) = @_;
+    return bless [@{$self}[0 .. 4], [@{ $self->[5] // [] }, $key]], ref $self;
+}
+
+# The same state, seen with no request: what a singleton builds through.
+sub _without_request {
+    my ($self) = @_;
+    return bless [$self->[0], $self->[1], undef, $self->[3], 1, $self->[5]], ref $self;
+}
+
+# The per-request cache, in the request's copy of the state.
+sub _request_cache {
+    my ($self) = @_;
+    croak 'a per_request value was asked for while building a singleton,'
+        . ' which would keep it for the life of the worker'
+        if $self->[4];
+    croak 'a per_request value was asked for outside a request (lifespan startup or shutdown)'
+        if ($self->[3]{type} // '') eq 'lifespan';
+    return $self->[0]{'pagi.state.per_request'} //= {};
 }
 
 =head2 exists
 
-Returns true when a key exists in the application state.
+Returns true when a key exists in the application state. Keys beginning
+C<pagi.state.> are reserved for PAGI::State's own use and are not reported.
 
 =cut
 
 sub exists {
     my ($self, $key) = @_;
+    return 0 if $key =~ /\Apagi\.state\./;
     return exists $self->[0]{$key} ? 1 : 0;
 }
 
 =head2 keys
 
-Returns the application state keys.
+Returns the application state keys, without the reserved C<pagi.state.> keys.
 
 =cut
 
 sub keys {
     my ($self) = @_;
-    return CORE::keys %{$self->[0]};
+    return grep { !/\Apagi\.state\./ } CORE::keys %{$self->[0]};
 }
 
 =head2 data
 
 Returns the backing hashref. This is the explicit escape hatch for integrations
-that require raw hash access. On the empty facade of a scope with no
+that require raw hash access: it holds declared values unresolved (their
+L<PAGI::State::Deferred> objects) and the reserved C<pagi.state.> keys. On the empty facade of a scope with no
 application state it croaks, naming the likely cause, rather than hand back a
 hash that nothing else would see.
 
@@ -210,6 +351,7 @@ real hashref is required.
 
 =head1 SEE ALSO
 
-L<PAGI::Request>, L<PAGI::WebSocket>, L<PAGI::SSE>, L<PAGI::Stash>
+L<PAGI::State::Deferred>, L<PAGI::Request>, L<PAGI::WebSocket>, L<PAGI::SSE>,
+L<PAGI::Stash>
 
 =cut
