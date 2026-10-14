@@ -62,13 +62,13 @@ sub run_if_script {
 sub run {
     my ($self, @args) = @_;
     if (!@args || $args[0] =~ /\A(?:--help|-h)\z/) {
-        print { @args ? *STDOUT : *STDERR } $self->_usage;
+        print { @args ? *STDOUT : *STDERR } _usage();
         return @args ? 0 : 2;
     }
-    my @request = eval { $self->_parse_request(@args) };
-    unless (@request) { print STDERR $@, $self->_usage; return 2 }
+    my @request = eval { _parse_request(@args) };
+    unless (@request) { print STDERR $@, _usage(); return 2 }
 
-    my ($response, $shutdown_error) = eval { $self->_request(@request) };
+    my ($response, $shutdown_error) = eval { _request($self, @request) };
     unless ($response) { print STDERR $@; return 1 }
 
     binmode STDOUT;
@@ -82,10 +82,13 @@ sub run {
     return $response->status >= 400 ? 1 : 0;
 }
 
+# The command line's helpers are plain functions, called as functions, not
+# methods: a subclass's own _request or _usage cannot replace them.
+
 # [METHOD] PATH [Name: value | Content: text | name=value ...] -> the
 # arguments for one PAGI::Test::Client request. Dies with a usage message.
 sub _parse_request {
-    my ($self, @args) = @_;
+    my (@args) = @_;
     my $method = @args && $IS_METHOD{ $args[0] } ? shift @args : 'GET';
     my $target = shift @args;
     die "a path is required\n" unless defined $target;
@@ -126,15 +129,15 @@ sub _parse_request {
     return ($method, $path, %options);
 }
 
-# One request through the application, in-process, with lifespan startup
-# before it and shutdown after, as a server's default (auto) mode runs it:
-# an application that declines lifespan runs without it. Returns the
-# PAGI::Test::Response and, when lifespan shutdown failed after the request
-# was answered, its error.
+# One request through $app, in-process, with lifespan startup before it and
+# shutdown after, as a server's default (auto) mode runs it: an application
+# that declines lifespan runs without it. Returns the PAGI::Test::Response
+# and, when lifespan shutdown failed after the request was answered, its
+# error.
 sub _request {
-    my ($self, $method, $path, %options) = @_;
+    my ($app, $method, $path, %options) = @_;
     require PAGI::Test::Client;
-    my $client = PAGI::Test::Client->new(app => $self, lifespan => 'auto');
+    my $client = PAGI::Test::Client->new(app => $app, lifespan => 'auto');
     $client->start;
     my $call = lc $method;
     my $response = eval { $client->$call($path, %options) };

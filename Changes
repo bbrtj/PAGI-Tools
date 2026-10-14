@@ -25,7 +25,9 @@
     returns without signalling startup) runs without it; only
     lifespan.startup.failed fails start. lifespan => 1 stays strict, and a
     decline after off-loop I/O now fails start with the application's own
-    exception at once instead of the drive timeout.
+    exception at once instead of the drive timeout. lifespan => 'on' is
+    strict, and lifespan => 'off', a true string, is refused instead of
+    turning strict lifespan on.
   - PAGI::Utils::TextDecoder: decodes a byte stream to text as it arrives
     (Encode's stateful decoder), strict or with U+FFFD; body_stream's decode
     is built on it.

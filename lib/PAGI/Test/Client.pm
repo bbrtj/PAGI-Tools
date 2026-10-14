@@ -32,6 +32,10 @@ sub new {
     my ($class, %args) = @_;
 
     croak "app is required" unless $args{app};
+    # Any true value is strict, as it always was; 'off' is a true string,
+    # so it is refused rather than read as on.
+    croak "PAGI::Test::Client lifespan => 'off' is not off: pass 0"
+        if defined $args{lifespan} && $args{lifespan} eq 'off';
     my $root_path = $args{root_path} // '';
     croak "PAGI::Test::Client root_path must be '' or /segment... with no trailing /, empty, . or .. segment"
         unless $root_path eq ''
@@ -1131,9 +1135,11 @@ these default headers.
 If true, the client will send lifespan.startup when started and
 lifespan.shutdown when stopped. Default is false (most tests don't need it).
 
-C<< lifespan => 1 >> (any true value but C<'auto'>) is strict, a server's
-C<on> mode: an application that declines lifespan, by raising on the
-C<lifespan> scope or returning without signalling startup, fails C<start>.
+C<< lifespan => 1 >> (any true value but C<'auto'>, including the server's
+spelling C<'on'>) is strict, a server's C<on> mode: an application that
+declines lifespan, by raising on the C<lifespan> scope or returning without
+signalling startup, fails C<start>. Lifespan off is C<0>; the string
+C<'off'>, which Perl reads as true, is refused.
 
 C<< lifespan => 'auto' >> is a server's default mode (see
 L<PAGI::Spec::Lifespan>): an application that declines runs without

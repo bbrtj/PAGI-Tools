@@ -151,19 +151,19 @@ sub run_cli {
 
 subtest 'the grammar' => sub {
     my $app = Local::Echo->new;
-    is [($app->_parse_request('/echo'))[0, 1]], ['GET', '/echo'], 'the method defaults to GET';
-    my ($m, $p, %o) = $app->_parse_request(GET => '/echo?a=1', 'X-Thing:', 'v', 'b=2 3');
+    is [(PAGI::App::_parse_request('/echo'))[0, 1]], ['GET', '/echo'], 'the method defaults to GET';
+    my ($m, $p, %o) = PAGI::App::_parse_request(GET => '/echo?a=1', 'X-Thing:', 'v', 'b=2 3');
     is [$m, $p, $o{headers}], ['GET', '/echo?a=1&b=2%203', [['X-Thing', 'v']]], 'a header; a field joins the query';
-    (undef, undef, %o) = $app->_parse_request(POST => '/echo', 'b=2');
+    (undef, undef, %o) = PAGI::App::_parse_request(POST => '/echo', 'b=2');
     is $o{form}, [['b', '2']], 'a field is a form body for POST';
-    (undef, undef, %o) = $app->_parse_request(POST => '/raw', 'Content:', 'hi');
+    (undef, undef, %o) = PAGI::App::_parse_request(POST => '/raw', 'Content:', 'hi');
     is $o{body}, 'hi', 'Content: is the body';
-    (undef, $p, %o) = $app->_parse_request('ann:pw@/echo');
+    (undef, $p, %o) = PAGI::App::_parse_request('ann:pw@/echo');
     is [$p, $o{headers}[0]], ['/echo', ['Authorization', 'Basic YW5uOnB3']], 'user:pass@';
-    like dies { $app->_parse_request('FOO', '/x') }, qr/not a method or a path: 'FOO'/, 'unknown method';
-    like dies { $app->_parse_request('GET') }, qr/a path is required/, 'a method with no path';
-    like dies { $app->_parse_request(POST => '/x', 'Content:', 'a', 'b=1') }, qr/cannot be combined/, 'Content: with fields';
-    (undef, $p) = $app->_parse_request("/caf\xC3\xA9?q=\xC3\xA9");
+    like dies { PAGI::App::_parse_request('FOO', '/x') }, qr/not a method or a path: 'FOO'/, 'unknown method';
+    like dies { PAGI::App::_parse_request('GET') }, qr/a path is required/, 'a method with no path';
+    like dies { PAGI::App::_parse_request(POST => '/x', 'Content:', 'a', 'b=1') }, qr/cannot be combined/, 'Content: with fields';
+    (undef, $p) = PAGI::App::_parse_request("/caf\xC3\xA9?q=\xC3\xA9");
     is $p, '/caf%C3%A9?q=%C3%A9', 'non-ASCII path bytes are percent-encoded, not encoded twice';
 };
 
@@ -222,6 +222,20 @@ subtest 'a classic application that sends lifespan.startup.failed exits 1' => su
     my ($status, undef, $err) = run_cli(Local::NativeBadStart->new, '/');
     is $status, 1, 'exit 1';
     like $err, qr/no db/, 'the message is printed';
+};
+
+subtest "a subclass's own _request, _parse_request, _usage and _escape do not reach the command line" => sub {
+    package Local::OwnHelpers {
+        use parent -norequire, 'Local::Composed';
+        sub _request       { 'my own helper' }
+        sub _parse_request { 'my own parser' }
+        sub _usage         { 'my own usage' }
+        sub _escape        { 'my own escape' }
+    }
+    my ($status, $out, $err) = run_cli(Local::OwnHelpers->new, GET => '/', 'a=b c');
+    is [$status, $out], [0, 'composed'], 'run answers the request' or diag $err;
+    ($status, undef, $err) = run_cli(Local::OwnHelpers->new);
+    like $err, qr/\AUsage: /, "and prints PAGI::App's usage";
 };
 
 subtest 'run as a script: the exit status reaches the shell' => sub {

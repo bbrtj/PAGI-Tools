@@ -413,6 +413,14 @@ subtest 'lifespan => 1 stays strict: a decline is a startup failure' => sub {
     ok !$client->{started}, 'the client is not started';
 };
 
+subtest "lifespan => 'on' is strict; 'off' is refused, not read as true" => sub {
+    my $client = PAGI::Test::Client->new(app => $http_only_app, lifespan => 'on');
+    like dies { with_timeout(20, sub { $client->start }) },
+        qr/Unsupported scope type: lifespan/, "'on' is strict, the server's spelling";
+    like dies { PAGI::Test::Client->new(app => $http_only_app, lifespan => 'off') },
+        qr/lifespan => 'off' is not off: pass 0/, "'off' croaks naming the fix";
+};
+
 subtest 'a decline that arrives after off-loop I/O resolves promptly' => sub {
     unless (eval { require Future::IO::Impl::IOAsync; 1 }) {
         skip_all('Future::IO::Impl::IOAsync required to drive real off-loop I/O');
