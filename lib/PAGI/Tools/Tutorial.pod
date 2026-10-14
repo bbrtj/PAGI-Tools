@@ -1587,9 +1587,10 @@ module with C<< __PACKAGE__->run_if_script >> in place of C<1;>:
 
     __PACKAGE__->run_if_script;
 
-Middleware, a default response and lifespan are methods too
-(C<app_middleware>, C<http_default>, C<on_startup>, C<on_shutdown>); each runs
-once, when the application is built, never per request.
+Middleware and a default response are methods too (C<app_middleware>,
+C<http_default>); like C<routes>, they run once, when the application is
+built, never per request. Lifespan is two more, C<on_startup> and
+C<on_shutdown>, which run when the server starts and stops.
 
 Serve it:
 

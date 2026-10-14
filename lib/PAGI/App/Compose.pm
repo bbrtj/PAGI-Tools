@@ -162,9 +162,7 @@ Optional. Returns the root Router's C<http_default>: a Pages value, a
 one-Request handler, or an application (see L<PAGI::Compose/routes>). The
 default, C<undef>, means none.
 
-=head2 on_startup
-
-=head2 on_shutdown
+=head2 on_startup, on_shutdown
 
     sub on_startup {
         my ($self, $state, $scope) = @_;

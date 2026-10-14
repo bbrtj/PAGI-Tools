@@ -47,6 +47,7 @@ package Local::Layered      { use parent -norequire, 'Local::StartOnly';
 package Local::AsyncStart   { use parent -norequire, 'Local::Hello'; use Future::AsyncAwait;
                               async sub on_startup { my ($self, $s) = @_; await Future->done; $s->{async} = 1 } }
 package Local::DyingStart   { use parent -norequire, 'Local::Hello'; sub on_startup { die "hook broke\n" } }
+package Local::DyingStop    { use parent -norequire, 'Local::Hello'; sub on_shutdown { die "shutdown broke\n" } }
 package Local::WithCall     { use parent -norequire, 'Local::Hello'; sub call { } }
 package Local::NoRoutes     { use parent -norequire, 'PAGI::App::Compose' }
 package Local::ListRoutes   { use parent -norequire, 'PAGI::App::Compose'; use PAGI::Tools qw(response route);
@@ -194,6 +195,9 @@ PM
     ($status, undef, my $err) = run_cli(Local::DyingStart->new, '/');
     is $status, 1, 'a dying on_startup exits 1';
     like $err, qr/hook broke/, 'with its message';
+    ($status, $out, $err) = run_cli(Local::DyingStop->new, '/');
+    is [$status, $out], [1, 'hello'], 'a dying on_shutdown exits 1, the response still printed';
+    like $err, qr{\AHTTP/1\.1 200\n.*shutdown broke}s, 'the status, then the shutdown error';
 };
 
 done_testing;

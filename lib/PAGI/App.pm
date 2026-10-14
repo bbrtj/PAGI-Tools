@@ -57,8 +57,8 @@ sub run_if_script {
 
 # What running the module does: one HTTP request, printed. Override it to
 # give the module commands of its own, and call SUPER::run for the request.
-# Returns the exit status: 0 for 1xx-3xx, 1 for 4xx-5xx or a failed startup,
-# 2 for a usage error.
+# Returns the exit status: 0 for 1xx-3xx, 1 for 4xx-5xx or a failed lifespan
+# startup or shutdown, 2 for a usage error.
 sub run {
     my ($self, @args) = @_;
     if (!@args || $args[0] =~ /\A(?:--help|-h)\z/) {
@@ -68,7 +68,7 @@ sub run {
     my @request = eval { $self->_parse_request(@args) };
     unless (@request) { print STDERR $@, $self->_usage; return 2 }
 
-    my $response = eval { $self->_request(@request) };
+    my ($response, $shutdown_error) = eval { $self->_request(@request) };
     unless ($response) { print STDERR $@; return 1 }
 
     binmode STDOUT;
@@ -78,6 +78,7 @@ sub run {
     print STDERR "\n";
     print STDERR $response->exception, "\n" if defined $response->exception;
     print STDOUT $response->content;
+    if (defined $shutdown_error) { print STDERR $shutdown_error; return 1 }
     return $response->status >= 400 ? 1 : 0;
 }
 
@@ -128,7 +129,8 @@ sub _parse_request {
 # One request through the application, in-process, with lifespan startup
 # before it and shutdown after, as a server's default (auto) mode runs it:
 # an application that declines lifespan runs without it. Returns the
-# PAGI::Test::Response.
+# PAGI::Test::Response and, when lifespan shutdown failed after the request
+# was answered, its error.
 sub _request {
     my ($self, $method, $path, %options) = @_;
     require PAGI::Test::Client;
@@ -137,9 +139,9 @@ sub _request {
     my $call = lc $method;
     my $response = eval { $client->$call($path, %options) };
     my $error = $@;
-    $client->stop;
+    my $shutdown_error = eval { $client->stop; 1 } ? undef : $@;
     die $error unless $response;
-    return $response;
+    return ($response, $shutdown_error);
 }
 
 sub _escape {
@@ -324,7 +326,9 @@ body's bytes go to STDOUT, so C<< perl lib/MyApp.pm GET /x > out.json >>
 keeps only the body.
 
 =item * The exit status is 0 for 1xx to 3xx, 1 for 4xx and 5xx or a failed
-startup, and 2 for a usage error. With no arguments the usage goes to STDERR
+lifespan startup or shutdown, and 2 for a usage error. A shutdown that fails
+after the request was answered still prints the response, then its error on
+STDERR. With no arguments the usage goes to STDERR
 (exit 2); with C<--help> or C<-h>, to STDOUT (exit 0).
 
 =back
