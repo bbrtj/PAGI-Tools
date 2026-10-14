@@ -44,15 +44,18 @@ my $state_import_error;
 like($state_import_error, qr/"?state"? is not exported|Can't continue/i,
     'state is not an export');
 
-my $compiled = eval q{
-    package Local::State::V540;
-    use v5.40;
-    use PAGI::State qw(app_state);
-    sub build { app_state({ type => 'http', state => { db => 'pool' } }) }
-    1;
-};
-ok($compiled, 'app_state imports in a v5.40 compilation unit') or diag($@);
-isa_ok(Local::State::V540::build(), ['PAGI::State'], 'compiled import invokes app_state');
+SKIP: {
+    skip 'a use v5.40 compilation unit needs Perl 5.40', 2 if $] < 5.040;
+    my $compiled = eval q{
+        package Local::State::V540;
+        use v5.40;
+        use PAGI::State qw(app_state);
+        sub build { app_state({ type => 'http', state => { db => 'pool' } }) }
+        1;
+    };
+    ok($compiled, 'app_state imports in a v5.40 compilation unit') or diag($@);
+    isa_ok(Local::State::V540::build(), ['PAGI::State'], 'compiled import invokes app_state');
+}
 
 subtest 'construction and read access' => sub {
     my $scope = { type => 'http', state => { db => 'pool' } };

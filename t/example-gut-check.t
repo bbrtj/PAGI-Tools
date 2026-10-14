@@ -2,6 +2,8 @@ use strict;
 use warnings;
 use utf8;
 use Test2::V0;
+
+BEGIN { plan skip_all => 'examples/gut-check requires Perl 5.40' if $] < 5.040 }
 use FindBin qw($Bin);
 use lib "$Bin/../lib";
 use lib "$Bin/lib";

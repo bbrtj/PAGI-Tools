@@ -627,6 +627,7 @@ subtest 'File refuses with plain text and the protocol fields' => sub {
 };
 
 subtest "File's documented refuse example runs as published" => sub {
+    skip_all 'the example is run under use v5.40' if $] < 5.040;
     open my $fh, '<', 'lib/PAGI/App/File.pm' or die $!;
     my $pod = do { local $/; <$fh> };
     my ($example) = $pod =~ /^((?:    [^\n]*\n|\n)*?    [^\n]*pagi\.file_failure[^\n]*\n(?:    [^\n]*\n|\n)*)/m;

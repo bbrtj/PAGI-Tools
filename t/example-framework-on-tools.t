@@ -8,10 +8,8 @@ use PAGI::Test::Client;
 # Tiny, the small framework in examples/framework-on-tools/lib, built on
 # PAGI-Tools: each test pins one seam the framework stands on.
 
-if ($] < 5.040) {
-    plan skip_all => 'examples/framework-on-tools requires Perl 5.40';
-    exit 0;
-}
+# In BEGIN: the test loads the example's Tiny with use, at compile time.
+BEGIN { plan skip_all => 'examples/framework-on-tools requires Perl 5.40' if $] < 5.040 }
 
 my $app = do "$Bin/../examples/framework-on-tools/app.pl";
 is($@, '', 'the example loads');
