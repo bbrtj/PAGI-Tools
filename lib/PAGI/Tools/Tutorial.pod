@@ -1571,6 +1571,49 @@ L<PAGI::Routing/DELIBERATE DIFFERENCES FROM STARLETTE> lists where PAGI
 routing departs from Starlette, and L<PAGI::Compose/STARLETTE COMPARISON>
 covers lifespan.
 
+=head2 7.8 An Application in One Module
+
+An application can live in one module under F<lib/>, with no F<app.pl>.
+Subclass L<PAGI::App::Compose>, return the routes from C<routes>, and end the
+module with C<< __PACKAGE__->run_if_script >> in place of C<1;>:
+
+    package MyApp;
+    use strict;
+    use warnings;
+    use parent 'PAGI::App::Compose';
+    use PAGI::Tools qw(response route);
+
+    sub routes { [ route('/' => sub { response('Text', 'hello') }) ] }
+
+    __PACKAGE__->run_if_script;
+
+Middleware and a default response are methods too (C<app_middleware>,
+C<http_default>); like C<routes>, they run once, when the application is
+built, never per request. Lifespan is two more, C<on_startup> and
+C<on_shutdown>, which run when the server starts and stops.
+
+Serve it:
+
+    pagi-server -Ilib --app lib/MyApp.pm
+
+Try one request from the shell, without a server; the status and headers go
+to STDERR and the body to STDOUT:
+
+    perl -Ilib lib/MyApp.pm GET /
+
+Test it with L<PAGI::Test::Client>. Loading the module builds nothing, so
+C<use MyApp> is safe:
+
+    use MyApp;
+    my $client = PAGI::Test::Client->new(app => MyApp->new);
+    is $client->get('/')->text, 'hello';
+
+An application with C<on_startup> is tested with
+C<< PAGI::Test::Client->run >>, which runs lifespan. A classic application
+writes C<call>, the PAGI application itself, on L<PAGI::App>.
+L<PAGI::App::Compose> has the details, and C<examples/endpoint-class-demo> a
+larger application in this shape.
+
 =head1 SEE ALSO
 
 =over 4

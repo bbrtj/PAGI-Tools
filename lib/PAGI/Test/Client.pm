@@ -32,6 +32,10 @@ sub new {
     my ($class, %args) = @_;
 
     croak "app is required" unless $args{app};
+    # Any true value is strict, as it always was; 'off' is a true string,
+    # so it is refused rather than read as on.
+    croak "PAGI::Test::Client lifespan => 'off' is not off: pass 0"
+        if defined $args{lifespan} && $args{lifespan} eq 'off';
     my $root_path = $args{root_path} // '';
     croak "PAGI::Test::Client root_path must be '' or /segment... with no trailing /, empty, . or .. segment"
         unless $root_path eq ''
@@ -626,7 +630,9 @@ sub start {
     $self->{lifespan_shutdown} = $shutdown;
     $self->{lifespan_future}   = $self->{app}->($scope, $receive, $send);
 
-    $self->_await_lifespan_phase($startup, 'startup');
+    # In auto mode an application that unwound without signalling startup
+    # declined lifespan: it runs without it, and stop() sends no shutdown.
+    $self->{lifespan_declined} = !$self->_await_lifespan_phase($startup, 'startup');
 
     $self->{started} = 1;
     return $self;
@@ -636,6 +642,7 @@ sub stop {
     my ($self) = @_;
     return $self unless $self->{started};
     return $self unless $self->{lifespan};
+    if ($self->{lifespan_declined}) { $self->{started} = 0; return $self }
 
     # The server delivers the shutdown event to the app now -- declare the
     # phase current before doing so, since a synchronous shutdown hook's
@@ -655,41 +662,39 @@ sub stop {
     return $self;
 }
 
-# Drives $result_future (the startup or shutdown result Future built in
-# start()) to readiness, following the same three-path resolution for both
-# phases: a result already signaled synchronously, the app's lifespan
-# coroutine having unwound without ever signaling a result for this phase, or
-# a real off-loop wait needing the event loop driven up to a timeout. ->get
-# rethrows on a .failed result or the backstop timeout, so this dies exactly
-# as the pre-B11 start() always did for startup -- stop() now does the same
-# for shutdown.
+# Waits for $result_future (the startup or shutdown result Future built in
+# start()) or for the app's lifespan coroutine to unwind, whichever comes
+# first, driving the event loop up to a timeout when the app suspended on
+# real off-loop I/O. A signaled result is returned through ->get, which
+# rethrows a .failed result. An app that unwound without signaling this
+# phase's result declined lifespan if this is startup in auto mode (returns
+# false); otherwise its own exception is rethrown, or the protocol violation
+# reported. Returns true when the phase completed.
 sub _await_lifespan_phase {
     my ($self, $result_future, $phase_name) = @_;
+    my $app_future = $self->{lifespan_future};
+
+    unless ($result_future->is_ready || $app_future->is_ready) {
+        # A Future of its own, so neither the result nor the app's
+        # long-lived coroutine is cancelled when the other one wins.
+        my $either = Future->new;
+        $_->on_ready(sub { $either->done unless $either->is_ready })
+            for $result_future, $app_future;
+        PAGI::Test::_Drive::drive($either, $PAGI::Test::_Drive::TIMEOUT)
+            or die "PAGI lifespan $phase_name did not complete within "
+                . "$PAGI::Test::_Drive::TIMEOUT seconds\n";
+    }
 
     if ($result_future->is_ready) {
-        # A synchronous hook has already signaled by the time we get here.
-        # Rethrow on failure; otherwise this is a no-op. No event loop
-        # involved in this common path.
         $result_future->get;
-        return;
+        return 1;
     }
 
-    if ($self->{lifespan_future}->is_ready) {
-        # The app unwound without signaling this phase's result at all.
-        # Surface its own exception if it failed, otherwise report the
-        # protocol violation rather than waiting for a signal that will
-        # never come.
-        $self->{lifespan_future}->get;
-        croak "PAGI lifespan app returned without sending "
-            . "lifespan.${phase_name}.complete or lifespan.${phase_name}.failed";
-    }
+    return 0 if $phase_name eq 'startup' && $self->{lifespan} eq 'auto';
 
-    # The hook suspended on real off-loop I/O: drive the event loop until it
-    # signals, as a request is driven.
-    PAGI::Test::_Drive::drive($result_future, $PAGI::Test::_Drive::TIMEOUT)
-        or die "PAGI lifespan $phase_name did not complete within "
-            . "$PAGI::Test::_Drive::TIMEOUT seconds\n";
-    $result_future->get;
+    $app_future->get;
+    croak "PAGI lifespan app returned without sending "
+        . "lifespan.${phase_name}.complete or lifespan.${phase_name}.failed";
 }
 
 sub state { shift->{state} // {} }
@@ -1076,7 +1081,7 @@ and C<http.response.body> refusal events are core WWW 0.6 behavior.
     my $client = PAGI::Test::Client->new(
         app      => $app,           # Required: PAGI app coderef
         headers  => { ... },        # Optional: default headers
-        lifespan => 1,              # Optional: enable lifespan (default: 0)
+        lifespan => 1,              # Optional: 1 (strict), 'auto', or 0 (default)
     );
 
 =head3 Options
@@ -1129,6 +1134,18 @@ these default headers.
 
 If true, the client will send lifespan.startup when started and
 lifespan.shutdown when stopped. Default is false (most tests don't need it).
+
+C<< lifespan => 1 >> (any true value but C<'auto'>, including the server's
+spelling C<'on'>) is strict, a server's C<on> mode: an application that
+declines lifespan, by raising on the C<lifespan> scope or returning without
+signalling startup, fails C<start>. Lifespan off is C<0>; the string
+C<'off'>, which Perl reads as true, is refused.
+
+C<< lifespan => 'auto' >> is a server's default mode (see
+L<PAGI::Spec::Lifespan>): an application that declines runs without
+lifespan, and C<stop> sends it no shutdown. Only
+C<lifespan.startup.failed> fails C<start>. Use it to run an application as
+a server would, as L<PAGI::App>'s command line does.
 
 =item raise_app_exceptions
 
@@ -1478,8 +1495,8 @@ style, once the application has failed) or from L<PAGI::Test::SSE/close>.
 
     $client->start;
 
-Triggers lifespan.startup. Only needed if C<< lifespan => 1 >> was passed
-to the constructor.
+Triggers lifespan.startup. Only needed if C<< lifespan => 1 >> or
+C<< lifespan => 'auto' >> was passed to the constructor.
 
 Waits for the app to signal C<lifespan.startup.complete> before returning. If
 the startup hook awaits real off-loop I/O (via L<Future::IO>), C<start> drives
@@ -1487,6 +1504,8 @@ the event loop until it completes rather than giving up. If startup B<fails>
 (the app sends C<lifespan.startup.failed>, e.g. because a startup hook died),
 C<start> C<die>s with the failure message instead of returning silently. A
 startup that never signals within a few seconds C<die>s with a timeout error.
+An application that declines lifespan fails C<start> with its own exception
+(strict) or runs without lifespan (C<'auto'>); see L</lifespan>.
 
 The lifespan C<$send> coderef is strict, like the http path (see L</SEND
 STRICTNESS (http)> above): a result event reported for the wrong phase (for
@@ -1524,8 +1543,9 @@ including here.
         # ... tests ...
     });
 
-Class method that creates a client with lifespan enabled, calls start,
-runs your callback, then calls stop. Exceptions propagate.
+Class method that creates a client with strict lifespan
+(C<< lifespan => 1 >>), calls start, runs your callback, then calls stop.
+Exceptions propagate.
 
 =head1 SEE ALSO
 

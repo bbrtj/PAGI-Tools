@@ -117,20 +117,25 @@ subtest 'the nested class demo preserves HTTP, WebSocket, SSE, and lifespan beha
     local $ENV{PAGI_HOME};
     delete $ENV{PAGI_HOME};
 
-    my $app_file = "$Bin/../examples/endpoint-class-demo/app.pl";
+    # Loaded as pagi-server --app loads it: by its path, with do.
+    my $app_file = "$Bin/../examples/endpoint-class-demo/lib/MyApp.pm";
     my $app = do $app_file;
     my $load_error = $@ || $!;
-    ok(!$load_error, 'the real endpoint-class demo app file loads cleanly')
+    ok(!$load_error, 'the demo application module loads cleanly')
         or diag($load_error);
     return if $load_error;
 
-    isa_ok($app, 'PAGI::Compose');
-    ok(blessed($app) && $app->can('to_app'),
-        'the real app file returns a to_app-capable object');
-    is([sort keys %{$app->named_routes}], [qw(
+    ok(blessed($app) && $app->can('to_app') && !$app->isa('MyApp'),
+        'loading returns a provider that builds the application when asked');
+
+    my $composition = MyApp->new->composition;
+    isa_ok($composition, 'PAGI::Compose');
+    is([sort keys %{$composition->named_routes}], [qw(
         /api /api/events /api/events/stream /api/index /api/show
         /api/tools /api/tools/status /home /status_socket
     )], 'nested local names form canonical absolute addresses');
+    is($composition->path_for('/api/tools/status'), '/api/tools/status',
+        'callback child publishes its composed reverse address');
 
     my ($resource, $metrics);
     PAGI::Test::Client->run($app, sub {
@@ -176,10 +181,7 @@ subtest 'the nested class demo preserves HTTP, WebSocket, SSE, and lifespan beha
         is($show->status, 200, 'generated API item link resolves');
         like($show->text, qr/Alice/, 'item endpoint sees its typed path capture');
 
-        my $tools_path = $app->path_for('/api/tools/status');
-        is($tools_path, '/api/tools/status',
-            'callback child publishes its composed reverse address');
-        my $tools = $client->get($tools_path);
+        my $tools = $client->get('/api/tools/status');
         is($tools->status, 200, 'API status closure handles its exact leaf');
         is($tools->json, { status => 'ready', resource => 'demo-resource' },
             'status handler reads shared lifespan state');
