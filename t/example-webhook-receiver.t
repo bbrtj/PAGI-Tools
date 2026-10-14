@@ -1,6 +1,8 @@
 use strict;
 use warnings;
 use Test2::V0;
+
+BEGIN { plan skip_all => 'examples/webhook-receiver requires Perl 5.40' if $] < 5.040 }
 use FindBin qw($Bin);
 use lib "$Bin/../lib";
 use Digest::SHA qw(hmac_sha256_hex);

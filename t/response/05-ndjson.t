@@ -30,7 +30,9 @@ subtest 'format_item turns one value into one line of JSON' => sub {
 subtest 'format_item returns UTF-8 bytes' => sub {
     my $line = $ndjson->format_item("caf\x{e9}");
     ok(!utf8::is_utf8($line), 'bytes, not characters');
-    is(decode_json($line), "caf\x{e9}", 'decodes back to the same text');
+    # A bare JSON string: its decoder needs allow_nonref, as the encoder does.
+    is(JSON::MaybeXS->new(utf8 => 1, allow_nonref => 1)->decode($line), "caf\x{e9}",
+        'decodes back to the same text');
 };
 
 subtest 'format_item refuses a value JSON cannot represent' => sub {

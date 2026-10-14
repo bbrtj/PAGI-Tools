@@ -114,17 +114,20 @@ subtest 'Request construction is strict and state has an explicit HashRef escape
     is($websocket_request->scope, $websocket_scope,
         'Request accepts a WebSocket scope for shared metadata');
 
-    my $compiled = eval q{
-        package Local::UpgradeAppState;
-        use v5.40;
-        use PAGI::State qw(app_state);
-        sub read_db($source) { return app_state($source)->get('db') }
-        1;
-    };
-    ok($compiled, 'app_state compiles as a function under use v5.40')
-        or diag($@);
-    is(Local::UpgradeAppState::read_db($request), 'fixture-db',
-        'app_state is invoked rather than parsed as the state declarator');
+    SKIP: {
+        skip 'a use v5.40 compilation unit needs Perl 5.40', 2 if $] < 5.040;
+        my $compiled = eval q{
+            package Local::UpgradeAppState;
+            use v5.40;
+            use PAGI::State qw(app_state);
+            sub read_db($source) { return app_state($source)->get('db') }
+            1;
+        };
+        ok($compiled, 'app_state compiles as a function under use v5.40')
+            or diag($@);
+        is(Local::UpgradeAppState::read_db($request), 'fixture-db',
+            'app_state is invoked rather than parsed as the state declarator');
+    }
 
     my $state = app_state($request);
     isa_ok($state, 'PAGI::State');

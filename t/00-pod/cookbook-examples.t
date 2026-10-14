@@ -98,8 +98,20 @@ sub code_block_containing {
     return $match;
 }
 
+# The Perl a recipe is written for, when it is newer than this one: a recipe
+# that begins "use v5.40;" runs only on 5.40 and later.
+sub perl_needed {
+    my ($source) = @_;
+    my ($minor) = $source =~ /^\s*use v5\.(\d+)/m or return;
+    return $] < 5 + $minor / 1000 ? "5.$minor" : undef;
+}
+
 sub perl_script_runs {
     my ($label, $source) = @_;
+    if (my $needed = perl_needed($source)) {
+        SKIP: { skip "$label is written for Perl $needed", 1 }
+        return;
+    }
     my ($handle, $path) = tempfile(SUFFIX => '.pl', UNLINK => 1);
     print {$handle} $source or die "Cannot write $path: $!";
     close $handle or die "Cannot close $path: $!";
@@ -488,22 +500,27 @@ subtest 'Company Collection recipe builds its class by name' => sub {
     like $usage, qr/response\('\+MyCompany::Response::Collection',/,
         'the route builds it with response() and a leading +';
 
-    require PAGI::Test::Client;
-    my $lib = tempdir(CLEANUP => 1);
-    mkdir "$lib/MyCompany";
-    mkdir "$lib/MyCompany/Response";
-    open my $out, '>', "$lib/MyCompany/Response/Collection.pm" or die $!;
-    print {$out} $class_source;
-    close $out;
-    local @INC = ($lib, @INC);
+    SKIP: {
+        my $needed = perl_needed($class_source . $usage);
+        skip "the recipe is written for Perl $needed", 4 if $needed;
 
-    my $routing = eval "package CollectionRecipe; sub load_people { [{ name => 'Ada' }] }\n$usage\n\$routing";
-    ok $routing, 'the recipe runs as published' or diag $@;
-    my $res = PAGI::Test::Client->new(app => $routing)->get('/people');
-    is $res->status, 200, 'the route answers';
-    is $res->json, { data => [{ name => 'Ada' }], meta => { total => 1, page => 1, count => 1 },
-        links => { self => '/people' } }, 'with the company envelope';
-    is $res->header('X-Collection-Version'), '1', 'and its header';
+        require PAGI::Test::Client;
+        my $lib = tempdir(CLEANUP => 1);
+        mkdir "$lib/MyCompany";
+        mkdir "$lib/MyCompany/Response";
+        open my $out, '>', "$lib/MyCompany/Response/Collection.pm" or die $!;
+        print {$out} $class_source;
+        close $out;
+        local @INC = ($lib, @INC);
+
+        my $routing = eval "package CollectionRecipe; sub load_people { [{ name => 'Ada' }] }\n$usage\n\$routing";
+        ok $routing, 'the recipe runs as published' or diag $@;
+        my $res = PAGI::Test::Client->new(app => $routing)->get('/people');
+        is $res->status, 200, 'the route answers';
+        is $res->json, { data => [{ name => 'Ada' }], meta => { total => 1, page => 1, count => 1 },
+            links => { self => '/people' } }, 'with the company envelope';
+        is $res->header('X-Collection-Version'), '1', 'and its header';
+    }
 };
 
 unlike $cookbook,

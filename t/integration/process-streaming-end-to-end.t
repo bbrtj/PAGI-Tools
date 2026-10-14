@@ -29,6 +29,7 @@ eval { require Future::IO::Impl::IOAsync; 1 }
 my $server_unavailable = current_server_unavailable();
 plan skip_all => $server_unavailable if $server_unavailable;
 
+plan skip_all => 'examples/process-streaming requires Perl 5.40' if $] < 5.040;
 my $app_file = "$FindBin::Bin/../../examples/process-streaming/app.pl";
 plan skip_all => "example not found: $app_file" unless -f $app_file;
 
