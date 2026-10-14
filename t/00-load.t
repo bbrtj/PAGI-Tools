@@ -7,6 +7,8 @@ my @load_modules = qw(
     PAGI::Tools
     PAGI::Compose
     PAGI::Compose::Compiler
+    PAGI::App
+    PAGI::App::Compose
     PAGI::Exception::IncompleteResponse
     PAGI::Exception::HTTP
     PAGI::Authority

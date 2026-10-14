@@ -13,6 +13,11 @@
     lib/MyApp.pm both an application a server loads
     (pagi-server -Ilib --app lib/MyApp.pm) and a program you can run.
     Loading it builds nothing until a server calls to_app.
+  - PAGI::App::Compose: the regular way to write a Compose application in
+    lib/MyApp.pm. A subclass writes routes, and optionally app_middleware,
+    http_default, on_startup and on_shutdown; to_app builds them once into
+    a PAGI::Compose application, composition returns the description for
+    tests, and writing call is refused.
   - PAGI::Test::Response header_pairs: every response header as
     [name, value] pairs, in order, repeats (Set-Cookie) kept.
   - PAGI::Test::Client lifespan => 'auto': a server's default lifespan mode.
