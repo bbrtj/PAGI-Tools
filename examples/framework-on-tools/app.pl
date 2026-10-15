@@ -69,7 +69,10 @@ get '/notes' => name => 'notes', desc => 'List the notes', sub ($req) {
     return [ map { $notes->{$_} } sort { $a <=> $b } keys %$notes ];
 };
 
-post '/notes' => desc => 'Add a note', async sub ($req) {
+post '/notes' => desc => 'Add a note',
+    meta => { openapi => { requestBody => { content => { 'application/json' => {
+        schema => { type => 'object', required => ['text'], properties => { text => { type => 'string' } } } } } } } },
+    async sub ($req) {
     my $data  = await $req->json;
     my $notes = $req->svc('notes');
     my $id    = $notes->{next}++;
@@ -77,11 +80,11 @@ post '/notes' => desc => 'Add a note', async sub ($req) {
     return response('JSON', $notes->{by_id}{$id}, status => 201);
 };
 
-get '/notes/{id}' => name => 'note', desc => 'One note', constraints => { id => Int }, sub ($req) {
+get '/notes/{id:&Int}' => name => 'note', desc => 'One note', sub ($req) {
     return find_note($req, $req->param('id'));
 };
 
-del '/notes/{id}' => constraints => { id => Int }, sub ($req) {
+del '/notes/{id:&Int}' => sub ($req) {
     find_note($req, $req->param('id'));
     delete $req->svc('notes')->{by_id}{ $req->param('id') };
     return response('Empty');

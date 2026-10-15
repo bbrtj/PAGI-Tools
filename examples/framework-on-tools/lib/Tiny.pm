@@ -128,6 +128,7 @@ sub add_route ($self, $method, $path, @rest) {
         (exists $opt{constraints} ? (constraints => $opt{constraints}) : ()),
         (exists $opt{name} ? (name => $opt{name}) : ()),
         (exists $opt{desc} ? (desc => $opt{desc}) : ()),
+        (exists $opt{meta} ? (meta => $opt{meta}) : ()),
     );
     return;
 }
@@ -282,46 +283,86 @@ sub to_compose ($self) {
 }
 
 # ----------------------------------------------------------------------
-# An OpenAPI document from the Router. Seam: Compose, Router, Route and
-# Mount are inspectable values (routes, path, methods, parameters,
-# constraints, name, desc), so a framework can describe the whole tree
-# without keeping its own registry. Opaque mounts stop the walk.
+# An OpenAPI document from the Router. Seam: route_table describes every
+# route in the tree -- its path template, methods, name, desc and each path
+# parameter's constraints as declared -- so a framework describes the whole
+# application without walking it or keeping its own registry. An opaque
+# mount is listed as kind 'mount' and has nothing to describe.
 
 my %TYPE_NAME = (Int => 'integer', Num => 'number', Str => 'string', Bool => 'boolean');
 
-sub openapi_doc ($self, %info) {
-    my %paths;
-    my $walk; $walk = sub ($router, $prefix) {
-        for my $node (@{ $router->routes }) {
-            if ($node->kind eq 'mount') {
-                my $app = $node->app;
-                $walk->($app, $prefix . $node->path)
-                    if blessed($app) && $app->isa('PAGI::Routing::Router');
-                next;
-            }
-            next unless $node->kind eq 'route';
-            my $constraints = $node->constraints;
-            my @params = map {
-                my $type = $constraints->{$_};
-                {
-                    name     => $_,
-                    in       => 'path',
-                    required => \1,
-                    schema   => { type => $TYPE_NAME{ blessed($type) ? $type->display_name : '' } // 'string' },
-                }
-            } @{ $node->parameters };
-            my $methods = ref($node->methods) eq 'ARRAY' ? $node->methods : ['GET'];
-            for my $method (grep { $_ ne 'HEAD' } @$methods) {
-                $paths{ $prefix . $node->path }{ lc $method } = {
-                    (defined $node->name ? (operationId => $node->name) : ()),
-                    (defined $node->desc ? (summary => $node->desc) : ()),
-                    (@params ? (parameters => \@params) : ()),
-                    responses => { default => { description => 'response' } },
-                };
-            }
+# The operations an OpenAPI 3.1 path item can hold. A route method outside
+# them (QUERY, a custom token) has no field to go in and is left out.
+my %OPERATION = map { $_ => 1 } qw(get put post delete options head patch trace);
+
+# The JSON Schema type of a capture: the first declared Type::Tiny type, or
+# one it was derived from, with a JSON Schema name; else string.
+sub _schema_type (@declared) {
+    for my $type (grep { blessed($_) && $_->can('display_name') } @declared) {
+        for (my $t = $type; $t; $t = $t->can('parent') ? $t->parent : undef) {
+            my $name = $TYPE_NAME{ $t->display_name };
+            return $name if defined $name;
         }
-    };
-    $walk->($self->{compose}->router, '');
+    }
+    return 'string';
+}
+
+# The method and the route's absolute address, so a route answering several
+# methods, or placed under two mounts, still gets a unique operationId.
+sub _operation_id ($method, $address) {
+    (my $id = lc($method) . $address) =~ s{[^A-Za-z0-9]+}{_}g;
+    return $id;
+}
+
+sub openapi_doc ($self, %info) {
+    my (%paths, %path_of_shape, %operation_ids);
+    for my $entry ($self->{compose}->route_table) {
+        next unless $entry->kind eq 'route';
+        my $template = $entry->template;
+
+        # OpenAPI forbids two paths differing only in their parameter names,
+        # and a path holds one operation per method. A route that would land
+        # on another's is an error here, not a silent replacement.
+        (my $shape = $template) =~ s/\{[^}]*\}/{}/g;
+        die "openapi: $template and $path_of_shape{$shape} are the same OpenAPI path\n"
+            if exists $path_of_shape{$shape} && $path_of_shape{$shape} ne $template;
+        $path_of_shape{$shape} = $template;
+
+        my $constraints = $entry->constraints;
+        my @params = map {
+            {
+                name     => $_,
+                in       => 'path',
+                required => \1,
+                schema   => { type => _schema_type(@{ $constraints->{$_} // [] }) },
+            }
+        } @{ $entry->parameters };
+
+        # Limitations of this example: an unrestricted route (methods => '*',
+        # the raw hatch) is documented as GET; HEAD is left out where GET also
+        # answers it, and kept for a HEAD-only route.
+        my $declared = $entry->methods;
+        my @methods = ref $declared eq 'ARRAY' ? @$declared : ('GET');
+        my %has = map { $_ => 1 } @methods;
+        @methods = grep { !($_ eq 'HEAD' && $has{GET}) } @methods;
+
+        for my $method (grep { $OPERATION{ lc $_ } } @methods) {
+            die "openapi: two routes for $method $template\n"
+                if $paths{$template}{ lc $method };
+            my $id = defined $entry->address ? _operation_id($method, $entry->address) : undef;
+            die "openapi: operationId $id is not unique\n"
+                if defined $id && $operation_ids{$id}++;
+            $paths{$template}{ lc $method } = {
+                (defined $id ? (operationId => $id) : ()),
+                (defined $entry->desc ? (summary => $entry->desc) : ()),
+                (@params ? (parameters => \@params) : ()),
+                responses => { default => { description => 'response' } },
+                # Hand-written OpenAPI from each level's meta, outermost
+                # first, so a route's fragment overrides its mount's.
+                map { %{ $_->{openapi} // {} } } @{ $entry->meta },
+            };
+        }
+    }
     return { openapi => '3.1.0', info => { title => 'Tiny', version => '0', %info }, paths => \%paths };
 }
 
