@@ -34,29 +34,29 @@ sub schemas ($class) {
     };
 }
 
-sub json_response ($description, $schema) {
+sub returns_json ($description, $schema) {
     return { description => $description, content => { 'application/json' => { schema => $schema } } };
 }
 sub ref_to ($name) { return { '$ref' => "#/components/schemas/$name" } }
 
-my $missing = json_response('No such note', ref_to('Error'));
+my $missing = returns_json('No such note', ref_to('Error'));
 
 sub routing ($class) {
     my $writers = [middleware('Requires', scopes => ['notes:write'])];
     return router(routes => [
         route('/' => \&list, methods => ['GET'], name => 'list', desc => 'List the notes',
             meta => { openapi => { responses => {
-                200 => json_response('Every note', { type => 'array', items => ref_to('Note') }),
+                200 => returns_json('Every note', { type => 'array', items => ref_to('Note') }),
             } } }),
         route('/' => \&create, methods => ['POST'], name => 'create', desc => 'Add a note',
             middleware => $writers,
             meta => { openapi => {
                 requestBody => { required => \1, content => { 'application/json' => { schema => ref_to('NewNote') } } },
-                responses   => { 201 => json_response('The new note', ref_to('Note')) },
+                responses   => { 201 => returns_json('The new note', ref_to('Note')) },
             } }),
         route('/{id:&Int}' => \&show, methods => ['GET'], name => 'show', desc => 'One note',
             meta => { openapi => { responses => {
-                200 => json_response('The note', ref_to('Note')),
+                200 => returns_json('The note', ref_to('Note')),
                 404 => $missing,
             } } }),
         route('/{id:&Int}' => \&remove, methods => ['DELETE'], name => 'remove', desc => 'Delete a note',
