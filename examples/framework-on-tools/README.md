@@ -61,7 +61,7 @@ tiny;
 | `on_error` class-to-response mapping | one `ErrorHandler` handler reading `error_context($req)->exception` | none; the handler gets a `Tiny::Request`, because RequestClass is listed before the ErrorHandler |
 | plugins | a package with `register($app)` using the same hooks | none |
 | the raw escape hatch | `route($path => as_app_object($code), methods => '*')` | none |
-| an OpenAPI document | `Compose->route_table`: each entry's `template`, `methods`, `address`, `desc`, `parameters`, `constraints` and `meta` (a route's or mount's `meta => { openapi => {...} }` is merged into its operations) | none to walk the tree. The example's limitations: an unrestricted (`raw`) route is documented as GET, HEAD is folded into GET, methods outside OpenAPI 3.1 are left out, two routes on one OpenAPI path are an error, and an operationId is the method and the route's address (`get_notes`) |
+| an OpenAPI document | `PAGI::Routing::OpenAPI->document($compose)`, which reads `route_table` and each route's `meta => { openapi => {...} }` | none: Tiny keeps no generator of its own, so the document follows PAGI::Routing::OpenAPI's rules (an unrestricted `raw` route is a GET, HEAD folds into GET, two routes on one OpenAPI path are an error, an operationId is the method and the route's address, `get_notes`) |
 
 Order matters and Tools leaves it to the framework: the `around` hooks wrap
 the ErrorHandler, as Starlette's user middleware wraps its
