@@ -22,7 +22,7 @@ sub _new_from {
 
     my %opts = @args;
     my %allowed = map { $_ => 1 }
-        qw(app routes name desc constraints middleware declaration_package);
+        qw(app routes name desc meta constraints middleware declaration_package);
     for my $key (keys %opts) {
         croak "unknown mount option '$key'" unless $allowed{$key};
     }
@@ -69,6 +69,7 @@ sub _new_from {
         app         => $app,
         name        => $opts{name},
         desc        => $opts{desc},
+        meta        => PAGI::Routing::Route::_meta_option('mount', $path, $opts{meta}),
         middleware  => $middleware,
     }, $class;
 }
@@ -92,6 +93,7 @@ sub path        { $_[0]->{_pattern}->path }
 sub parameters  { $_[0]->{_pattern}->parameters }
 sub name        { $_[0]->{name} }
 sub desc        { $_[0]->{desc} }
+sub meta        { +{ %{$_[0]->{meta}} } }
 sub app         { $_[0]->{app} }
 sub constraints { $_[0]->{_pattern}->constraints }
 sub middleware  { [ @{$_[0]->{middleware}} ] }
@@ -168,7 +170,9 @@ pattern and are not reconstructed as entries in this explicit map. C<app>
 always returns the one base application. C<middleware> returns a fresh
 arrayref of normalized
 C<PAGI::Routing::Middleware> descriptions; explicit descriptions retain their
-identity. C<methods> returns undef for a mount.
+identity. C<meta> returns a shallow copy of the declared C<meta> hashref, or
+an empty one (see L<PAGI::Routing/meta>). C<methods> returns undef for a
+mount.
 
 =head1 METHODS
 

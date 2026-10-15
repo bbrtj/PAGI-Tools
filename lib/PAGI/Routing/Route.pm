@@ -11,7 +11,7 @@ sub new {
     my ($class, @args) = @_;
     my $declaration_package = caller;
     my $opts = _parse_options(
-        [qw(path endpoint name desc middleware methods constraints declaration_package)],
+        [qw(path endpoint name desc meta middleware methods constraints declaration_package)],
         @args,
     );
     croak 'route requires a path' unless exists $opts->{path};
@@ -30,7 +30,7 @@ sub _new_from {
     croak 'route requires an endpoint' unless @args;
     my $endpoint = shift @args;
     my $opts = _parse_options(
-        [qw(name desc middleware methods constraints declaration_package)],
+        [qw(name desc meta middleware methods constraints declaration_package)],
         @args,
     );
     return $class->_build(
@@ -116,9 +116,19 @@ sub _build {
         endpoint    => $endpoint,
         name        => $opts->{name},
         desc        => $opts->{desc},
+        meta        => _meta_option($kind, $path, $opts->{meta}),
         methods     => $methods,
         middleware  => $middleware,
     }, $class;
+}
+
+# meta: descriptive data for tools that inspect routes (route_table). Stored
+# and handed out as a shallow copy; PAGI::Routing never reads it.
+sub _meta_option {
+    my ($kind, $path, $meta) = @_;
+    return {} unless defined $meta;
+    croak "$kind '$path' meta must be a hashref" unless ref($meta) eq 'HASH';
+    return { %$meta };
 }
 
 sub _endpoint_allowed_methods {
@@ -205,6 +215,7 @@ sub path        { $_[0]->{_pattern}->path }
 sub parameters  { $_[0]->{_pattern}->parameters }
 sub name        { $_[0]->{name} }
 sub desc        { $_[0]->{desc} }
+sub meta        { +{ %{$_[0]->{meta}} } }
 sub endpoint    { $_[0]->{endpoint} }
 sub methods     { ref($_[0]->{methods}) eq 'ARRAY' ? [ @{$_[0]->{methods}} ] : $_[0]->{methods} }
 sub constraints { $_[0]->{_pattern}->constraints }
@@ -275,7 +286,9 @@ constraints remain represented by the path pattern and are not reconstructed
 as entries in this explicit map.
 C<middleware> returns a fresh arrayref of normalized
 C<PAGI::Routing::Middleware> descriptions; explicit descriptions retain their
-identity. C<routes> returns undef for a leaf route.
+identity. C<meta> returns a shallow copy of the declared C<meta> hashref, or
+an empty one (see L<PAGI::Routing/meta>). C<routes> returns undef for a leaf
+route.
 HTTP C<methods> are normalized at construction; GET includes HEAD. Constraint
 values are accepted by HTTP, WebSocket, and SSE leaves, returned as declared,
 and validate decoded captures only during a request match or reverse render.

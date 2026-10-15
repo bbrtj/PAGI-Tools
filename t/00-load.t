@@ -21,6 +21,7 @@ my @load_modules = qw(
     PAGI::Routing
     PAGI::Routing::Router
     PAGI::Routing::Route
+    PAGI::Routing::RouteEntry
     PAGI::Routing::Mount
     PAGI::Routing::Middleware
     PAGI::Routing::Pattern

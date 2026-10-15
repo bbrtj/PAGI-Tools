@@ -323,7 +323,7 @@ sub _install_predicate_records {
                 unless ref($record) eq 'HASH' && ref($record->{check}) eq 'CODE';
             for my $field (sort keys %$record) {
                 croak "predicate record for '$name' has unknown field '$field'"
-                    unless $field eq 'check' || $field eq 'explain';
+                    unless $field eq 'check' || $field eq 'explain' || $field eq 'declared';
             }
             croak "predicate record for '$name' explain must be a coderef"
                 if exists $record->{explain} && ref($record->{explain}) ne 'CODE';
@@ -426,22 +426,25 @@ sub _compile_inline_regexp {
         chomp $error;
         croak "invalid inline constraint for '$name': $error";
     }
-    return { check => sub { return $_[0] =~ $regexp ? 1 : 0 } };
+    # declared: the source as written, which is what an inline regexp is.
+    return { check => sub { return $_[0] =~ $regexp ? 1 : 0 }, declared => $source };
 }
 
 sub _normalize_constraint {
     my ($name, $value, $invalid_message) = @_;
 
+    # declared: the constraint as given, for inspection (route_table).
     if (ref($value) eq 'Regexp') {
         my $regexp = qr/\A(?:$value)\z/;
-        return { check => sub { return $_[0] =~ $regexp ? 1 : 0 } };
+        return { check => sub { return $_[0] =~ $regexp ? 1 : 0 }, declared => $value };
     }
     if (ref($value) eq 'CODE') {
-        return { check => $value };
+        return { check => $value, declared => $value };
     }
     if (blessed($value) && $value->can('check')) {
         my $record = {
-            check => sub { return $value->check($_[0]) },
+            check    => sub { return $value->check($_[0]) },
+            declared => $value,
         };
         $record->{explain} = sub { return $value->get_message($_[0]) }
             if $value->can('get_message');
@@ -571,6 +574,15 @@ sub _encode_component {
 sub path        { $_[0]->{path} }
 sub parameters  { [ @{$_[0]->{parameters}} ] }
 sub constraints { return { %{$_[0]->{constraints}} } }
+# The path with each capture written {name} and its inline constraint left
+# out: '/notes/{id:&Int}' and '/notes/:id' are both '/notes/{id}'.
+sub template {
+    my ($self) = @_;
+    return join '', map {
+        $_->{kind} eq 'literal' ? $_->{value} : '{' . $_->{name} . '}'
+    } @{$self->{tokens}};
+}
+
 sub _predicate_records {
     my ($self) = @_;
     return {

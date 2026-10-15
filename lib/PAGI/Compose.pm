@@ -80,6 +80,12 @@ sub routes       { $_[0]->{router}->routes }
 sub http_default { $_[0]->{router}->http_default }
 sub desc         { $_[0]->{router}->desc }
 sub named_routes { $_[0]->{router}->named_routes }
+# The root Router's route_table, with the application middleware outermost.
+sub route_table {
+    my ($self) = @_;
+    return map { $_->_with_outer_middleware(@{$self->{middleware}}) }
+        $self->{router}->route_table;
+}
 sub route_named  { $_[0]->{router}->route_named($_[1]) }
 sub path_for     { my $self = shift; return $self->{router}->path_for(@_) }
 
@@ -322,6 +328,9 @@ callback is an error. The hash is shallow-copied.
 C<router> returns only the distinct root Router constructed and owned by
 Compose. C<routes> returns that root Router's direct children, so a preserved
 child Router appears as its root Mount rather than as flattened leaves.
+C<route_table> returns the root Router's entries with Compose's application
+middleware outermost in each entry's C<middleware> (see
+L<PAGI::Routing::RouteEntry>).
 C<http_default>, C<desc>, C<named_routes>, C<route_named>, and C<path_for>
 delegate to the root Router and therefore use its Resolver and stable
 declaration graph. Resolver traversal can discover named leaves beneath an

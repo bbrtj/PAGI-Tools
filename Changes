@@ -24,6 +24,14 @@
     then gives a Future, shared by every caller of a pending build; a failed
     or cancelled build is built again by the next get). PAGI::State::Deferred
     is the seam for other lifetimes.
+  - PAGI::Routing route_table (Router and Compose): every route in the tree
+    as a PAGI::Routing::RouteEntry -- its path template and declared
+    pattern, kind, methods, name and absolute address, desc, capture names
+    and constraints as declared, the middleware around it, its meta, and the
+    node -- so a tool describes an application (an OpenAPI document, a route
+    listing, a test of its surface) from the public API. A meta option on
+    routes and mounts holds descriptive data for such tools; PAGI::Routing
+    never reads it.
   - PAGI::Test::Response header_pairs: every response header as
     [name, value] pairs, in order, repeats (Set-Cookie) kept.
   - PAGI::Test::Client lifespan => 'auto': a server's default lifespan mode.
