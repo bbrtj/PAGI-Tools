@@ -12,10 +12,10 @@ Each protected handler explicitly checks the user or credentials and constructs
 an ordinary response. The only shared response builder creates the authentication
 notice; it does not enforce access or dispatch another application.
 
-The checks are written by hand rather than with `PAGI::Auth`'s `requires`
+The checks are written by hand rather than with the `Requires` middleware
 because this API answers as RFC 6750 describes: 401 with a Bearer challenge
 when the token is missing or rejected, 403 `insufficient_scope` naming the
-scopes when it is not enough. `requires` refuses with one response and no
+scopes when it is not enough. `Requires` refuses with one response and no
 challenge, like Starlette's `@requires`; it suits pages and APIs that need no
 challenge (see [auth-cookie-login](../auth-cookie-login/README.md)).
 

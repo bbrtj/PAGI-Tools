@@ -288,8 +288,8 @@ around the Router that rewrites 405 responses.
     sse('/path' => $handler, %options)
     sse('/path' => as_app_object($native), %options)
 
-All leaves accept C<name>, C<desc>, C<middleware>, C<constraints>, and
-C<declaration_package>.
+All leaves accept C<name>, C<desc>, C<meta> (see L</meta>), C<middleware>,
+C<constraints>, and C<declaration_package>.
 C<methods> is HTTP-only: one token, an arrayref, or the explicit string C<*>.
 For an app object, an explicit finite method set still consults
 C<allowed_methods> once during immutable Route construction and must be a
@@ -311,12 +311,70 @@ caller. A framework that wraps the constructor passes C<< scalar caller >>
     mount('/prefix', app => $app, %options)
     mount('/prefix', routes => \@nodes, %options)
 
-All accept C<desc>, C<constraints>, C<middleware>, and C<declaration_package>
-(as for L</route, websocket, sse>). C<app> accepts a native
+All accept C<desc>, C<meta> (see L</meta>), C<constraints>, C<middleware>, and
+C<declaration_package> (as for L</route, websocket, sse>). C<app> accepts a native
 application coderef or app object. C<routes> creates a
 real L<PAGI::Routing::Router> application and stores it as the Mount's C<app>.
 Names are nonempty scalar logical segments: they may not contain C</> or
 equal C<.> or C<..>. A dot in C<v1.1> is literal, not hierarchy.
+
+A mount is a barrier to any application and transparent to a Router. A Router
+(C<routes>, or C<app> given the Router itself) is a set of routes: they join
+the enclosing application under the mount's prefix and name, in
+C<route_table>, C<named_routes> and C<path_for>. Anything else -- a coderef, an
+app object, a L<PAGI::Compose> or L<PAGI::App::Compose> -- is a separate
+application:
+
+=over 4
+
+=item * C<route_table> shows it as one entry of kind C<mount>, and the
+enclosing application's names cannot reach into it. Its handlers resolve only
+its own names, rendered under the mount.
+
+=item * What it does at application level stays inside it: its error
+handling and application middleware apply to its own requests, and its
+lifespan never runs (see L<PAGI::Compose/LIFESPAN OWNERSHIP AND STATE>).
+
+=item * Its application middleware runs before its own routing, so it sees the
+enclosing application's routing frame. Middleware that resolves route names,
+such as a L<PAGI::Middleware::Requires> redirect, belongs on a route, mount or
+Router inside it.
+
+=item * Construction-time checks stop at the mount: a path parameter named both
+in the mount's path and in the application's routes fails when a request
+arrives, not when the application is built.
+
+=back
+
+Pass the Router itself to keep it transparent: C<< $router->to_app >>, or a
+Router wrapped in middleware by hand, is an application. Give the mount
+C<middleware> instead. Build the parts of one application as Routers and put
+one Compose at the root.
+
+C<mount> is for an application that owns a subtree. One that answers a single
+path is a route: C<< route('/health' => $app) >> gives it exactly that path,
+unchanged (its C<path> is still C</health>), and C<route_table> describes it as
+one route.
+
+=head2 meta
+
+    mount('/notes', meta => { openapi => { tags => ['notes'] } }, routes => [
+        route('/' => \&add_note, methods => ['POST'],
+            meta => { openapi => { requestBody => { ... } } }),
+    ]),
+
+A hashref of descriptive data for tools that inspect routes, accepted by
+every leaf and by C<mount>, in the manner of Magritte's meta-descriptions:
+one declaration that several interpreters read. Its top-level keys are, by
+convention, the consumer's namespace -- C<openapi> for an OpenAPI generator,
+a framework's own name for its annotations -- and a value is anything: a
+hash, an array, a description object its consumer interprets.
+
+PAGI::Routing stores it (a shallow copy), hands it out through the node's
+C<meta> accessor and C<route_table> (L<PAGI::Routing::RouteEntry>), and does nothing else with it: no key
+is reserved or read, and it is not in the request-time match record. What
+enforces something belongs in middleware; C<meta> describes. C<desc> is
+unchanged: the route's one free-text note.
 
 A mount whose application is a Router, given by C<routes> or as
 C<< app => $router >>, is a I<Router mount>: its names join the parent's and
@@ -590,6 +648,21 @@ C<route_named>
 resolves from the Router root. Router base applications are traversed.
 Collection accessors return shallow copies. C<desc> is a human note with no
 matching or schema behavior.
+
+C<route_table> describes every route in the tree, named or not, as a
+L<PAGI::Routing::RouteEntry>, depth-first in declaration order: its path
+template and declared pattern, kind, methods, name and absolute address,
+C<desc>, capture names and constraints as declared, the middleware around it
+and its C<meta>. A route listing is a loop:
+
+    for my $entry ($routing->route_table) {
+        my $methods = $entry->methods;    # an arrayref, '*', or undef (WebSocket, SSE, mount)
+        printf "%-10s %s\n", join(',', ref $methods ? @$methods : ($methods // $entry->kind)),
+            $entry->template;
+    }
+
+It is what a tool that describes an application -- an OpenAPI document, a
+listing, a test of its surface -- reads, without walking the tree itself.
 
 Passing C<< $routing->routes >> to Compose flattens only its direct children
 into a new root Router; L<PAGI::Compose/composition choices> says what that
@@ -865,9 +938,8 @@ Compose boundaries.
 Starlette's single multiprotocol Router C<default> was considered and
 deliberately not copied. PAGI's C<http_default> handles only HTTP NONE,
 leaving stock WebSocket and SSE miss behavior intact. OpenAPI generation,
-C<schema>, C<include_in_schema>, and arbitrary route metadata remain deferred
-until a concrete consumer is designed; the immutable route tree preserves the
-future inspection seam without advertising an unshipped schema API.
+C<schema> and C<include_in_schema> are left to a consumer: C<route_table> (L<PAGI::Routing::RouteEntry>)
+and L</meta> are what one reads, and PAGI::Routing interprets neither.
 
 =head1 SEE ALSO
 

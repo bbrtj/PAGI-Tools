@@ -8,6 +8,7 @@ use PAGI::ContentNegotiation ();
 use PAGI::ErrorContext ();
 use PAGI::Response ();
 use PAGI::Routing ();
+use PAGI::Routing::OpenAPI ();
 use PAGI::Routing::URL ();
 use PAGI::Session ();
 use PAGI::Stash ();
@@ -24,6 +25,7 @@ my @SOURCES = (
     'PAGI::Response'          => [qw(response)],
     'PAGI::Routing'           => [qw(router route websocket sse mount middleware request_response endpoint)],
     'PAGI::Routing::URL'      => [qw(url path_for url_for)],
+    'PAGI::Routing::OpenAPI'  => [qw(openapi)],
     'PAGI::ErrorContext'      => [qw(error_context)],
     'PAGI::State'             => [qw(app_state)],
     'PAGI::Stash'             => [qw(stash)],
@@ -101,6 +103,8 @@ a larger framework:
 
 =item * L<PAGI::Routing> and L<PAGI::Routing::URL>
 
+=item * L<PAGI::Routing::OpenAPI> for an OpenAPI document from an application's routes
+
 =item * L<PAGI::Compose> and L<PAGI::Lifespan>
 
 =item * L<PAGI::Middleware> and the C<PAGI::Middleware::*> suite
@@ -112,6 +116,8 @@ a larger framework:
 =item * L<PAGI::Auth> for authentication results, installed context, and challenge formatting
 
 =item * L<PAGI::Middleware::Authentication> for request-based application authentication backends
+
+=item * L<PAGI::Middleware::Requires> to declare the scopes a route, mount or application requires
 
 =item * L<PAGI::State>, L<PAGI::Stash>, L<PAGI::Session>, L<PAGI::CSRF>, and L<PAGI::Transport>
 
@@ -202,6 +208,7 @@ package that imported them from C<PAGI::Tools>.
     router route websocket sse mount
       middleware request_response endpoint        PAGI::Routing
     url path_for url_for                          PAGI::Routing::URL
+    openapi                                       PAGI::Routing::OpenAPI
     error_context                                 PAGI::ErrorContext
     app_state                                     PAGI::State
     stash                                         PAGI::Stash
@@ -308,7 +315,7 @@ on the slot it is given to:
     refuse (CSRF, TrustedHosts,         a handler taking     an application
     HTTPSRedirect, ReverseProxy,        one Request          (via to_app)
     RateLimit, ContentNegotiation,
-    WrapCGI, File, requires),
+    WrapCGI, File, Requires),
     Maintenance response,
     ErrorHandler handler
     URLMap mounts and default,          an application       an application

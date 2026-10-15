@@ -35,7 +35,7 @@ in [UPGRADING-REFERENCE.md](UPGRADING-REFERENCE.md).
 | `PAGI::Request::Negotiate` | `PAGI::ContentNegotiation`: the same class methods |
 | scope keys `pagi.preferred_content_type`, `pagi.accepted_types` | `negotiated_type($request)` (PAGI::ContentNegotiation); the record `pagi.content_negotiation` holds `type`, `supported`, `refusing` and `accepted` |
 | an unknown shortcut in ContentNegotiation `supported_types` became `application/<name>` | it dies when the middleware is built; use a media type or a known shortcut |
-| `Auth::Basic`, `Auth::Bearer` | `Authentication` with a backend, plus `requires` ([details](UPGRADING-REFERENCE.md#breaking-authbasic-and-authbearer-are-replaced-by-authentication)) |
+| `Auth::Basic`, `Auth::Bearer` | `Authentication` with a backend, plus `Requires` ([details](UPGRADING-REFERENCE.md#breaking-authbasic-and-authbearer-are-replaced-by-authentication)) |
 | `FormBody`, `JSONBody` middleware | `$request->form_params`, `$request->json` ([details](UPGRADING-REFERENCE.md#breaking-pagimiddlewareformbody-and-pagimiddlewarejsonbody-are-removed)) |
 | `PAGI::App::Loader` | `pagi-server --app`, or `do $file` ([details](UPGRADING-REFERENCE.md#breaking-pagiapploader-is-removed)) |
 | WebSocket/SSE `->state` hashref | a `PAGI::State` object ([details](UPGRADING-REFERENCE.md#breaking-direct-websocket-and-sse-state-matches-request)) |
@@ -192,7 +192,7 @@ What changed, line by line:
   (`response('JSON', ...)`, `response('Text', ...)`) instead of calling `$ctx->json`.
 - The `require_login` middleware method became a check inside the one
   handler that needs it; a check shared by many routes could be a
-  `middleware(...)` description on a `mount`, or `PAGI::Auth`'s `requires`.
+  `middleware(...)` description on a `mount`, such as `Requires`.
 - `$self->state` became lifespan state: set in Compose's `startup`, read
   with `app_state($request)`.
 - `$ctx->session` became `session($request)`; Session no longer takes

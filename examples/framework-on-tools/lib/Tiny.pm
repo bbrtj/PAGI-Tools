@@ -26,6 +26,7 @@ use PAGI::Compose qw(compose);
 use PAGI::Response qw(response);
 use PAGI::ErrorContext qw(error_context);
 use PAGI::Utils qw(as_app_object);
+use PAGI::Routing::OpenAPI ();
 
 # ----------------------------------------------------------------------
 # The framework's own Request. Seam: PAGI::Request is a plain class, so a
@@ -128,6 +129,7 @@ sub add_route ($self, $method, $path, @rest) {
         (exists $opt{constraints} ? (constraints => $opt{constraints}) : ()),
         (exists $opt{name} ? (name => $opt{name}) : ()),
         (exists $opt{desc} ? (desc => $opt{desc}) : ()),
+        (exists $opt{meta} ? (meta => $opt{meta}) : ()),
     );
     return;
 }
@@ -282,47 +284,14 @@ sub to_compose ($self) {
 }
 
 # ----------------------------------------------------------------------
-# An OpenAPI document from the Router. Seam: Compose, Router, Route and
-# Mount are inspectable values (routes, path, methods, parameters,
-# constraints, name, desc), so a framework can describe the whole tree
-# without keeping its own registry. Opaque mounts stop the walk.
-
-my %TYPE_NAME = (Int => 'integer', Num => 'number', Str => 'string', Bool => 'boolean');
+# An OpenAPI document. Seam: PAGI::Routing::OpenAPI reads route_table, so
+# Tiny describes the application it built with no code of its own. Tiny
+# holds its Compose, so the served route documents it from inside (and is
+# listed itself).
 
 sub openapi_doc ($self, %info) {
-    my %paths;
-    my $walk; $walk = sub ($router, $prefix) {
-        for my $node (@{ $router->routes }) {
-            if ($node->kind eq 'mount') {
-                my $app = $node->app;
-                $walk->($app, $prefix . $node->path)
-                    if blessed($app) && $app->isa('PAGI::Routing::Router');
-                next;
-            }
-            next unless $node->kind eq 'route';
-            my $constraints = $node->constraints;
-            my @params = map {
-                my $type = $constraints->{$_};
-                {
-                    name     => $_,
-                    in       => 'path',
-                    required => \1,
-                    schema   => { type => $TYPE_NAME{ blessed($type) ? $type->display_name : '' } // 'string' },
-                }
-            } @{ $node->parameters };
-            my $methods = ref($node->methods) eq 'ARRAY' ? $node->methods : ['GET'];
-            for my $method (grep { $_ ne 'HEAD' } @$methods) {
-                $paths{ $prefix . $node->path }{ lc $method } = {
-                    (defined $node->name ? (operationId => $node->name) : ()),
-                    (defined $node->desc ? (summary => $node->desc) : ()),
-                    (@params ? (parameters => \@params) : ()),
-                    responses => { default => { description => 'response' } },
-                };
-            }
-        }
-    };
-    $walk->($self->{compose}->router, '');
-    return { openapi => '3.1.0', info => { title => 'Tiny', version => '0', %info }, paths => \%paths };
+    return PAGI::Routing::OpenAPI->new(title => 'Tiny', version => '0', %info)
+        ->document($self->{compose});
 }
 
 1;

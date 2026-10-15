@@ -37,16 +37,21 @@ sub new {
         by_name              => {},
         namespaces           => { '/' => 1 },
         metadata_by_location => {},
+        table                => [],
     }, $class;
 
+    # What route_table reports, carried down the walk beside the effective
+    # path: the template so far, the middleware around this point (outermost
+    # first) and each level's meta.
+    my $trail = { template => '', middleware => [], meta => [] };
     if (exists $opts{router}) {
         $self->_walk_router(
-            $opts{router}, '', [], [], {}, [], {},
+            $opts{router}, '', [], [], {}, [], {}, $trail,
         );
     }
     else {
         $self->_visit_nodes(
-            $opts{routes}, '', [], [], {}, [], {},
+            $opts{routes}, '', [], [], {}, [], {}, $trail,
         );
     }
     return $self;
@@ -54,7 +59,7 @@ sub new {
 
 sub _walk_router {
     my ($self, $router, $path_prefix, $address_segments, $outer_names,
-        $outer_predicates, $location_prefix, $active_routers) = @_;
+        $outer_predicates, $location_prefix, $active_routers, $trail) = @_;
 
     my $identity = refaddr($router);
     if ($active_routers->{$identity}) {
@@ -75,6 +80,7 @@ sub _walk_router {
         $outer_predicates,
         $location_prefix,
         $active_routers,
+        { %$trail, middleware => [@{$trail->{middleware}}, @{$router->middleware}] },
     );
     delete $active_routers->{$identity};
     return;
@@ -82,7 +88,7 @@ sub _walk_router {
 
 sub _visit_nodes {
     my ($self, $nodes, $path_prefix, $address_segments, $outer_names,
-        $outer_predicates, $location_prefix, $active_routers) = @_;
+        $outer_predicates, $location_prefix, $active_routers, $trail) = @_;
 
     $self->{namespaces}{_logical_namespace($address_segments)} = 1;
 
@@ -122,10 +128,18 @@ sub _visit_nodes {
                 logical_namespace => _logical_namespace(\@child_segments),
             };
 
+            my $mount_trail = _extend_trail($trail, $node,
+                $node->path eq '/' ? '' : $node->_pattern->template);
             my $child = $node->app;
             my $inspectable = blessed($child)
                 && $child->isa('PAGI::Routing::Router');
-            next unless $inspectable;
+            unless ($inspectable) {
+                my $named = defined $node->name && length $node->name;
+                $self->_record_entry($node, $mount_trail,
+                    _published_path($effective_path), $names, $predicates,
+                    $named ? _canonical_address(\@child_segments) : undef);
+                next;
+            }
             $self->_walk_router(
                 $child,
                 $effective_path,
@@ -134,6 +148,7 @@ sub _visit_nodes {
                 $predicates,
                 \@location,
                 $active_routers,
+                $mount_trail,
             );
             next;
         }
@@ -149,6 +164,8 @@ sub _visit_nodes {
             ? _canonical_address([@$address_segments, $declared_name])
             : undef;
         my $logical_namespace = _logical_namespace($address_segments);
+        $self->_record_entry($node, _extend_trail($trail, $node, $node->_pattern->template),
+            $effective_path, $names, $predicates, $effective_name);
 
         $self->{metadata_by_location}{$location_key} = {
             match => {
@@ -247,6 +264,51 @@ sub _metadata_for_location {
         mount  => defined $record->{mount} ? { %{$record->{mount}} } : undef,
         logical_namespace => $record->{logical_namespace},
     };
+}
+
+# The trail one level down: the node's template appended, its middleware
+# and its meta (when it has any) added inside the outer ones.
+sub _extend_trail {
+    my ($trail, $node, $template) = @_;
+    my $meta = $node->{meta};
+    return {
+        template   => $trail->{template} . $template,
+        middleware => [@{$trail->{middleware}}, @{$node->middleware}],
+        meta       => [@{$trail->{meta}}, ($meta && %$meta ? $meta : ())],
+    };
+}
+
+# One row of route_table: a route leaf, or a mount whose application the walk
+# cannot enter.
+sub _record_entry {
+    my ($self, $node, $trail, $pattern, $names, $predicates, $address) = @_;
+    my %constraints;
+    for my $name (@$names) {
+        my @declared = map { $_->{declared} } grep { exists $_->{declared} }
+            @{$predicates->{$name} || []};
+        $constraints{$name} = \@declared if @declared;
+    }
+    push @{$self->{table}}, {
+        kind        => $node->kind,
+        template    => _published_path($trail->{template}),
+        pattern     => $pattern,
+        name        => $node->name,
+        address     => $address,
+        desc        => $node->desc,
+        parameters  => [@$names],
+        constraints => \%constraints,
+        middleware  => $trail->{middleware},
+        meta        => $trail->{meta},
+        node        => $node,
+    };
+    return;
+}
+
+# Every route in the tree, described: see PAGI::Routing::RouteEntry.
+sub route_table {
+    my ($self) = @_;
+    require PAGI::Routing::RouteEntry;
+    return map { PAGI::Routing::RouteEntry->_new(%$_) } @{$self->{table}};
 }
 
 sub _extend_parameters {
@@ -628,6 +690,10 @@ identity for
 inspection, and renders application-relative paths for each outer placement.
 All other mounted applications remain opaque to reverse inspection, even when
 they happen to provide methods named C<routes>, C<path_for>, or C<to_app>.
+
+The same walk records, in visit order, each route leaf and each opaque mount
+with its path template, middleware chain and C<meta> chain;
+C<route_table> returns them as L<PAGI::Routing::RouteEntry> objects.
 
 Construction validates/builds the effective address, path, predicate, and
 location index once and does no request I/O. Each source Pattern's normalized

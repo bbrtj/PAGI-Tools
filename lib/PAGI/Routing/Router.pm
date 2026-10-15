@@ -55,6 +55,7 @@ sub methods    { undef }
 sub constraints { undef }
 sub _resolver     { $_[0]->{_resolver} }
 sub named_routes { $_[0]->{_resolver}->named_routes }
+sub route_table  { $_[0]->{_resolver}->route_table }
 sub route_named  { $_[0]->{_resolver}->route_named($_[1]) }
 sub path_for     { my $self = shift; return $self->{_resolver}->path_for(@_) }
 
@@ -99,6 +100,11 @@ for an unknown address. C<path_for> renders the application-relative path for an
 without request state or protocol I/O. A child Router's own paths remain local
 to that Router, while each outer Router resolver composes the path for its
 particular mount placement.
+
+C<route_table> returns a L<PAGI::Routing::RouteEntry> for every route in the
+tree, named or not, depth-first in declaration order (see
+L<PAGI::Routing::RouteEntry>); each Mount placement of a child Router gives
+its own entries.
 
 C<< mount('/prefix', routes => \@nodes) >> constructs a child Router
 application; C<< mount('/prefix', app => $router) >> retains that Router as

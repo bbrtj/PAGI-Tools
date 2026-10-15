@@ -200,4 +200,33 @@ PM
     like $err, qr{\AHTTP/1\.1 200\n.*shutdown broke}s, 'the status, then the shutdown error';
 };
 
+package Local::Documented {
+    use parent -norequire, 'PAGI::App::Compose';
+    use PAGI::Tools qw(openapi response route);
+    our $RECEIVED;
+    sub routes { [ route('/' => sub { response('Text', 'hello') }, name => 'home') ] }
+    sub application {
+        my ($self, $composition) = @_;
+        $RECEIVED = $composition;
+        return openapi($composition, title => 'Documented', version => '1');
+    }
+}
+
+subtest 'application: what to_app serves, from the composition' => sub {
+    is(PAGI::Test::Client->new(app => Local::Hello->new->to_app)->get('/')->text, 'hello',
+        'without the hook, the composition itself');
+
+    my $app = Local::Documented->new;
+    my $client = PAGI::Test::Client->new(app => $app->to_app);
+    isa_ok($Local::Documented::RECEIVED, ['PAGI::Compose'], 'the hook receives the composition');
+    is($client->get('/openapi.json')->json->{info}{title}, 'Documented', "to_app serves what it returns");
+    is($client->get('/')->text, 'hello', 'the application with it');
+    is([map { $_->template } $app->composition->route_table], ['/'],
+        'composition stays what the hooks declare');
+
+    my ($status, $out) = run_cli($app, 'GET', '/openapi.json');
+    is($status, 0, 'the command line serves it too');
+    like($out, qr/"title"\s*:\s*"Documented"/, 'with the document');
+};
+
 done_testing;

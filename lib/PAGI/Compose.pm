@@ -80,6 +80,12 @@ sub routes       { $_[0]->{router}->routes }
 sub http_default { $_[0]->{router}->http_default }
 sub desc         { $_[0]->{router}->desc }
 sub named_routes { $_[0]->{router}->named_routes }
+# The root Router's route_table, with the application middleware outermost.
+sub route_table {
+    my ($self) = @_;
+    return map { $_->_with_outer_middleware(@{$self->{middleware}}) }
+        $self->{router}->route_table;
+}
 sub route_named  { $_[0]->{router}->route_named($_[1]) }
 sub path_for     { my $self = shift; return $self->{router}->path_for(@_) }
 
@@ -272,6 +278,11 @@ namespace to slash route names. Once selected, the child Router owns its 404,
 405, and protocol misses. The outer root does not resume scanning, so later
 root siblings cannot win after that Mount.
 
+Compose is the application root. The parts of one application are Routers
+(C<< mount('/notes', app => MyApp::Notes->routing) >>), which routing sees
+into. A Compose mounted below another is a separate application, with its own
+names and no lifespan (see L<PAGI::Routing/mount>).
+
 =head2 middleware
 
     my $logging = sub {
@@ -322,6 +333,9 @@ callback is an error. The hash is shallow-copied.
 C<router> returns only the distinct root Router constructed and owned by
 Compose. C<routes> returns that root Router's direct children, so a preserved
 child Router appears as its root Mount rather than as flattened leaves.
+C<route_table> returns the root Router's entries with Compose's application
+middleware outermost in each entry's C<middleware> (see
+L<PAGI::Routing::RouteEntry>).
 C<http_default>, C<desc>, C<named_routes>, C<route_named>, and C<path_for>
 delegate to the root Router and therefore use its Resolver and stable
 declaration graph. Resolver traversal can discover named leaves beneath an
@@ -585,6 +599,14 @@ can observe lifespan. A bare PAGI Router deployment declines lifespan; a
 server's strict mode rejects that decline. Mount the Router explicitly beneath
 Compose when the root requires startup or shutdown. Compose does not add a
 C<lifespan> option to Router.
+
+Starlette's Mount is transparent to any mounted application that has
+C<routes>, a mounted Starlette application included: reverse routing and
+schema generation descend into it, and names inside it resolve against the
+outermost router. A PAGI mount is transparent only to a Router; a mounted
+Compose is a separate application whose names stay its own (see
+L<PAGI::Routing/mount>). For documentation this is FastAPI's choice: its OpenAPI
+generator skips mounts, and each mounted application serves its own.
 
 Starlette's multiprotocol Router C<default> was also considered but not copied:
 PAGI Router C<http_default> changes only HTTP NONE and preserves stock

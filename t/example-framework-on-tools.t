@@ -4,6 +4,8 @@ use Test2::V0;
 use FindBin qw($Bin);
 use lib "$Bin/../lib";
 use PAGI::Test::Client;
+use PAGI::Compose ();
+use PAGI::Routing ();
 
 # Tiny, the small framework in examples/framework-on-tools/lib, built on
 # PAGI-Tools: each test pins one seam the framework stands on.
@@ -79,7 +81,9 @@ is($doc->{paths}{'/notes/{id}'}{get}{parameters},
     [{ name => 'id', in => 'path', required => T(), schema => { type => 'integer' } }],
     'and the typed path parameter from its constraint');
 is($doc->{paths}{'/notes'}{get}{summary}, 'List the notes', 'and the route desc as summary');
-is($doc->{paths}{'/notes'}{get}{operationId}, 'notes', 'and the route name as operationId');
+is($doc->{paths}{'/notes'}{get}{operationId}, 'get_notes', 'and an operationId from the method and the route address');
+is($doc->{paths}{'/notes'}{post}{requestBody}{content}{'application/json'}{schema}{required}, ['text'],
+    'and a hand-written requestBody from the route meta');
 
 # The around middleware's other branches, on a second Tiny application: a
 # hook that answers without calling $next, one that replaces the response
@@ -154,6 +158,37 @@ subtest 'compact typed path parameters' => sub {
         is($probe->get('/n/7')->text, 'n7', 'an integer id matches');
         is($probe->get('/n/x')->status, 404, 'anything else is a miss');
     }
+};
+
+subtest 'the OpenAPI document refuses colliding paths and keeps operationIds unique' => sub {
+    my $ok = sub { 'ok' };
+    my $tiny = sub {
+        my $t = Tiny->new('OpenAPIProbe');
+        $t->add_route(@$_) for @_;
+        $t->to_compose;
+        return $t;
+    };
+    like dies { $tiny->(['GET', '/items/{id:\d+}', $ok], ['GET', '/items/{slug:[a-z]+}', $ok])->openapi_doc },
+        qr/same OpenAPI path/, 'templates differing only in parameter names are an error';
+    like dies { $tiny->(['GET', '/items/{id:\d+}', $ok], ['GET', '/items/{id:[a-z]+}', $ok])->openapi_doc },
+        qr{two routes for GET /items/\{id\}}, 'one template and method declared twice is an error';
+    is [keys %{ $tiny->(['HEAD', '/ping', $ok])->openapi_doc->{paths}{'/ping'} }], ['head'],
+        'a HEAD-only route is documented as head';
+
+    # What Tiny's own verbs cannot declare (a child Router under two mounts, a
+    # named route answering two methods): the composition is set directly.
+    my $child = PAGI::Routing::router(routes => [
+        PAGI::Routing::route('/show' => sub { }, name => 'show', methods => ['GET', 'POST']),
+    ]);
+    my $t = Tiny->new('OpenAPIProbe2');
+    $t->{compose} = PAGI::Compose::compose(routes => [
+        PAGI::Routing::mount('/api', app => $child, name => 'api'),
+        PAGI::Routing::mount('/v2',  app => $child, name => 'v2'),
+    ]);
+    my $doc = $t->openapi_doc;
+    is [sort map { $_->{operationId} } map { values %$_ } values %{ $doc->{paths} }],
+        [qw(get_api_show get_v2_show post_api_show post_v2_show)],
+        'distinct operationIds across methods and placements';
 };
 
 done_testing;

@@ -8,12 +8,12 @@ use lib "$FindBin::Bin/../../lib";
 use lib "$FindBin::Bin/../lib";
 use PAGITest::CurrentServer qw(current_server_unavailable);
 
-use PAGI::Auth qw(unauth_result requires);
+use PAGI::Auth qw(unauth_result);
 use PAGI::Compose qw(compose);
 use PAGI::Response qw(response);
 use PAGI::Routing qw(middleware mount route);
 
-# requires' redirect puts the requested path in next. Inside a mount the
+# Requires' redirect puts the requested path in next. Inside a mount the
 # routed path has lost the mount prefix, so next must come from the path the
 # client sent -- which only the server's scope shows for certain.
 
@@ -29,7 +29,8 @@ my $app = compose(
     middleware => [middleware('Authentication', backend => sub { unauth_result() })],
     routes => [
         mount('/admin', routes => [
-            route('/reports' => requires([], sub { response('JSON', {}) }, redirect => ['admin_login'])),
+            route('/reports' => sub { response('JSON', {}) },
+                middleware => [middleware('Requires', redirect => ['admin_login'])]),
             route('/login' => sub { response('JSON', {}) }, name => 'admin_login'),
         ]),
     ],

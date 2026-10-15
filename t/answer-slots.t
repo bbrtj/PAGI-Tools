@@ -6,7 +6,7 @@ use lib 'lib';
 use PAGI::Test::Client;
 use PAGI::Response qw(response);
 use PAGI::CSRF qw(csrf);
-use PAGI::Auth qw(requires unauth_result);
+use PAGI::Auth qw(unauth_result);
 use PAGI::Compose qw(compose);
 use PAGI::Routing qw(route websocket middleware);
 use PAGI::Middleware::CSRF;
@@ -50,18 +50,19 @@ subtest 'TrustedHosts refuse: as_app_object still reaches a native app' => sub {
     is [$res->status, $res->text], [421, 'native'];
 };
 
-subtest 'Auth requires refuse: one Request handler answers HTTP and WebSocket' => sub {
+subtest 'Requires refuse: one Request handler answers HTTP and WebSocket' => sub {
     my $refuse = sub { my ($request) = @_; response('Text', 'who are you', status => 401) };
+    my $requires = [middleware('Requires', refuse => $refuse)];
     my $app = compose(
         middleware => [middleware('Authentication', backend => sub { unauth_result() })],
         routes => [
-            route('/page' => requires([], sub { response('Text', 'in') }, refuse => $refuse)),
-            websocket('/ws' => requires([], sub { die 'not reached' }, refuse => $refuse)),
+            route('/page' => sub { response('Text', 'in') }, middleware => $requires),
+            websocket('/ws' => sub { die 'not reached' }, middleware => $requires),
         ],
     );
     my $client = PAGI::Test::Client->new(app => $app);
     is [$client->get('/page')->status, $client->get('/page')->text], [401, 'who are you'], 'HTTP';
-    is $client->websocket('/ws')->response->{status}, 401, 'WebSocket deny';
+    is $client->websocket('/ws')->response->{status}, 401, 'WebSocket denied before accept';
 };
 
 subtest 'a native app given as a handler is told about as_app_object' => sub {

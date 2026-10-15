@@ -23,6 +23,7 @@ my %SOURCE = (
     url                   => 'PAGI::Routing::URL',
     path_for              => 'PAGI::Routing::URL',
     url_for               => 'PAGI::Routing::URL',
+    openapi               => 'PAGI::Routing::OpenAPI',
     error_context         => 'PAGI::ErrorContext',
     app_state             => 'PAGI::State',
     stash                 => 'PAGI::Stash',

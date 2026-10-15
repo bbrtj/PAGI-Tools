@@ -17,13 +17,22 @@
     lib/MyApp.pm. A subclass writes routes, and optionally app_middleware,
     http_default, on_startup and on_shutdown; to_app builds them once into
     a PAGI::Compose application, composition returns the description for
-    tests, and writing call is refused.
+    tests, and writing call is refused. An application hook, given the
+    composition, returns what to serve (openapi adds its document there).
   - PAGI::State lifetimes: singleton { }, per_request { } and factory { }
     values in application state, built on first get -- once per worker,
     once per request, or on every get -- by a builder that may be async (get
     then gives a Future, shared by every caller of a pending build; a failed
     or cancelled build is built again by the next get). PAGI::State::Deferred
     is the seam for other lifetimes.
+  - PAGI::Routing route_table (Router and Compose): every route in the tree
+    as a PAGI::Routing::RouteEntry -- its path template and declared
+    pattern, kind, methods, name and absolute address, desc, capture names
+    and constraints as declared, the middleware around it, its meta, and the
+    node -- so a tool describes an application (an OpenAPI document, a route
+    listing, a test of its surface) from the public API. A meta option on
+    routes and mounts holds descriptive data for such tools; PAGI::Routing
+    never reads it.
   - PAGI::Test::Response header_pairs: every response header as
     [name, value] pairs, in order, repeats (Set-Cookie) kept.
   - PAGI::Test::Client lifespan => 'auto': a server's default lifespan mode.
@@ -63,10 +72,24 @@
   - PAGI::Pages: negotiated welcome, error and redirect responses.
   - PAGI::ErrorContext (error_context): the error an ErrorHandler handler
     answers. PAGI::Request::BodyError gains client_message.
-  - PAGI::Auth (auth, auth_result, unauth_result, www_authenticate,
-    requires) and PAGI::Middleware::Authentication. A body its backend
+  - PAGI::Auth (auth, auth_result, unauth_result, www_authenticate)
+    and PAGI::Middleware::Authentication. A body its backend
     reads is handed on to the application with record_receive;
     body_buffer chooses where it is kept meanwhile.
+  - PAGI::Middleware::Requires: the scopes a route, mount or application
+    requires, as middleware (Starlette's @requires). Otherwise a plain 403,
+    a refuse application, or a redirect 303: to a location as written, or
+    to path_for arguments with ?next= added. WebSocket and SSE are refused
+    before they start, and route_table shows it in each entry's middleware.
+  - PAGI::Routing::OpenAPI: openapi($app, title => ..., version => ...)
+    returns the application, a Compose, with its OpenAPI 3.1 document as a
+    route at /openapi.json, inside the application's own middleware. The
+    document is built from route_table: paths and methods, typed path parameters,
+    operationIds, summaries from desc, security from Requires, and the
+    request and response bodies a route declares in meta. Mounted
+    applications describe themselves. openapi_document returns the document
+    alone; a subclass can override operation_id, parameter_schema,
+    security_for or operation. PAGI::Tools re-exports openapi.
   - PAGI::State, PAGI::CSRF, PAGI::Transport and PAGI::Routing::URL
     helpers; PAGI::Authority; PAGI::Utils::Headers; PAGI::Utils
     path_from_root, pagi_env and environment predicates.
@@ -202,9 +225,6 @@
   - Maintenance answers with a plain-text 503 by default; its response
     option (any application) replaces the body and content_type options,
     which now die.
-  - PAGI::Auth's requires refuses with a plain 403 and takes refuse (any
-    application) in place of status; its redirect is a
-    PAGI::Response::Redirect 303.
   - App::File (and Directory and Static through it) refuses with 0.002002's
     plain text, keeping the 405's Allow and the 416's Content-Range; its
     refuse option replaces all four refusals, with the reason in

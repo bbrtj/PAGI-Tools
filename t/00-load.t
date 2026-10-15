@@ -20,7 +20,9 @@ my @load_modules = qw(
     PAGI::Auth::UnauthenticatedUser
     PAGI::Routing
     PAGI::Routing::Router
+    PAGI::Routing::OpenAPI
     PAGI::Routing::Route
+    PAGI::Routing::RouteEntry
     PAGI::Routing::Mount
     PAGI::Routing::Middleware
     PAGI::Routing::Pattern
@@ -30,6 +32,7 @@ my @load_modules = qw(
     PAGI::Routing::HeadBoundary
     PAGI::Middleware
     PAGI::Middleware::Authentication
+    PAGI::Middleware::Requires
     PAGI::Middleware::Builder
     PAGI::Middleware::RequestClass
     PAGI::App::File

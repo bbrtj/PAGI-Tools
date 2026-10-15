@@ -6,19 +6,20 @@ use Future::AsyncAwait;
 use FindBin qw($Bin);
 use lib "$Bin/../../lib";
 
-use PAGI::Auth qw(auth auth_result unauth_result requires);
+use PAGI::Auth qw(auth auth_result unauth_result);
 use PAGI::Auth::SimpleUser;
 use PAGI::Compose qw(compose);
+use PAGI::Middleware::Requires;
 use PAGI::Pages;
 use PAGI::Response qw(response);
 use PAGI::Routing qw(middleware mount route sse websocket);
 use PAGI::Test::Client;
 
-# requires(SCOPES, HANDLER, %options) returns a handler that calls HANDLER
-# only for an authenticated user holding every scope -- Starlette's @requires.
-# Otherwise it refuses with a plain 403, or with the `refuse` application, or
-# redirects: to a string exactly as written, or to path_for(@arrayref) with
-# ?next= added.
+# middleware('Requires', scopes => SCOPES, %options) runs what it wraps only
+# for an authenticated user holding every scope -- Starlette's @requires, as
+# middleware. Otherwise it refuses with a plain 403, or with the `refuse`
+# application, or redirects: to a string exactly as written, or to
+# path_for(@arrayref) with ?next= added.
 
 # Tokens: 'reader' has notes:read; 'editor' has notes:read and notes:write.
 my %grants = (reader => ['notes:read'], editor => ['notes:read', 'notes:write']);
@@ -34,50 +35,57 @@ my $authentication = middleware('Authentication', backend => sub {
 
 sub ok_response { response('JSON', { ok => 1, who => auth($_[0])->user->identity }) }
 
+# A route's or mount's middleware option holding one Requires.
+sub protected { return (middleware => [middleware('Requires', @_)]) }
+
 my $app = compose(
     middleware => [$authentication],
     routes => [
-        route('/me'      => requires([], \&ok_response)),
-        route('/read'    => requires('notes:read', \&ok_response)),
-        route('/write'   => requires(['notes:read', 'notes:write'], \&ok_response)),
-        route('/hidden'  => requires(['notes:write'], \&ok_response,
+        route('/me'      => \&ok_response, middleware => [middleware('Requires')]),
+        route('/read'    => \&ok_response, protected(scopes => 'notes:read')),
+        route('/write'   => \&ok_response, protected(scopes => ['notes:read', 'notes:write'])),
+        route('/hidden'  => \&ok_response, protected(scopes => ['notes:write'],
             refuse => response('Text', 'Not Found', status => 404))),
-        route('/branded' => requires(['notes:write'], \&ok_response, refuse => PAGI::Pages->forbidden)),
-        route('/page'    => requires([], \&ok_response, redirect => ['login'])),
-        route('/elsewhere' => requires([], \&ok_response,
-            redirect => 'https://login.example.com/?app=notes')),
-        route('/own-next'  => requires([], \&ok_response,
-            redirect => ['login', {}, { next => '/dashboard' }])),
-        route('/named-args' => requires([], \&ok_response,
-            redirect => ['login', query => { lang => 'en' }])),
+        route('/branded' => \&ok_response, protected(scopes => ['notes:write'], refuse => PAGI::Pages->forbidden)),
+        route('/page'    => \&ok_response, protected(redirect => ['login'])),
+        route('/elsewhere' => \&ok_response, protected(redirect => 'https://login.example.com/?app=notes')),
+        route('/own-next'  => \&ok_response, protected(redirect => ['login', {}, { next => '/dashboard' }])),
+        route('/named-args' => \&ok_response, protected(redirect => ['login', query => { lang => 'en' }])),
         route('/login'   => sub { response('JSON', { login => 1 }) }, name => 'login'),
         # Nested: the target's {org} is filled from the current route's {org}.
-        route('/orgs/{org}/settings' => requires([], \&ok_response, redirect => ['org_login'])),
-        route('/orgs/{org}/billing' => requires([], \&ok_response,
-            redirect => ['org_login', {}, { reason => 'billing' }])),
+        route('/orgs/{org}/settings' => \&ok_response, protected(redirect => ['org_login'])),
+        route('/orgs/{org}/billing' => \&ok_response,
+            protected(redirect => ['org_login', {}, { reason => 'billing' }])),
         route('/orgs/{org}/login' => sub { response('JSON', { login => 1 }) }, name => 'org_login'),
         mount('/admin', routes => [
-            route('/reports' => requires([], \&ok_response, redirect => ['admin_login'])),
+            route('/reports' => \&ok_response, protected(redirect => ['admin_login'])),
             route('/login' => sub { response('JSON', { login => 1 }) }, name => 'admin_login'),
         ]),
-        route('/async'   => requires([], async sub { my ($r) = @_; return ok_response($r) })),
-        websocket('/ws-hidden' => requires(['notes:write'], sub { die 'not reached' },
+        # One Requires on a mount protects every route under it. The mount is
+        # unnamed, so its routes and the root's share one namespace and
+        # 'login' finds the root's route.
+        mount('/staff', protected(scopes => ['notes:write'], redirect => ['login']), routes => [
+            route('/a' => \&ok_response),
+            route('/b' => \&ok_response, methods => ['POST']),
+        ]),
+        route('/async'   => async sub { my ($r) = @_; return ok_response($r) }, protected()),
+        websocket('/ws-hidden' => sub { die 'not reached' }, protected(scopes => ['notes:write'],
             refuse => response('Text', 'Not Found', status => 404))),
-        websocket('/ws'  => requires(['notes:read'], async sub {
+        websocket('/ws'  => async sub {
             my ($ws) = @_; await $ws->accept; await $ws->send_text('in'); await $ws->close;
-        })),
-        sse('/events'    => requires(['notes:read'], async sub {
+        }, protected(scopes => ['notes:read'])),
+        sse('/events'    => async sub {
             my ($sse) = @_; await $sse->send_event(data => 'in'); await $sse->close;
-        })),
+        }, protected(scopes => ['notes:read'])),
     ],
 );
 my $client = PAGI::Test::Client->new(app => $app);
 my %as = map { $_ => { Authorization => "Bearer $_", Accept => 'application/json' } } keys %grants;
 my $guest = { Accept => 'application/json' };
 
-subtest 'the handler runs only for an authenticated user with every scope' => sub {
+subtest 'the route runs only for an authenticated user with every scope' => sub {
     is($client->get('/me', headers => $as{reader})->json, { ok => 1, who => 'reader' },
-        'requires([]) lets in any authenticated user');
+        'no scopes lets in any authenticated user');
     is($client->get('/read', headers => $as{reader})->status, 200, 'one scope, as a string');
     is($client->get('/write', headers => $as{editor})->status, 200, 'all scopes held');
     is($client->get('/async', headers => $as{editor})->status, 200, 'an async handler');
@@ -108,6 +116,9 @@ subtest 'refuse replaces the refusal; redirect sends the user elsewhere' => sub 
     is([$res->status, $res->header('location')], [303, '/login?next=%2Fpage%3Ftab%3D2'],
         'an arrayref is path_for arguments, with the original path and query added as next');
     is($client->get('/page', headers => $as{reader})->status, 200, 'an authenticated user is not redirected');
+    my $head = $client->head('/page', headers => $guest);
+    is([$head->status, $head->header('location'), $head->content], [303, '/login?next=%2Fpage', ''],
+        'HEAD is redirected the same way, with no body');
 
     is($location->('/orgs/acme/settings'), '/orgs/acme/login?next=%2Forgs%2Facme%2Fsettings',
         "the target's parameters are filled from the current route's, as path_for does");
@@ -138,23 +149,105 @@ subtest 'WebSocket and SSE routes are refused with the same response' => sub {
     });
 };
 
-subtest 'mistakes are caught when the route is declared' => sub {
-    like(dies { requires(['x'], 'not code') }, qr/requires handler must be a coderef/, 'a non-code handler');
-    like(dies { requires(['x'], sub {}, status => 404) }, qr/unknown option.*status/i,
-        'status is gone: refuse takes its place');
+subtest 'a Requires on a mount protects every route under it' => sub {
+    my $res = $client->get('/staff/a', headers => $as{reader});
+    is([$res->status, $res->header('location')], [303, '/login?next=%2Fstaff%2Fa'],
+        'a scope missing: redirected to the sibling route named login');
+    is($client->post('/staff/b', headers => $guest)->status, 303, 'every route under the mount, every method');
+    is($client->get('/staff/a', headers => $as{editor})->status, 200, 'the scope held: in');
+    is($client->post('/staff/b', headers => $as{editor})->status, 200, 'on every route');
+};
+
+subtest 'on a named mount, a redirect name resolves as from inside it' => sub {
+    my $page = sub { response('JSON', { page => 1 }) };
+    my $members = sub {
+        my ($redirect) = @_;
+        return mount('/members', name => 'members',
+            middleware => [middleware('Requires', redirect => $redirect)], routes => [
+                route('/' => \&ok_response),
+                route('/about' => $page, name => 'about'),
+            ]);
+    };
+    my $location = sub {
+        my ($redirect) = @_;
+        my $app = compose(middleware => [$authentication],
+            routes => [$members->($redirect), route('/login' => $page, name => 'login')]);
+        return PAGI::Test::Client->new(app => $app)->get('/members/', headers => $guest)->header('location');
+    };
+    is($location->(['about']), '/members/about?next=%2Fmembers%2F', 'a plain name is a route inside the mount');
+    is($location->(['../login']), '/login?next=%2Fmembers%2F', '../ reaches the enclosing Router');
+    is($location->(['/login']), '/login?next=%2Fmembers%2F', 'an absolute address is the logical one');
+    is($location->('/login'), '/login', 'a string is the location as written, without next');
+};
+
+subtest "in Compose's application middleware, a route name says where Requires must go" => sub {
+    my $login = route('/login' => sub { response('JSON', { login => 1 }) }, name => 'login');
+    my $outside = sub {
+        my ($redirect) = @_;
+        return compose(routes => [$login],
+            middleware => [$authentication, middleware('Requires', redirect => $redirect)]);
+    };
+    my $client = PAGI::Test::Client->new(app => $outside->(['login']), raise_app_exceptions => 1);
+    like(dies { $client->get('/x', headers => $guest) },
+        qr/\QRequires redirect names a route, which needs a Router's routing frame: put Requires on a route, mount or Router, or give a location string\E/,
+        'a route name before routing has matched');
+    is(PAGI::Test::Client->new(app => $outside->('/login'))->get('/x', headers => $guest)->header('location'),
+        '/login', 'a location string works there');
+};
+
+subtest 'route_table shows what each route requires' => sub {
+    my %entry = map { ($_->template => $_) } $app->route_table;
+    my $requires = sub {
+        my @found = grep { $_->factory eq 'Requires' } @{ $entry{$_[0]}->middleware };
+        return @found == 1 ? $found[0]->config : undef;
+    };
+    is($requires->('/write'), { scopes => ['notes:read', 'notes:write'] }, "a route's own Requires");
+    is($requires->('/staff/b'), { scopes => ['notes:write'], redirect => ['login'] },
+        "a route under a protected mount carries the mount's");
+    is($requires->('/login'), undef, 'an open route has none');
+};
+
+subtest 'other scope types pass through; HTTP without Authentication dies' => sub {
+    my $seen;
+    my $wrapped = PAGI::Middleware::Requires->new->wrap(async sub { $seen = $_[0]{type} });
+    my $noop = sub { Future->done };
+    $wrapped->({ type => 'lifespan' }, $noop, $noop)->get;
+    is($seen, 'lifespan', 'a lifespan scope reaches the application without pagi.auth');
+    like(dies { $wrapped->({ type => 'http' }, $noop, $noop)->get }, qr/pagi\.auth/,
+        'an HTTP request with no Authentication in front is a configuration error');
+};
+
+subtest 'mistakes die when the application is compiled' => sub {
+    my $new = sub { PAGI::Middleware::Requires->new(@_) };
+    like(dies { $new->(status => 404) }, qr/Requires has unknown option 'status'/,
+        'status is not an option: refuse is');
     for my $value (undef, '', 0, 'yes') {
         my $label = defined $value ? "'$value'" : 'undef';
-        like(dies { requires(['x'], sub {}, refuse => $value) },
-            qr/\QPAGI::Auth requires 'refuse' must be an application\E/, "refuse $label");
+        like(dies { $new->(refuse => $value) },
+            qr/\QRequires 'refuse' must be an application\E/, "refuse $label");
     }
-    like(dies { requires(['x'], sub {}, colour => 'red') }, qr/unknown option.*colour/i, 'an unknown option');
-    like(dies { requires(['x'], sub {}, redirect => sub { '/x' }) },
-        qr/redirect must be a location string or an arrayref of path_for arguments/, 'a coderef redirect');
-    like(dies { requires(['x'], sub {}, refuse => response('Text', 'no'), redirect => ['login']) },
-        qr/requires takes refuse or redirect, not both/, 'refuse and redirect together');
-    like(dies { requires(['x'], sub {}, redirect => []) },
-        qr/redirect must be a location string or an arrayref of path_for arguments/, 'an empty arrayref');
-    ok(PAGI::Auth->requires([], sub {}), 'it is also a class method, like the other PAGI::Auth functions');
+    like(dies { $new->(colour => 'red') }, qr/Requires has unknown option 'colour'/, 'an unknown option');
+    for my $case ([sub { '/x' }, 'a coderef'], [[], 'an empty arrayref'], [undef, 'undef'], ['', 'an empty string'],
+                  [[{}], 'an arrayref without a name']) {
+        like(dies { $new->(redirect => $case->[0]) },
+            qr/Requires redirect must be a location string or an arrayref of path_for arguments/,
+            "redirect: $case->[1]");
+    }
+    like(dies { $new->(refuse => response('Text', 'no'), redirect => ['login']) },
+        qr/Requires takes refuse or redirect, not both/, 'refuse and redirect together');
+    for my $case ([{ a => 1 }, 'a hashref'], [[undef], 'an undefined scope'], [[[]], 'a reference as a scope']) {
+        like(dies { $new->(scopes => $case->[0]) },
+            qr/Requires scopes must be a scope string or an arrayref of them/, "scopes: $case->[1]");
+    }
+    my $declared = compose(routes => [route('/' => sub { response('Text', 'x') },
+        middleware => [middleware('Requires', colour => 'red')])]);
+    like(dies { $declared->to_app }, qr/Requires has unknown option 'colour'/,
+        'through compose, the mistake surfaces at to_app');
+};
+
+subtest 'PAGI::Auth no longer offers requires' => sub {
+    ok(!PAGI::Auth->can('requires'), 'no requires function');
+    ok(!(grep { $_ eq 'requires' } @PAGI::Auth::EXPORT_OK), 'nor an export of one');
 };
 
 done_testing;

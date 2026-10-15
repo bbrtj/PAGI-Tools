@@ -36,7 +36,7 @@ get '/notes' => name => 'notes', desc => 'List the notes', sub ($req) {
     return [ map { $notes->{$_} } sort { $a <=> $b } keys %$notes ];
 };
 
-get '/notes/{id}' => constraints => { id => Int }, sub ($req) {
+get '/notes/{id:&Int}' => name => 'note', desc => 'One note', sub ($req) {
     return find_note($req, $req->param('id'));
 };
 
@@ -57,11 +57,11 @@ tiny;
 | `before` hooks | the same wrapper | 4 lines |
 | `around` with Starlette's `call_next` | a native middleware wrapping `$send`: `$next` starts the inner app and resolves on `http.response.start`; the start event is held until the hook returns | 38 lines of raw-protocol code, the only such code in Tiny, and the delicate part: replacing the response has to fail the held send to unwind the handler |
 | services built at startup | Compose `lifespan => { startup }`, read with `$request->state` | none |
-| typed path parameters | `constraints => { id => Int }`, or the compact `{id:&Int}` | `route()` looks a compact provider up in its caller, which is Tiny, so Tiny passes `declaration_package` (the application's package). The app keeps the explicit form because the OpenAPI document reads `Route->constraints`, which holds only explicit constraints |
+| typed path parameters | the compact `{id:&Int}`, or `constraints => { id => Int }` | `route()` looks a compact provider up in its caller, which is Tiny, so Tiny passes `declaration_package` (the application's package). Either form reaches the OpenAPI document: `route_table` reports each capture's constraints as declared |
 | `on_error` class-to-response mapping | one `ErrorHandler` handler reading `error_context($req)->exception` | none; the handler gets a `Tiny::Request`, because RequestClass is listed before the ErrorHandler |
 | plugins | a package with `register($app)` using the same hooks | none |
 | the raw escape hatch | `route($path => as_app_object($code), methods => '*')` | none |
-| an OpenAPI document | `Compose->router->routes`, then `Route->path/methods/parameters/constraints/name/desc` and `Mount->app` | none; a `Types::Standard` type names its OpenAPI type through `display_name` |
+| an OpenAPI document | `PAGI::Routing::OpenAPI->document($compose)`, which reads `route_table` and each route's `meta => { openapi => {...} }` | none: Tiny keeps no generator of its own, so the document follows PAGI::Routing::OpenAPI's rules (an unrestricted `raw` route is a GET, HEAD folds into GET, two routes on one OpenAPI path are an error, an operationId is the method and the route's address, `get_notes`) |
 
 Order matters and Tools leaves it to the framework: the `around` hooks wrap
 the ErrorHandler, as Starlette's user middleware wraps its

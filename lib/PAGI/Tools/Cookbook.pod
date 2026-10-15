@@ -343,8 +343,8 @@ When a reverse proxy publishes the application under C</app>, every link and
 redirect it emits must start with C</app>. The application sees C<root_path>
 C</app> and its own C<path> below it (see
 L<PAGI::Spec::Www/Paths, Mounts and Root Paths>), and C<path_for>,
-C<url_for>, L<PAGI::Request/request_uri> and C<requires>' C<next> all include
-the prefix. Test it as it will be served, requesting the browser's URL:
+C<url_for>, L<PAGI::Request/request_uri> and the C<next> of a
+L<PAGI::Middleware::Requires> redirect all include the prefix. Test it as it will be served, requesting the browser's URL:
 
   use v5.40;
   use PAGI::Compose qw(compose);
@@ -1775,28 +1775,30 @@ eligibility, response metadata, and range policy.
 
 =head1 AUTHENTICATION & SESSIONS
 
-L<PAGI::Auth> constructs authentication results, reads the installed context,
-declares what a route requires with C<requires>, and formats individual
-C<WWW-Authenticate> values. Beyond C<requires>, applications choose ordinary
-Pages or Response applications for refusals. Basic credentials and Bearer
+L<PAGI::Auth> constructs authentication results, reads the installed context
+and formats individual C<WWW-Authenticate> values; the
+L<PAGI::Middleware::Requires> middleware declares what a route requires.
+Beyond it, applications choose ordinary Pages or Response applications for
+refusals. Basic credentials and Bearer
 tokens require TLS in real deployments.
 
 =head2 Declaring what a route requires
 
-C<requires(SCOPES, HANDLER, %options)> is Starlette's C<@requires>: it returns
-a handler that runs HANDLER only for an authenticated user holding every scope,
-and otherwise refuses with a plain 403, a C<refuse> application of your own, or
-a C<redirect>. It works for C<route>, C<websocket> and C<sse> handlers (the last
-two are denied or declined before they start), and needs the Authentication
-middleware in front of the route.
+C<middleware('Requires', scopes => SCOPES, %options)> is Starlette's
+C<@requires> as middleware. What it wraps runs only for an authenticated user
+holding every scope; anyone else gets a plain 403, a C<refuse> application of
+your own, or a C<redirect>. On a route it guards that route, and on a mount
+every route under the mount. WebSocket and SSE routes are denied or declined
+before they start. It needs the Authentication middleware in front of it,
+and C<route_table> shows it in each protected route's C<middleware>.
 
   use v5.40;
   use Future::AsyncAwait;
-  use PAGI::Auth qw(auth auth_result unauth_result requires);
+  use PAGI::Auth qw(auth auth_result unauth_result);
   use PAGI::Auth::SimpleUser;
   use PAGI::Compose qw(compose);
   use PAGI::Response qw(response);
-  use PAGI::Routing qw(middleware route);
+  use PAGI::Routing qw(middleware mount route);
 
   my %grants = (reader => ['notes:read'], editor => ['notes:read', 'notes:write']);
 
@@ -1811,22 +1813,28 @@ middleware in front of the route.
       })],
       routes => [
           # Any authenticated user.
-          route('/me' => requires([], sub ($request) {
+          route('/me' => sub ($request) {
               response('JSON', { me => auth($request)->user->identity });
-          })),
+          }, middleware => [middleware('Requires')]),
           # Every listed scope.
-          route('/notes' => requires(['notes:read', 'notes:write'], async sub ($request) {
+          route('/notes' => async sub ($request) {
               response('JSON', { saved => await $request->json }, status => 201);
-          }), methods => ['POST']),
+          }, methods => ['POST'],
+              middleware => [middleware('Requires', scopes => ['notes:read', 'notes:write'])]),
           # Hide the route's existence from those without access.
-          route('/audit' => requires(['admin'], sub ($request) {
+          route('/audit' => sub ($request) {
               response('JSON', { audit => [] });
-          }, refuse => response('Text', 'Not Found', status => 404))),
+          }, middleware => [middleware('Requires', scopes => ['admin'],
+              refuse => response('Text', 'Not Found', status => 404))]),
           # Browsers: go to the route named 'login', with ?next= set.
-          route('/home' => requires([], sub ($request) {
+          route('/home' => sub ($request) {
               response('JSON', { home => 1 });
-          }, redirect => ['login'])),
+          }, middleware => [middleware('Requires', redirect => ['login'])]),
           route('/login' => sub ($request) { response('JSON', { login => 1 }) }, name => 'login'),
+          # A group: every route under the mount needs notes:write.
+          mount('/drafts', middleware => [middleware('Requires', scopes => ['notes:write'])], routes => [
+              route('/' => sub ($request) { response('JSON', { drafts => [] }) }),
+          ]),
       ],
   );
 
@@ -1837,18 +1845,25 @@ point of it: the target's parameters are filled from the current route's,
 and the original path and query are added as C<next> so the login page can
 send the user back. On C</orgs/acme/billing>:
 
-  route('/orgs/{org}/settings' => requires([], \&settings, redirect => ['org_login'])),
+  route('/orgs/{org}/settings' => \&settings,
+      middleware => [middleware('Requires', redirect => ['org_login'])]),
       # /orgs/acme/login?next=%2Forgs%2Facme%2Fsettings
-  route('/orgs/{org}/billing' => requires([], \&billing,
-      redirect => ['org_login', {}, { reason => 'billing' }])),
+  route('/orgs/{org}/billing' => \&billing,
+      middleware => [middleware('Requires', redirect => ['org_login', {}, { reason => 'billing' }])]),
       # /orgs/acme/login?next=%2Forgs%2Facme%2Fbilling&reason=billing
   route('/orgs/{org}/login' => \&org_login, name => 'org_login'),
-  route('/account' => requires([], \&account,
-      redirect => 'https://login.example.com/?app=notes')),
+  route('/account' => \&account,
+      middleware => [middleware('Requires', redirect => 'https://login.example.com/?app=notes')]),
       # exactly that
 
 A C<next> in your own query wins over the automatic one. Act on C<next> only
 when it is a local path (F<examples/auth-cookie-login> shows the check).
+
+Names resolve as from a handler where the middleware runs: on a mount, as
+from inside it. A login page outside a named mount is C<../login> (or
+C</login>); under an unnamed mount the enclosing Router's names are the
+mount's too. An arrayref needs a Router's routing frame, so at Compose's
+application level give a string location instead.
 
 Like Starlette's, the refusal is one status: it does not tell an
 unauthenticated user from a missing scope or send a C<WWW-Authenticate>
@@ -1936,9 +1951,9 @@ B<Request handler:> pass repeated ordered fields. Values are never comma-joined.
 
 =head2 Explicit Login Redirect Policy
 
-B<Request handler:> C<< requires([], \&home, redirect => ['login']) >> covers
-the usual case (see L</Declaring what a route requires>). Written by hand, the
-same policy is a redirect the handler chooses; keep the 401 challenge for
+B<Request handler:> C<< middleware('Requires', redirect => ['login']) >> on
+the route covers the usual case (see L</Declaring what a route requires>).
+Written by hand, the same policy is a redirect the handler chooses; keep the 401 challenge for
 clients that need protocol authentication.
 
   use PAGI::Pages qw(redirect);
@@ -1954,7 +1969,7 @@ flow, including login and logout methods. It requires Perl 5.40 or newer.
 =head2 Deliberate 404 Concealment
 
 B<Request handler:> when disclosing resource existence is itself sensitive,
-make concealment explicit policy -- C<< requires([...], \&handler, refuse => response('Text', 'Not Found', status => 404)) >>
+make concealment explicit policy -- C<< middleware('Requires', scopes => [...], refuse => response('Text', 'Not Found', status => 404)) >>
 when the rule is "these scopes", or by hand when it is something else:
 
   use PAGI::Pages qw(not_found);
