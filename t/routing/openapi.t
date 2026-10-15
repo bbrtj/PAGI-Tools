@@ -203,6 +203,7 @@ subtest 'openapi returns the application, its document a route inside it' => sub
     is($client->post('/openapi.json')->status, 404, 'another method reaches the application');
     is($client->get('/a')->text, 'ok', 'other requests reach the application');
     is($client->get('/nope')->text, 'custom 404', "and its http_default");
+    is($app->http_default, $inner->http_default, 'which the result reports, as it does desc');
     ok((grep { $_ eq 'GET /openapi.json' } @seen), "the application's own middleware sees the document request");
     is($started, 1, 'and lifespan runs');
 

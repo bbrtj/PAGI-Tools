@@ -143,8 +143,11 @@ sub apply {
     # logging, error handling) and Compose's HEAD handling apply to it. The
     # source's root Router, mounted behind it, keeps its names, its
     # http_default and its desc.
-    my $lifespan = $is_compose ? $source->lifespan : undef;
-    my $desc     = $router->desc;
+    my $lifespan     = $is_compose ? $source->lifespan : undef;
+    my $desc         = $router->desc;
+    # Never consulted: the root mount matches every path, so misses reach the
+    # source Router's own. Carried so the result reports what it answers.
+    my $http_default = $router->http_default;
     return PAGI::Compose->new(
         routes => [
             PAGI::Routing::route($path => $serve, methods => ['GET']),
@@ -153,6 +156,7 @@ sub apply {
         ($is_compose        ? (middleware => $source->middleware) : ()),
         (defined $lifespan  ? (lifespan   => $lifespan)           : ()),
         (defined $desc      ? (desc       => $desc)               : ()),
+        (defined $http_default ? (http_default => $http_default) : ()),
     );
 }
 
@@ -384,8 +388,10 @@ apply to it. A refusing application middleware (an Authentication that
 turns guests away) refuses the document too; to keep it public, put that
 middleware on a Router or a mount instead.
 
-Dies when the source already answers C<GET> at C<path>, which the document
-route would shadow. The result is a Compose, so it can be inspected and
+Dies when the source declares a C<GET> route at exactly C<path>, which the
+document route would shadow. A capture or wildcard route that would also match
+C<path> (C</{file}>, C</*rest>) is not detected: the document route, declared
+first, answers there. The result is a Compose, so it can be inspected and
 passed to another function that takes one.
 
 =head1 THE DOCUMENT
