@@ -2,8 +2,10 @@ package PAGI::App::Compose;
 use strict;
 use warnings;
 use Carp qw(croak);
+use Scalar::Util qw(blessed);
 use parent 'PAGI::App';
 use PAGI::Compose ();
+use PAGI::Utils ();
 
 # The hooks a subclass writes. Each runs when to_app builds the application,
 # never per request.
@@ -23,6 +25,11 @@ sub http_default { return undef }
 # because configured callbacks require server state support.
 sub on_startup  { return }
 sub on_shutdown { return }
+
+# Optional: the application to serve, given the composition; the default
+# serves the composition itself. A whole-application feature that needs the
+# declaration (openapi) takes the composition and returns a new one here.
+sub application { my ($self, $composition) = @_; return $composition }
 
 # The PAGI::Compose description the hooks declare, built afresh on each
 # call: to_app compiles it, a test inspects it. The hooks run in this order:
@@ -61,7 +68,11 @@ sub composition {
 
 sub to_app {
     my ($self) = @_;
-    return $self->composition->to_app;
+    my $class = ref $self;
+    my $application = $self->application($self->composition);
+    croak "${class}->application must return the application to serve: a Compose, or anything with to_app"
+        unless ref($application) eq 'CODE' || (blessed($application) && $application->can('to_app'));
+    return PAGI::Utils::to_app($application);
 }
 
 1;
@@ -183,6 +194,20 @@ C<on_startup> may declare values instead of building them -- built on first
 use, once per worker, once per request, or on every use, sync or async: see
 L<PAGI::State/LIFETIMES>.
 
+=head2 application
+
+    sub application ($self, $composition) {
+        return openapi($composition, title => 'Notes', version => '1.0.0');
+    }
+
+Optional. Called by C<to_app> with the composition the hooks declare;
+returns the application to serve -- a L<PAGI::Compose>, or anything with
+C<to_app>. The default returns the composition. A feature that needs the
+whole application's declaration, rather than wrapping its requests, takes the
+composition here and returns a new one: L<PAGI::Routing::OpenAPI/openapi> adds
+the document route this way. Middleware, which wraps requests and needs no
+declaration, belongs in C<app_middleware>.
+
 =head1 METHODS
 
 =head2 composition
@@ -199,8 +224,10 @@ C<app_middleware> returns something other than an arrayref.
 
 =head2 to_app
 
-Returns C<< $self->composition->to_app >>: the compiled application. A
-C<to_app> that does not call C<SUPER::to_app> replaces all of the above.
+Returns the compiled application: C<application>'s result for the
+composition, compiled. It dies when C<application> returns something that is
+not an application. A C<to_app> that does not call C<SUPER::to_app> replaces
+all of the above; C<application> is the place to change what is served.
 
 L<PAGI::App>'s C<new>, C<prepare_app>, C<run_if_script> and C<run> are
 inherited unchanged; C<prepare_app> runs once in C<composition>, before the
@@ -221,8 +248,8 @@ its root Router; route targets are built here (C<endpoint('Class')> loads
 its class, C<< PAGI::App::File->new >> runs). Middleware is not.
 
 =item * C<to_app> (once per server, per L<PAGI::Test::Client>, or per command
-line): C<composition>, then compilation, which loads, constructs and wraps
-the middleware.
+line): C<composition>, then C<application> with it, then compilation, which
+loads, constructs and wraps the middleware.
 
 =item * Each request: only the compiled application runs; no hook does.
 
@@ -308,7 +335,7 @@ C<composition>. Open resources in C<on_startup>.
 not run (L<PAGI::Compose/LIFESPAN OWNERSHIP AND STATE>).
 
 =item * A C<to_app> that does not call C<SUPER::to_app>: none of the above
-applies to it.
+applies to it. To change what is served, override C<application>.
 
 =back
 

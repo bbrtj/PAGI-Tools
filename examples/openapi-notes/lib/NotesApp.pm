@@ -5,9 +5,9 @@ package NotesApp;
 # document describes every route in it. /static is a separate application
 # (a mount routing does not see into), so the document leaves it out.
 #
-# The document is served by wrapping the application from outside: the
-# wrapper holds the whole application, answers GET /openapi.json, and hands
-# everything else to it.
+# The document is added in the application hook: openapi takes the
+# composition the hooks declare and returns the application with its
+# document as a route, inside the application's own middleware.
 #
 # Run:  pagi-server -I lib --app lib/NotesApp.pm --port 5000
 # Try:  curl -s localhost:5000/openapi.json | python3 -m json.tool
@@ -47,8 +47,8 @@ sub app_middleware ($self) {
     return [ middleware('Authentication', backend => \&bearer) ];
 }
 
-sub to_app ($self) {
-    return openapi($self->composition,
+sub application ($self, $composition) {
+    return openapi($composition,
         title           => 'Notes',
         version         => '1.0.0',
         security_scheme => [bearer => { type => 'http', scheme => 'bearer' }],

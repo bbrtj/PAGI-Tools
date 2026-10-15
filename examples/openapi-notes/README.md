@@ -43,11 +43,12 @@ The parts of one application are Routers, with one Compose at the root.
 see into a mounted application, so the document leaves it out; a mounted
 application describes itself.
 
-The root serves the document by wrapping itself from outside, in `to_app`:
+The root adds the document in its `application` hook, which receives the
+composition its hooks declare and returns the application to serve:
 
 ```perl
-sub to_app ($self) {
-    return openapi($self->composition,
+sub application ($self, $composition) {
+    return openapi($composition,
         title           => 'Notes',
         version         => '1.0.0',
         security_scheme => [bearer => { type => 'http', scheme => 'bearer' }],
@@ -56,9 +57,12 @@ sub to_app ($self) {
 }
 ```
 
-The wrapper holds the whole application. It answers `GET /openapi.json` and
-hands every other request, and lifespan, to the application, so the document
-never describes itself. For a small application in one script it is just
+`openapi` returns a new Compose: the document as a `GET /openapi.json` route,
+the application's routes mounted behind it, and its middleware and lifespan
+kept. The document is a route of the application, so its middleware (CORS,
+logging, error handling) applies to it, and HEAD works; it is built from the
+composition before that route is added, so it never describes itself. For a
+small application in one script it is just
 `openapi(compose(routes => [...]), title => ..., version => ...)`.
 
 ## The document
