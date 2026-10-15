@@ -103,6 +103,27 @@ subtest 'opaque and Router-valued mounts' => sub {
     is [map { $_->kind . ' ' . $_->template } @e], ['mount /legacy', 'mount /c', 'route /api/y'],
         'an opaque app is one mount entry (a Compose too); a Router contributes its routes';
     is [$e[0]->name, $e[0]->address], ['legacy', '/legacy'], "a mount entry's own name and address";
+    my ($root) = router(routes => [mount('/', app => sub { })])->route_table;
+    is [$root->template, $root->pattern], ['/', '/'], 'an opaque mount at the root templates to /';
+};
+
+subtest 'the documented route listings handle every methods form' => sub {
+    my $r = router(routes => [route('/a' => $ok), route('/raw' => $ok, methods => '*'), websocket('/ws' => sub { })]);
+    my %snippet = (
+        'PAGI::Routing inspection' => [ 'lib/PAGI/Routing.pm', qr/A route listing is a loop:\n\n((?:    .*\n)+)/ ],
+        'RouteEntry SYNOPSIS'      => [ 'lib/PAGI/Routing/RouteEntry.pm', qr/=head1 SYNOPSIS\n\n((?:    .*\n|\n)+?)\n=head1/ ],
+    );
+    for my $label (sort keys %snippet) {
+        my ($file, $re) = @{ $snippet{$label} };
+        open my $fh, '<', $file or die $!;
+        my ($code) = do { local $/; <$fh> } =~ $re;
+        ok defined $code, "$label: snippet found" or next;
+        my $out = '';
+        open my $capture, '>', \$out or die;
+        my $ran = eval { my $routing = $r; my $app = $r; my $old = select $capture; eval $code; select $old; die $@ if $@; 1 };
+        ok $ran, "$label: runs" or diag $@;
+        like $out, qr/^\*\s+\/raw/m, "$label: lists the unrestricted route as *";
+    }
 };
 
 subtest 'unnamed routes are listed' => sub {

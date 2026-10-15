@@ -290,7 +290,7 @@ sub _record_entry {
     }
     push @{$self->{table}}, {
         kind        => $node->kind,
-        template    => $trail->{template},
+        template    => _published_path($trail->{template}),
         pattern     => $pattern,
         name        => $node->name,
         address     => $address,

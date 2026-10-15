@@ -617,8 +617,11 @@ template and declared pattern, kind, methods, name and absolute address,
 C<desc>, capture names and constraints as declared, the middleware around it
 and its C<meta>. A route listing is a loop:
 
-    printf "%-10s %s\n", join(',', @{ $_->methods // [$_->kind] }), $_->template
-        for $routing->route_table;
+    for my $entry ($routing->route_table) {
+        my $methods = $entry->methods;    # an arrayref, '*', or undef (WebSocket, SSE, mount)
+        printf "%-10s %s\n", join(',', ref $methods ? @$methods : ($methods // $entry->kind)),
+            $entry->template;
+    }
 
 It is what a tool that describes an application -- an OpenAPI document, a
 listing, a test of its surface -- reads, without walking the tree itself.

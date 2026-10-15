@@ -53,8 +53,9 @@ PAGI::Routing::RouteEntry - One route of an application, described
 =head1 SYNOPSIS
 
     for my $entry ($app->route_table) {
+        my $methods = $entry->methods;    # an arrayref, '*', or undef (WebSocket, SSE, mount)
         printf "%-10s %-30s %s\n",
-            join(',', @{ $entry->methods // [$entry->kind] }),
+            join(',', ref $methods ? @$methods : ($methods // $entry->kind)),
             $entry->template, $entry->desc // '';
     }
 
