@@ -4,10 +4,10 @@ use strict;
 use warnings;
 use Carp qw(croak);
 use Exporter qw(import);
-use Future::AsyncAwait;
 use Scalar::Util qw(blessed);
+use PAGI::Compose ();
 use PAGI::Response::JSON ();
-use PAGI::Utils ();
+use PAGI::Routing ();
 
 our @EXPORT_OK = qw(openapi openapi_document);
 
@@ -35,8 +35,8 @@ sub _sse_responses {
 }
 
 sub openapi {
-    my ($app, @options) = @_;
-    return __PACKAGE__->new(@options)->wrap($app);
+    my ($source, @options) = @_;
+    return __PACKAGE__->new(@options)->apply($source);
 }
 
 sub openapi_document {
@@ -113,33 +113,47 @@ sub document {
     return \%document;
 }
 
-sub wrap {
-    my ($self, $app) = @_;
-    croak 'PAGI::Routing::OpenAPI: wrap needs an application with route_table and to_app (a Compose or a Router)'
-        unless blessed($app) && $app->can('route_table') && $app->can('to_app');
+sub apply {
+    my ($self, $source) = @_;
+    my $is_compose = blessed($source) && $source->isa('PAGI::Compose');
+    my $router = $is_compose ? $source->router
+        : blessed($source) && $source->isa('PAGI::Routing::Router') ? $source
+        : undef;
+    croak 'PAGI::Routing::OpenAPI: openapi needs a PAGI::Compose or a PAGI::Routing::Router'
+        unless $router;
 
-    # Built now, so a document that cannot be built fails at startup.
-    my $document = $self->document($app);
-    my $inner    = PAGI::Utils::to_app($app);
+    # Built now, so a document that cannot be built fails at startup, and
+    # from the source, so it never lists its own route.
+    my $document = $self->document($source);
     my $path     = $self->{path};
-    croak "PAGI::Routing::OpenAPI: the application has a GET route at $path, which the document would hide;"
-        . ' give wrap another path'
+    croak "PAGI::Routing::OpenAPI: the application answers GET $path, which the document route would shadow;"
+        . ' give openapi another path'
         if exists $document->{paths}{$path} && $document->{paths}{$path}{get};
 
-    return async sub {
-        my ($scope, $receive, $send) = @_;
-        if (($scope->{type} || '') eq 'http' && ($scope->{method} || '') eq 'GET'
-                && defined $scope->{path} && $scope->{path} eq $path) {
-            # Served under a prefix (behind a proxy, or mounted), the paths are
-            # relative to it: servers says where.
-            my $root   = defined $scope->{root_path} ? $scope->{root_path} : '';
-            my $served = length $root ? { %$document, servers => [{ url => $root }] } : $document;
-            await PAGI::Utils::invoke_app(PAGI::Response::JSON->new($served), $scope, $receive, $send);
-            return;
-        }
-        await $inner->($scope, $receive, $send);
-        return;
+    my $serve = sub {
+        my ($request) = @_;
+        # Served under a prefix (behind a proxy, or mounted), the paths are
+        # relative to it: servers says where.
+        my $root = $request->scope->{root_path};
+        $root = '' unless defined $root;
+        return PAGI::Response::JSON->new(length $root ? { %$document, servers => [{ url => $root }] } : $document);
     };
+
+    # The document is a route of the application: its middleware (CORS,
+    # logging, error handling) and Compose's HEAD handling apply to it. The
+    # source's root Router, mounted behind it, keeps its names, its
+    # http_default and its desc.
+    my $lifespan = $is_compose ? $source->lifespan : undef;
+    my $desc     = $router->desc;
+    return PAGI::Compose->new(
+        routes => [
+            PAGI::Routing::route($path => $serve, methods => ['GET']),
+            PAGI::Routing::mount('/' => app => $router),
+        ],
+        ($is_compose        ? (middleware => $source->middleware) : ()),
+        (defined $lifespan  ? (lifespan   => $lifespan)           : ()),
+        (defined $desc      ? (desc       => $desc)               : ()),
+    );
 }
 
 sub operation_id {
@@ -267,8 +281,8 @@ PAGI::Routing::OpenAPI - an OpenAPI document from an application's routes
 
     use PAGI::Tools qw(compose route openapi);
 
-    # Serve the application with its document: GET /openapi.json answers
-    # with it, everything else (lifespan included) goes to the application.
+    # The application with its document as a route: GET /openapi.json
+    # answers with it, inside the application's own middleware.
     my $app = openapi(compose(routes => [...]), title => 'Notes', version => '1.0.0');
 
     # Just the document, for a framework or a test.
@@ -306,9 +320,14 @@ Both are exportable; C<openapi> is also re-exported by L<PAGI::Tools>.
 
     my $app = openapi($compose, title => 'Notes', version => '1.0.0');
 
-C<< PAGI::Routing::OpenAPI->new(%options)->wrap($app) >>: the application,
-serving its document. For a small application in one script this is the
-whole of it.
+C<< PAGI::Routing::OpenAPI->new(%options)->apply($compose) >>: the
+application, a new L<PAGI::Compose>, with its document as a route. For a
+small application in one script this is the whole of it. A
+L<PAGI::App::Compose> calls it in its C<application> hook:
+
+    sub application ($self, $composition) {
+        return openapi($composition, title => 'Notes', version => '1.0.0');
+    }
 
 =head2 openapi_document
 
@@ -327,7 +346,7 @@ document as a Perl hashref.
         description     => 'Notes for a small team', # info.description
         security_scheme => [bearer => { type => 'http', scheme => 'bearer' }],
         components      => { schemas => { Note => {...} } },
-        path            => '/openapi.json',         # where wrap serves it
+        path            => '/openapi.json',         # the document route's path
     );
 
 C<security_scheme> is the one scheme a C<Requires> maps to, placed in
@@ -346,25 +365,28 @@ The document for C<$source>, anything with C<route_table> (a
 L<PAGI::Compose> or a L<PAGI::Routing::Router>), as a hashref. Values taken
 from C<meta> are the originals, not copies.
 
-=head2 wrap
+=head2 apply
 
-    my $app = $openapi->wrap($compose);
+    my $app = $openapi->apply($compose);
 
-C<$app> has C<route_table> and C<to_app>. The document is built now, so a
-document that cannot be built fails at startup. Returns a native application:
-a C<GET> (exactly; not C<HEAD>) for C<path> answers with the document as
-JSON, adding C<< servers => [{ url => $root_path }] >> when the request has a
-non-empty C<root_path>; every other request and scope, lifespan included, goes
-to C<$app>, compiled once. The served path is not in the document; an
-application that has its own C<GET> route there dies, since the document would
-hide it.
+Takes a L<PAGI::Compose> or a L<PAGI::Routing::Router> and returns a new
+Compose: a C<GET> route at C<path> answering with the document as JSON, and
+the source's root Router mounted at C</> behind it, with a Compose source's
+application middleware and lifespan carried over. Its names, C<path_for>,
+C<http_default> and C<desc> are the source's. The document is built now, from
+the source, so a document that cannot be built fails at startup and it never
+lists its own route. A request with a non-empty C<root_path> gets
+C<< servers => [{ url => $root_path }] >> added.
 
-The wrapper is outside the application, so it sees all of it: a
-L<PAGI::App::Compose> overrides C<to_app> to wrap its composition:
+The document route is a route of the application, so the application's own
+middleware -- CORS, logging, error handling -- and Compose's HEAD handling
+apply to it. A refusing application middleware (an Authentication that
+turns guests away) refuses the document too; to keep it public, put that
+middleware on a Router or a mount instead.
 
-    sub to_app ($self) {
-        return openapi($self->composition, title => 'Notes', version => '1.0.0');
-    }
+Dies when the source already answers C<GET> at C<path>, which the document
+route would shadow. The result is a Compose, so it can be inspected and
+passed to another function that takes one.
 
 =head1 THE DOCUMENT
 

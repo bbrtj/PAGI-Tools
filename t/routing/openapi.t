@@ -176,22 +176,35 @@ subtest 'constructor and argument errors' => sub {
     like(dies { openapi_document(sub { }, %info) }, qr/PAGI::Routing::OpenAPI: .*route_table/, 'a source without route_table');
 };
 
-subtest 'wrap serves the document and passes everything else through' => sub {
-    my $started = 0;
+subtest 'openapi returns the application, its document a route inside it' => sub {
+    my ($started, @seen) = (0);
+    my $spy = sub {
+        my ($app) = @_;
+        return sub { my ($scope) = @_; push @seen, "$scope->{method} $scope->{path}" if $scope->{type} eq 'http'; return $app->(@_) };
+    };
     my $inner = compose(
-        routes   => [route('/a' => $ok, name => 'a')],
-        lifespan => { startup => sub { $started++; return } },
+        routes       => [route('/a' => $ok, name => 'a')],
+        middleware   => [middleware($spy)],
+        http_default => response('Text', 'custom 404', status => 404),
+        lifespan     => { startup => sub { $started++; return } },
     );
-    my $client = PAGI::Test::Client->new(app => openapi($inner, %info), lifespan => 'auto');
-    $client->start;    # Test::Client runs lifespan only when started
+    my $app = openapi($inner, %info);
+    isa_ok($app, ['PAGI::Compose'], 'a Compose');
+    is([sort map { $_->template } $app->route_table], ['/a', '/openapi.json'], 'listing the document route and the application');
+
+    my $client = PAGI::Test::Client->new(app => $app, lifespan => 'auto');
+    $client->start;
     my $res = $client->get('/openapi.json');
     is($res->status, 200, 'GET /openapi.json answers');
     is([keys %{ $res->json->{paths} }], ['/a'], 'with the application, not itself');
     ok(!exists $res->json->{servers}, 'no servers at the root');
+    my $head = $client->head('/openapi.json');
+    is([$head->status, $head->content], [200, ''], 'HEAD too, through Compose');
+    is($client->post('/openapi.json')->status, 404, 'another method reaches the application');
     is($client->get('/a')->text, 'ok', 'other requests reach the application');
-    is($client->post('/openapi.json')->status, 404, 'as does another method on the document path');
-    is($client->head('/openapi.json')->status, 404, 'HEAD included: only GET is the document');
-    is($started, 1, 'and lifespan');
+    is($client->get('/nope')->text, 'custom 404', "and its http_default");
+    ok((grep { $_ eq 'GET /openapi.json' } @seen), "the application's own middleware sees the document request");
+    is($started, 1, 'and lifespan runs');
 
     my $outer = compose(routes => [mount('/api', app => openapi($inner, %info))]);
     is(PAGI::Test::Client->new(app => $outer)->get('/api/openapi.json')->json->{servers}, [{ url => '/api' }],
@@ -200,13 +213,18 @@ subtest 'wrap serves the document and passes everything else through' => sub {
     my $moved = openapi($inner, %info, path => '/docs.json');
     is(PAGI::Test::Client->new(app => $moved)->get('/docs.json')->status, 200, 'path moves it');
 
+    my $from_router = openapi(router(routes => [route('/r' => $ok)]), %info);
+    my $rc = PAGI::Test::Client->new(app => $from_router);
+    is([keys %{ $rc->get('/openapi.json')->json->{paths} }], ['/r'], 'a Router source is documented');
+    is($rc->get('/r')->text, 'ok', 'and served');
+
     like(dies { openapi(compose(routes => [route('/i/{a}' => $ok), route('/i/{b}' => $ok)]), %info) },
-        qr/same OpenAPI path/, 'a bad document dies at wrap time');
+        qr/same OpenAPI path/, 'a bad document dies when applied');
     like(dies { openapi(compose(routes => [route('/openapi.json' => $ok)]), %info) },
-        qr{PAGI::Routing::OpenAPI: the application has a GET route at /openapi\.json},
-        'as does an application route the document would hide');
+        qr{PAGI::Routing::OpenAPI: the application answers GET /openapi\.json},
+        'as does an application route the document would shadow');
     ok(lives { openapi(compose(routes => [route('/openapi.json' => $ok, methods => ['POST'])]), %info) },
-        'a route there for another method is not hidden');
+        'a route there for another method is not shadowed');
 
     require PAGI::Tools;
     ok(\&PAGI::Tools::openapi == \&PAGI::Routing::OpenAPI::openapi, 'PAGI::Tools re-exports openapi');
