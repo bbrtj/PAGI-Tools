@@ -17,7 +17,6 @@ package NotesApp;
 
 use v5.40;
 use parent 'PAGI::App::Compose';
-use File::Basename qw(dirname);
 use PAGI::App::File;
 use PAGI::Auth qw(auth_result unauth_result);
 use PAGI::Auth::SimpleUser;
@@ -40,7 +39,7 @@ sub bearer ($request) {
 sub routes ($self) {
     return [
         mount('/notes', name => 'notes', app => NotesApp::Notes->routing),
-        mount('/static', app => PAGI::App::File->new(root => dirname(__FILE__) . '/../public')),
+        mount('/static', app => PAGI::App::File->from_app_path('public')),
     ];
 }
 
