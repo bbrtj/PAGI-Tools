@@ -20,6 +20,7 @@ my @load_modules = qw(
     PAGI::Auth::UnauthenticatedUser
     PAGI::Routing
     PAGI::Routing::Router
+    PAGI::Routing::OpenAPI
     PAGI::Routing::Route
     PAGI::Routing::RouteEntry
     PAGI::Routing::Mount

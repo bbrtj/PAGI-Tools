@@ -80,6 +80,14 @@
     a refuse application, or a redirect 303: to a location as written, or
     to path_for arguments with ?next= added. WebSocket and SSE are refused
     before they start, and route_table shows it in each entry's middleware.
+  - PAGI::Routing::OpenAPI: openapi($app, title => ..., version => ...)
+    serves an application with its OpenAPI 3.1 document at /openapi.json,
+    built from route_table: paths and methods, typed path parameters,
+    operationIds, summaries from desc, security from Requires, and the
+    request and response bodies a route declares in meta. Mounted
+    applications describe themselves. openapi_document returns the document
+    alone; a subclass can override operation_id, parameter_schema,
+    security_for or operation. PAGI::Tools re-exports openapi.
   - PAGI::State, PAGI::CSRF, PAGI::Transport and PAGI::Routing::URL
     helpers; PAGI::Authority; PAGI::Utils::Headers; PAGI::Utils
     path_from_root, pagi_env and environment predicates.
