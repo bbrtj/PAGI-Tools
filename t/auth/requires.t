@@ -180,6 +180,21 @@ subtest 'on a named mount, a redirect name resolves as from inside it' => sub {
     is($location->('/login'), '/login', 'a string is the location as written, without next');
 };
 
+subtest "in Compose's application middleware, a route name says where Requires must go" => sub {
+    my $login = route('/login' => sub { response('JSON', { login => 1 }) }, name => 'login');
+    my $outside = sub {
+        my ($redirect) = @_;
+        return compose(routes => [$login],
+            middleware => [$authentication, middleware('Requires', redirect => $redirect)]);
+    };
+    my $client = PAGI::Test::Client->new(app => $outside->(['login']), raise_app_exceptions => 1);
+    like(dies { $client->get('/x', headers => $guest) },
+        qr/\QRequires redirect names a route, which needs a Router's routing frame: put Requires on a route, mount or Router, or give a location string\E/,
+        'a route name before routing has matched');
+    is(PAGI::Test::Client->new(app => $outside->('/login'))->get('/x', headers => $guest)->header('location'),
+        '/login', 'a location string works there');
+};
+
 subtest 'route_table shows what each route requires' => sub {
     my %entry = map { ($_->template => $_) } $app->route_table;
     my $requires = sub {

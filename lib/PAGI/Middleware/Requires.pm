@@ -66,6 +66,13 @@ sub _redirect_target {
     my ($redirect, $scope) = @_;
     return $redirect unless ref $redirect;
 
+    # Compose's application middleware runs before any Router has matched,
+    # so there is nothing to resolve a name against.
+    my $routing = $scope->{'pagi.routing'};
+    croak q{Requires redirect names a route, which needs a Router's routing frame: }
+        . 'put Requires on a route, mount or Router, or give a location string'
+        unless ref($routing) eq 'HASH' && ref($routing->{frames}) eq 'ARRAY' && @{ $routing->{frames} };
+
     my $original = PAGI::Utils::Scope::request_uri($scope);
 
     my ($name, @arguments) = @$redirect;
@@ -173,8 +180,9 @@ enclosing Router's route.
 
 An arrayref needs the routing frame a Router installs, so it works on a
 route, a mount or a Router. Compose's application C<middleware> runs before
-routing, and there an arrayref C<redirect> fails every refused request; use
-a string location or C<refuse> at that level.
+routing, so there an arrayref C<redirect> dies on each refused request,
+saying so (the client gets a 500); use a string location or C<refuse> at that
+level.
 
 Only redirect to C<next> when it is a local path (it starts with C</> but
 not C<//>), or the login page becomes an open redirect. See
