@@ -310,7 +310,7 @@ on the slot it is given to:
     refuse (CSRF, TrustedHosts,         a handler taking     an application
     HTTPSRedirect, ReverseProxy,        one Request          (via to_app)
     RateLimit, ContentNegotiation,
-    WrapCGI, File, requires),
+    WrapCGI, File, Requires),
     Maintenance response,
     ErrorHandler handler
     URLMap mounts and default,          an application       an application

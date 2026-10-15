@@ -61,8 +61,9 @@ my $app = compose(
             route('/reports' => \&ok_response, protected(redirect => ['admin_login'])),
             route('/login' => sub { response('JSON', { login => 1 }) }, name => 'admin_login'),
         ]),
-        # One Requires on a mount protects every route under it. Its redirect
-        # name resolves where the mount sits: 'login' is the mount's sibling.
+        # One Requires on a mount protects every route under it. The mount is
+        # unnamed, so its routes and the root's share one namespace and
+        # 'login' finds the root's route.
         mount('/staff', protected(scopes => ['notes:write'], redirect => ['login']), routes => [
             route('/a' => \&ok_response),
             route('/b' => \&ok_response, methods => ['POST']),
@@ -155,6 +156,28 @@ subtest 'a Requires on a mount protects every route under it' => sub {
     is($client->post('/staff/b', headers => $guest)->status, 303, 'every route under the mount, every method');
     is($client->get('/staff/a', headers => $as{editor})->status, 200, 'the scope held: in');
     is($client->post('/staff/b', headers => $as{editor})->status, 200, 'on every route');
+};
+
+subtest 'on a named mount, a redirect name resolves as from inside it' => sub {
+    my $page = sub { response('JSON', { page => 1 }) };
+    my $members = sub {
+        my ($redirect) = @_;
+        return mount('/members', name => 'members',
+            middleware => [middleware('Requires', redirect => $redirect)], routes => [
+                route('/' => \&ok_response),
+                route('/about' => $page, name => 'about'),
+            ]);
+    };
+    my $location = sub {
+        my ($redirect) = @_;
+        my $app = compose(middleware => [$authentication],
+            routes => [$members->($redirect), route('/login' => $page, name => 'login')]);
+        return PAGI::Test::Client->new(app => $app)->get('/members/', headers => $guest)->header('location');
+    };
+    is($location->(['about']), '/members/about?next=%2Fmembers%2F', 'a plain name is a route inside the mount');
+    is($location->(['../login']), '/login?next=%2Fmembers%2F', '../ reaches the enclosing Router');
+    is($location->(['/login']), '/login?next=%2Fmembers%2F', 'an absolute address is the logical one');
+    is($location->('/login'), '/login', 'a string is the location as written, without next');
 };
 
 subtest 'route_table shows what each route requires' => sub {

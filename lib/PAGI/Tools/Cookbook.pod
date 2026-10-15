@@ -1859,9 +1859,11 @@ send the user back. On C</orgs/acme/billing>:
 A C<next> in your own query wins over the automatic one. Act on C<next> only
 when it is a local path (F<examples/auth-cookie-login> shows the check).
 
-Names resolve where the middleware runs. On a route they resolve as from its
-handler. On a mount they resolve among the mount's siblings, so name a route
-outside the mount or give an absolute address such as C</account/login>.
+Names resolve as from a handler where the middleware runs: on a mount, as
+from inside it. A login page outside a named mount is C<../login> (or
+C</login>); under an unnamed mount the enclosing Router's names are the
+mount's too. An arrayref needs a Router's routing frame, so at Compose's
+application level give a string location instead.
 
 Like Starlette's, the refusal is one status: it does not tell an
 unauthenticated user from a missing scope or send a C<WWW-Authenticate>
@@ -1950,8 +1952,8 @@ B<Request handler:> pass repeated ordered fields. Values are never comma-joined.
 =head2 Explicit Login Redirect Policy
 
 B<Request handler:> C<< middleware('Requires', redirect => ['login']) >> on
-the route covers the usual case (see L</Declaring what a route requires>). Written by hand, the
-same policy is a redirect the handler chooses; keep the 401 challenge for
+the route covers the usual case (see L</Declaring what a route requires>).
+Written by hand, the same policy is a redirect the handler chooses; keep the 401 challenge for
 clients that need protocol authentication.
 
   use PAGI::Pages qw(redirect);

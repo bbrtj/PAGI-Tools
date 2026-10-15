@@ -151,7 +151,7 @@ C<as_app_object($app)>.
 
 Instead of refusing, redirect with a L<PAGI::Response::Redirect> 303; give
 this or C<refuse>, not both. A string is the location exactly as written: a
-path, or a URL outside the application.
+path, or a URL outside the application, with no C<next> added.
 
 An arrayref holds the arguments to C<path_for> (see L<PAGI::Routing::URL>):
 the route name, then its parameters, query and fragment, in either of the
@@ -163,10 +163,18 @@ C</orgs/acme/login>), and the path and query the client requested
 query as C<next>, so the login page can send the user back. A C<next> you
 give yourself is kept instead.
 
-Names resolve where the middleware runs. On a route, as from its handler. On
-a mount, among the mount's siblings in the enclosing Router, not inside the
-mount: name a route outside it, or give an absolute address such as
-C</account/login>.
+Names resolve as C<path_for> resolves them from a handler where the
+middleware runs: on a route, as from that route's handler; on a mount, as
+from a handler inside the mount. A named mount adds its name to its routes'
+addresses, so a login page outside it (inside, it would be protected too) is
+C<../login>, or the absolute C</login>. An unnamed mount adds nothing, so its
+routes and the enclosing Router's share names and C<login> finds the
+enclosing Router's route.
+
+An arrayref needs the routing frame a Router installs, so it works on a
+route, a mount or a Router. Compose's application C<middleware> runs before
+routing, and there an arrayref C<redirect> fails every refused request; use
+a string location or C<refuse> at that level.
 
 Only redirect to C<next> when it is a local path (it starts with C</> but
 not C<//>), or the login page becomes an open redirect. See
