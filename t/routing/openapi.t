@@ -27,6 +27,9 @@ subtest 'the frame of the document' => sub {
     is($doc->{openapi}, '3.1.0', 'OpenAPI 3.1.0');
     is($doc->{info}, { title => 'T', version => '1', description => 'An API' }, 'info from the options');
     ok(!exists $doc->{components}, 'no components unless asked for');
+    require JSON::MaybeXS;
+    is(JSON::MaybeXS->new(canonical => 1)->encode(openapi_document(compose(routes => []), title => 'T', version => 1)->{info}),
+        '{"title":"T","version":"1"}', 'a numeric version is still a string, as OpenAPI requires');
 };
 
 subtest 'kinds' => sub {
@@ -42,6 +45,10 @@ subtest 'kinds' => sub {
         { 200 => { description => 'An event stream', content => { 'text/event-stream' => { schema => { type => 'string' } } } } },
         'an SSE route is a GET answering text/event-stream');
     is($doc->{paths}{'/typed'}{get}{responses}, { 200 => { description => 'mine' } }, 'unless its meta says otherwise');
+    my $other = doc_of([sse('/more' => sub { })]);
+    $doc->{paths}{'/events'}{get}{responses}{200}{description} = 'changed';
+    is($other->{paths}{'/more'}{get}{responses}{200}{description}, 'An event stream',
+        "each operation's default is its own: changing one document's leaves another's");
 };
 
 subtest 'methods' => sub {
@@ -104,11 +111,13 @@ subtest 'meta parameters merge by name and in' => sub {
     my $doc = doc_of([route('/n/{id:&Int}' => $ok, meta => { openapi => { parameters => [
         { name => 'id', in => 'path', schema => { type => 'integer', minimum => 1 } },
         { name => 'q',  in => 'query', schema => { type => 'string' } },
+        { '$ref' => '#/components/parameters/Page' },
     ] } })]);
     is($doc->{paths}{'/n/{id}'}{get}{parameters}, [
         { name => 'id', in => 'path', required => T(), schema => { type => 'integer', minimum => 1 } },
         { name => 'q',  in => 'query', schema => { type => 'string' } },
-    ], 'a matching parameter takes the fragment keys; another is appended');
+        { '$ref' => '#/components/parameters/Page' },
+    ], 'a matching parameter takes the fragment keys; another, or a $ref, is appended');
 };
 
 subtest 'security from Requires' => sub {
@@ -193,6 +202,11 @@ subtest 'wrap serves the document and passes everything else through' => sub {
 
     like(dies { openapi(compose(routes => [route('/i/{a}' => $ok), route('/i/{b}' => $ok)]), %info) },
         qr/same OpenAPI path/, 'a bad document dies at wrap time');
+    like(dies { openapi(compose(routes => [route('/openapi.json' => $ok)]), %info) },
+        qr{PAGI::Routing::OpenAPI: the application has a GET route at /openapi\.json},
+        'as does an application route the document would hide');
+    ok(lives { openapi(compose(routes => [route('/openapi.json' => $ok, methods => ['POST'])]), %info) },
+        'a route there for another method is not hidden');
 
     require PAGI::Tools;
     ok(\&PAGI::Tools::openapi == \&PAGI::Routing::OpenAPI::openapi, 'PAGI::Tools re-exports openapi');

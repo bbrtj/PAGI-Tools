@@ -68,6 +68,11 @@ my $port = do {
 my $base = "http://127.0.0.1:$port";
 my $log  = "$tmp/server.log";
 
+# Whatever happens after the fork -- a die, a failed start -- the server does
+# not outlive the test.
+my $server_pid;
+END { if ($server_pid) { kill 'KILL', $server_pid; waitpid $server_pid, 0 } }
+
 my $pid = fork // die "fork: $!";
 if (!$pid) {
     open STDOUT, '>', $log or die "log: $!";
@@ -78,6 +83,7 @@ if (!$pid) {
         '--host', '127.0.0.1', '--port', $port
         or die "exec pagi-server: $!";
 }
+$server_pid = $pid;
 
 sub server_log { open my $fh, '<', $log or return ''; local $/; return scalar <$fh> }
 
@@ -88,9 +94,11 @@ for (1 .. 100) {
     select undef, undef, undef, 0.1;
 }
 unless ($up) {
-    kill 'KILL', $pid;
-    waitpid $pid, 0;
-    bail_out("the hero did not start on port $port:\n" . server_log());
+    # This file fails; the rest of a prove run goes on.
+    fail("the hero starts on port $port");
+    diag server_log();
+    done_testing;
+    exit;
 }
 
 my $res = HTTP::Tiny->new->get("$base/openapi.json");
@@ -176,6 +184,7 @@ for (1 .. 100) {
     select undef, undef, undef, 0.1;
 }
 unless ($gone) { kill 'KILL', $pid; waitpid $pid, 0 }
+undef $server_pid;
 ok($gone, 'the server stops on TERM');
 ok(!IO::Socket::INET->new(PeerAddr => '127.0.0.1', PeerPort => $port, Timeout => 1), 'and its port is closed');
 

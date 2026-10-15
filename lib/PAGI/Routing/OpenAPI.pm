@@ -24,12 +24,15 @@ my %JSON_TYPE = (Int => 'integer', Num => 'number', Str => 'string', Bool => 'bo
 # How a middleware('Requires', ...) description names its factory.
 my %REQUIRES = map { $_ => 1 } qw(Requires PAGI::Middleware::Requires +PAGI::Middleware::Requires);
 
-my $SSE_RESPONSES = {
-    200 => {
-        description => 'An event stream',
-        content     => { 'text/event-stream' => { schema => { type => 'string' } } },
-    },
-};
+# Built for each operation, so no two operations or documents share it.
+sub _sse_responses {
+    return {
+        200 => {
+            description => 'An event stream',
+            content     => { 'text/event-stream' => { schema => { type => 'string' } } },
+        },
+    };
+}
 
 sub openapi {
     my ($app, @options) = @_;
@@ -51,6 +54,8 @@ sub new {
     for my $key (qw(title version)) {
         croak "PAGI::Routing::OpenAPI: $key is required"
             unless defined $opts{$key} && !ref $opts{$key} && length $opts{$key};
+        # OpenAPI requires strings: version => 1 must not encode as a number.
+        $opts{$key} = "$opts{$key}";
     }
     if (exists $opts{security_scheme}) {
         my $scheme = $opts{security_scheme};
@@ -117,6 +122,9 @@ sub wrap {
     my $document = $self->document($app);
     my $inner    = PAGI::Utils::to_app($app);
     my $path     = $self->{path};
+    croak "PAGI::Routing::OpenAPI: the application has a GET route at $path, which the document would hide;"
+        . ' give wrap another path'
+        if exists $document->{paths}{$path} && $document->{paths}{$path}{get};
 
     return async sub {
         my ($scope, $receive, $send) = @_;
@@ -223,7 +231,7 @@ sub _operation {
         }
     }
     $operation{parameters} = \@parameters if @parameters;
-    $operation{responses} = $entry->kind eq 'sse' ? $SSE_RESPONSES : { default => { description => 'response' } }
+    $operation{responses} = $entry->kind eq 'sse' ? _sse_responses() : { default => { description => 'response' } }
         unless exists $operation{responses};
     return $self->operation($entry, $method, \%operation);
 }
@@ -234,6 +242,8 @@ sub _merge_parameters {
         unless ref $given eq 'ARRAY';
     my @merged = @$parameters;
     for my $parameter (@$given) {
+        # A reference to components.parameters names no parameter here.
+        if (ref $parameter eq 'HASH' && exists $parameter->{'$ref'}) { push @merged, $parameter; next }
         croak 'PAGI::Routing::OpenAPI: ' . $entry->template . "'s meta openapi parameters must be hashrefs with name and in"
             unless ref $parameter eq 'HASH' && defined $parameter->{name} && defined $parameter->{in};
         my ($index) = grep {
@@ -345,7 +355,9 @@ document that cannot be built fails at startup. Returns a native application:
 a C<GET> (exactly; not C<HEAD>) for C<path> answers with the document as
 JSON, adding C<< servers => [{ url => $root_path }] >> when the request has a
 non-empty C<root_path>; every other request and scope, lifespan included, goes
-to C<$app>, compiled once. The served path is not in the document.
+to C<$app>, compiled once. The served path is not in the document; an
+application that has its own C<GET> route there dies, since the document would
+hide it.
 
 The wrapper is outside the application, so it sees all of it: a
 L<PAGI::App::Compose> overrides C<to_app> to wrap its composition:
@@ -387,7 +399,8 @@ with a schema from its constraints.
 operation, outermost first, key by key, so a route's fragment overrides its
 mount's. C<parameters> merge by C<name> and C<in>: a fragment parameter that
 matches a generated one replaces those keys of it (its C<schema>, say);
-others are appended, which is how query parameters are declared.
+others, and C<$ref>s to C<components.parameters>, are appended, which is how
+query parameters are declared.
 
 =item * B<responses>, when nothing gives them:
 C<< { default => { description => 'response' } } >>. Declare responses in
