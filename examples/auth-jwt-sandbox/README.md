@@ -23,9 +23,10 @@ test exercises these responses through both real applications.
 In `app.pl`, application-owned `require_login` middleware protects two routes.
 It either sends an ordinary response or explicitly calls the downstream app.
 There is no Auth-specific `on_failure` or `after_auth` callback. Existing
-Compose, Routing, and invocation APIs provide the composition. `PAGI::Auth`'s
-`requires` would protect one handler at a time and refuse without a Bearer
-challenge, so it fits neither the group nor the 400/401 split shown here.
+Compose, Routing, and invocation APIs provide the composition. The `Requires`
+middleware could guard the group from its mount, but it refuses with one
+response and no Bearer challenge, so it does not fit the 400/401 split shown
+here.
 
 `app2.pl` is the smaller, direct comparison with the Python application: it has
 only `/`, `/login`, and `/protected`, with the authentication check inside the

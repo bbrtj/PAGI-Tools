@@ -8,14 +8,11 @@ use PAGI::Auth::Credentials ();
 use PAGI::Auth::Failure ();
 use PAGI::Auth::Result ();
 use PAGI::Auth::UnauthenticatedUser ();
-use PAGI::Response::Redirect ();
-use PAGI::Response::Text ();
-use PAGI::Utils ();
 use PAGI::Utils::Headers ();
 use PAGI::Utils::Scope ();
 
 our @EXPORT = ();
-our @EXPORT_OK = qw(auth auth_result unauth_result www_authenticate requires);
+our @EXPORT_OK = qw(auth auth_result unauth_result www_authenticate);
 
 sub new {
     my ($class, @args) = @_;
@@ -73,81 +70,6 @@ sub www_authenticate {
     my ($proto, @args) = _factory_invocation(@_);
     _validate_invocant($proto);
     return PAGI::Utils::Headers::www_authenticate(@args);
-}
-
-# Starlette's @requires: a handler that calls $handler only for an
-# authenticated user holding every scope, and otherwise refuses -- with
-# `status` (default 403), or a redirect: to a string as written, or to
-# path_for(@arrayref) with ?next= added. HTTP routes return the refusal;
-# WebSocket and SSE routes deny or decline with it.
-sub requires {
-    my ($proto, @args) = _factory_invocation(@_);
-    _validate_invocant($proto);
-    my ($scopes, $handler, @rest) = @args;
-    $scopes = [$scopes] if defined $scopes && !ref $scopes;
-    croak 'PAGI::Auth requires scopes must be a scope string or an arrayref of them'
-        unless ref($scopes) eq 'ARRAY' && !grep { !defined || ref } @$scopes;
-    croak 'PAGI::Auth requires handler must be a coderef'
-        unless ref($handler) eq 'CODE';
-    my $opts = _options('requires', { refuse => 1, redirect => 1 }, @rest);
-    croak 'PAGI::Auth requires takes refuse or redirect, not both: a redirect replaces the refusal'
-        if exists $opts->{refuse} && exists $opts->{redirect};
-    # An app object, not a bare coderef: the option yields a native coderef,
-    # and WebSocket deny and SSE decline read a bare coderef as a ($request)
-    # handler.
-    my $denied = PAGI::Utils::as_app_object(
-        PAGI::Utils::_refuse_option('PAGI::Auth requires', $opts)
-            // PAGI::Response::Text->new('Forbidden', status => 403)->to_app,
-    );
-    my $redirect = $opts->{redirect};
-    croak 'PAGI::Auth requires redirect must be a location string or an arrayref of path_for arguments'
-        if defined($redirect)
-            && (ref($redirect) ? ref($redirect) ne 'ARRAY' || !@$redirect || !defined($redirect->[0]) || ref($redirect->[0])
-                               : !length($redirect));
-
-    my @required = @$scopes;
-
-    return sub {
-        my ($connection) = @_;
-        my $context = $proto->auth($connection);
-        return $handler->(@_)
-            if $context->user->is_authenticated
-                && $context->credentials->has_all(@required);
-
-        my $refusal = defined($redirect)
-            ? PAGI::Response::Redirect->new(_redirect_target($redirect, $connection), status => 303)
-            : $denied;
-        return $connection->deny($refusal)
-            if blessed($connection) && $connection->isa('PAGI::WebSocket');
-        return $connection->decline($refusal)
-            if blessed($connection) && $connection->isa('PAGI::SSE');
-        return $refusal;
-    };
-}
-
-# A string is the location as written. An arrayref holds path_for's
-# arguments -- compact (NAME, \%params, \%query, $fragment) or named
-# (NAME, params => ..., query => ..., fragment => ...) -- and gains a `next`
-# query value, the original path and query, unless it sets its own.
-sub _redirect_target {
-    my ($redirect, $connection) = @_;
-    return $redirect unless ref $redirect;
-
-    my $scope = PAGI::Utils::Scope::scope_from_source('PAGI::Auth requires', $connection);
-    my $original = PAGI::Utils::Scope::request_uri($scope);
-
-    my ($name, @arguments) = @$redirect;
-    if (!@arguments || !defined($arguments[0]) || ref($arguments[0]) eq 'HASH') {
-        my ($params, $query, @fragment) = @arguments;
-        @arguments = ($params // {}, { next => $original, %{ $query // {} } }, @fragment);
-    }
-    else {
-        my %named = @arguments;
-        $named{query} = { next => $original, %{ $named{query} // {} } };
-        @arguments = %named;
-    }
-    require PAGI::Routing::URL;
-    return PAGI::Routing::URL::path_for($connection, $name, @arguments);
 }
 
 sub _factory_invocation {
@@ -233,21 +155,22 @@ PAGI::Auth - authentication results, installed context, and challenge formatting
   my $challenge = www_authenticate('Bearer', realm => 'api');
 
   # Declare who may call a route, like Starlette's @requires:
-  use PAGI::Auth qw(requires);
   use PAGI::Response qw(response);
+  use PAGI::Routing qw(middleware route);
 
-  route('/notes'  => requires(['notes:read', 'notes:write'], \&publish_note), methods => ['POST']),
-  route('/admin'  => requires(['admin'], \&admin,
-      refuse => response('Text', 'Not Found', status => 404))),
-  route('/home'   => requires([], \&home, redirect => ['login'])),
+  route('/notes'  => \&publish_note, methods => ['POST'],
+      middleware => [middleware('Requires', scopes => ['notes:read', 'notes:write'])]),
+  route('/admin'  => \&admin, middleware => [middleware('Requires', scopes => ['admin'],
+      refuse => response('Text', 'Not Found', status => 404))]),
+  route('/home'   => \&home, middleware => [middleware('Requires', redirect => ['login'])]),
 
 =head1 DESCRIPTION
 
 C<PAGI::Auth> constructs completed authentication results and observes a result
 installed under C<pagi.auth> in a raw scope or an object exposing C<scope>.
 Applications choose their refusal responses: by declaring what a route
-requires with C<requires>, or by hand, using C<www_authenticate> to format a
-challenge value. C<credentials> means granted
+requires with the L<PAGI::Middleware::Requires> middleware, or by hand,
+using C<www_authenticate> to format a challenge value. C<credentials> means granted
 scopes; it does not hold the original token or other presented credentials.
 C<pagi.auth> contains a completed Result, not a hash of public fields. Reading a
 missing or invalid entry is a configuration error.
@@ -345,95 +268,11 @@ header value explicitly through an ordinary response or Headers API:
       . 'algorithm=SHA-256, stale=true';
   $response->headers->set('WWW-Authenticate', $digest);
 
-=head2 requires($scopes, $handler, refuse => $application, redirect => $target)
-
-    my $publish = requires(['notes:read', 'notes:write'], async sub ($request) {
-        ...
-    });
-    route('/notes' => $publish, methods => ['POST']);
-
-Returns a handler that calls C<$handler> with its arguments only when the
-connection's authentication context (see C<auth>) has an authenticated user
-holding every scope in C<$scopes> -- a scope string, or an arrayref of them;
-C<[]> requires only an authenticated user. It is the equivalent of
-Starlette's C<@requires>, as a function that returns an ordinary handler
-coderef, so it fits anywhere a handler does (a C<route>, C<websocket> or
-C<sse> handler) and can be applied by a framework, for example from a sub
-attribute. It needs the L<PAGI::Middleware::Authentication> middleware in
-front of the route.
-
-Otherwise it refuses, by default with a plain-text 403 C<Forbidden>. Options:
-
-=over 4
-
-=item * C<refuse>
-
-The refusal instead: an application -- a Request handler (a coderef called with one
-L<PAGI::Request>, returning a Response or an application) or an object
-with C<to_app>, which includes every L<PAGI::Response>. A
-404 hides the route from those without access; a L<PAGI::Pages> page brands
-it:
-
-    refuse => response('Text', 'Not Found', status => 404)
-    refuse => PAGI::Pages->forbidden
-
-A native C<($scope, $receive, $send)> application is passed as
-C<as_app_object($app)>. Objects -- every Response and L<PAGI::Pages> value --
-mean the same in every slot, and are the portable form for anything also
-given to middleware outside PAGI-Tools.
-
-=item * C<redirect>
-
-Instead of refusing, redirect with a L<PAGI::Response::Redirect> 303; give
-this or C<refuse>, not both. The
-value says which kind of target it is:
-
-    redirect => '/login'                                # a location, as written
-    redirect => 'https://login.example.com/?app=notes'
-    redirect => ['login']                               # path_for arguments
-    redirect => ['org_login', { org => 'acme' }, { reason => 'billing' }]
-
-A string is used exactly as written: a path, or a URL outside the
-application.
-
-An arrayref holds the arguments to C<path_for> (see L<PAGI::Routing::URL>):
-the route name, then its parameters, query and fragment, in either of the
-forms C<path_for> takes. Being resolved against the request that was
-refused, it does two things a fixed string cannot:
-
-=over 4
-
-=item * The target route's parameters are filled from the current route's
-matching ones, as C<path_for> does: on C</orgs/{org}/settings>,
-C<< redirect => ['org_login'] >> goes to C</orgs/acme/login>. Parameters you
-give override them.
-
-=item * The path and query the client requested (L<PAGI::Request/request_uri>,
-including any mount and server root path) are added to the query as
-C<next>, so the login page can send the user back after logging in. A C<next> you give
-yourself is kept instead.
-
-=back
-
-A redirect lets a login page act on C<next>; only redirect to it when it is a
-local path (it starts with C</> but not C<//>), or the login page becomes an
-open redirect. See F<examples/auth-cookie-login>.
-
-=back
-
-HTTP routes return the refusal; WebSocket routes C<deny> and SSE routes
-C<decline> with it, before accepting or starting. Like Starlette's, the
-refusal is one answer: it does not distinguish an unauthenticated user from a
-missing scope or send a C<WWW-Authenticate> challenge. An API that wants
-RFC 6750 challenges builds those responses itself (see the auth-notes
-example).
-
-Invalid arguments die when the route is declared: a handler that is not a
-coderef, a C<refuse> that is not an application, a C<redirect> that is neither
-a string nor a non-empty arrayref, C<refuse> and C<redirect> together, an
-unknown option.
-
 =head2 Protecting a group of endpoints
+
+A L<PAGI::Middleware::Requires> on the mount covers "these scopes, or
+refuse". This recipe is for a check the application owns, such as one that
+answers with a C<WWW-Authenticate> challenge.
 
 This complete recipe installs Authentication before an application-owned HTTP
 check. Both protected routes share it; C</public> sits outside the group.

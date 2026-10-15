@@ -3,7 +3,7 @@ use v5.40;
 
 use Future::AsyncAwait;
 
-use PAGI::Auth qw(auth_result unauth_result requires);
+use PAGI::Auth qw(auth_result unauth_result);
 use PAGI::Auth::SimpleUser;
 use PAGI::Compose qw(compose);
 use PAGI::CSRF qw(csrf);
@@ -14,8 +14,8 @@ use PAGI::Routing qw(route mount middleware);
 use PAGI::Routing::URL qw(path_for);
 use PAGI::Session qw(session);
 
-# The session's logged-in user is the authentication context: requires()
-# reads it to decide who may see a page.
+# The session's logged-in user is the authentication context: the Requires
+# middleware reads it to decide who may see a page.
 sub session_user ($request) {
     my $username = session($request)->get('user', undef);
     return unauth_result() unless defined $username;
@@ -115,8 +115,8 @@ compose(
     routes => [
         mount('/account', routes => [
             # Not logged in: redirect to the route named 'login', with ?next=
-            route('/' => requires([], \&home, redirect => ['login']),
-                methods => ['GET'], name => 'home'),
+            route('/' => \&home, methods => ['GET'], name => 'home',
+                middleware => [middleware('Requires', redirect => ['login'])]),
             route('/login' => \&login_form, methods => ['GET'], name => 'login'),
             route('/login' => \&login_submit, methods => ['POST']),
             route('/logout' => \&logout, methods => ['POST'], name => 'logout'),

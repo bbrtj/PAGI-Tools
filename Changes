@@ -71,8 +71,8 @@
   - PAGI::Pages: negotiated welcome, error and redirect responses.
   - PAGI::ErrorContext (error_context): the error an ErrorHandler handler
     answers. PAGI::Request::BodyError gains client_message.
-  - PAGI::Auth (auth, auth_result, unauth_result, www_authenticate,
-    requires) and PAGI::Middleware::Authentication. A body its backend
+  - PAGI::Auth (auth, auth_result, unauth_result, www_authenticate)
+    and PAGI::Middleware::Authentication. A body its backend
     reads is handed on to the application with record_receive;
     body_buffer chooses where it is kept meanwhile.
   - PAGI::Middleware::Requires: the scopes a route, mount or application
@@ -215,9 +215,6 @@
   - Maintenance answers with a plain-text 503 by default; its response
     option (any application) replaces the body and content_type options,
     which now die.
-  - PAGI::Auth's requires refuses with a plain 403 and takes refuse (any
-    application) in place of status; its redirect is a
-    PAGI::Response::Redirect 303.
   - App::File (and Directory and Static through it) refuses with 0.002002's
     plain text, keeping the 405's Allow and the 416's Content-Range; its
     refuse option replaces all four refusals, with the reason in

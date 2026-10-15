@@ -1089,7 +1089,7 @@ App::File's 416 `Content-Range`.
 
 | Component | Option that replaces its answer |
 |---|---|
-| CSRF, TrustedHosts, HTTPSRedirect, ReverseProxy, RateLimit, ContentNegotiation, App::WrapCGI, App::File (Static, Directory), Auth `requires` | `refuse` |
+| CSRF, TrustedHosts, HTTPSRedirect, ReverseProxy, RateLimit, ContentNegotiation, App::WrapCGI, App::File (Static, Directory), Requires | `refuse` |
 | Maintenance | `response` |
 | Router and Compose (404) | `http_default` |
 | URLMap | `default` |
@@ -1192,7 +1192,7 @@ enable 'Auth::Basic',
 # ...and in the app: $scope->{'pagi.auth'}{username}
 
 # After
-use PAGI::Auth qw(auth auth_result unauth_result requires);
+use PAGI::Auth qw(auth auth_result unauth_result);
 use PAGI::Auth::SimpleUser;
 
 enable 'Authentication', backend => sub {
@@ -1204,12 +1204,12 @@ enable 'Authentication', backend => sub {
 };
 
 # ...and in a handler: auth($request)->user->identity
-# ...or refuse declaratively: route('/admin' => requires([], \&admin))
+# ...or refuse declaratively: route('/admin' => \&admin, middleware => [middleware('Requires')])
 ```
 
 For tokens, read `$request->bearer_token` in the backend and verify it
 yourself (Auth::Bearer's JWT decoding is not built in). Answer
-unauthenticated requests with `requires`, or in the handler with
+unauthenticated requests with the `Requires` middleware, or in the handler with
 `www_authenticate` for a `WWW-Authenticate` challenge. `PAGI::Auth`'s POD and
 `examples/auth-notes` show both.
 
