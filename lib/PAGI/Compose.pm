@@ -278,6 +278,11 @@ namespace to slash route names. Once selected, the child Router owns its 404,
 405, and protocol misses. The outer root does not resume scanning, so later
 root siblings cannot win after that Mount.
 
+Compose is the application root. The parts of one application are Routers
+(C<< mount('/notes', app => MyApp::Notes->routing) >>), which routing sees
+into. A Compose mounted below another is a separate application, with its own
+names and no lifespan (see L<PAGI::Routing/mount>).
+
 =head2 middleware
 
     my $logging = sub {
@@ -594,6 +599,14 @@ can observe lifespan. A bare PAGI Router deployment declines lifespan; a
 server's strict mode rejects that decline. Mount the Router explicitly beneath
 Compose when the root requires startup or shutdown. Compose does not add a
 C<lifespan> option to Router.
+
+Starlette's Mount is transparent to any mounted application that has
+C<routes>, a mounted Starlette application included: reverse routing and
+schema generation descend into it, and names inside it resolve against the
+outermost router. A PAGI mount is transparent only to a Router; a mounted
+Compose is a separate application whose names stay its own (see
+L<PAGI::Routing/mount>). For documentation this is FastAPI's choice: its OpenAPI
+generator skips mounts, and each mounted application serves its own.
 
 Starlette's multiprotocol Router C<default> was also considered but not copied:
 PAGI Router C<http_default> changes only HTTP NONE and preserves stock

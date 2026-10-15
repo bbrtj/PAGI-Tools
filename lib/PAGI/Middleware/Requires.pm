@@ -182,7 +182,9 @@ An arrayref needs the routing frame a Router installs, so it works on a
 route, a mount or a Router. Compose's application C<middleware> runs before
 routing, so there an arrayref C<redirect> dies on each refused request,
 saying so (the client gets a 500); use a string location or C<refuse> at that
-level.
+level. A mounted application's own application middleware likewise runs
+before that application's routing, with the enclosing application's frame,
+so put C<Requires> with a route name on a route, mount or Router inside it.
 
 Only redirect to C<next> when it is a local path (it starts with C</> but
 not C<//>), or the login page becomes an open redirect. See

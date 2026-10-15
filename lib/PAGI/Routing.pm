@@ -318,6 +318,44 @@ real L<PAGI::Routing::Router> application and stores it as the Mount's C<app>.
 Names are nonempty scalar logical segments: they may not contain C</> or
 equal C<.> or C<..>. A dot in C<v1.1> is literal, not hierarchy.
 
+A mount is a barrier to any application and transparent to a Router. A Router
+(C<routes>, or C<app> given the Router itself) is a set of routes: they join
+the enclosing application under the mount's prefix and name, in
+C<route_table>, C<named_routes> and C<path_for>. Anything else -- a coderef, an
+app object, a L<PAGI::Compose> or L<PAGI::App::Compose> -- is a separate
+application:
+
+=over 4
+
+=item * C<route_table> shows it as one entry of kind C<mount>, and the
+enclosing application's names cannot reach into it. Its handlers resolve only
+its own names, rendered under the mount.
+
+=item * What it does at application level stays inside it: its error
+handling and application middleware apply to its own requests, and its
+lifespan never runs (see L<PAGI::Compose/LIFESPAN OWNERSHIP AND STATE>).
+
+=item * Its application middleware runs before its own routing, so it sees the
+enclosing application's routing frame. Middleware that resolves route names,
+such as a L<PAGI::Middleware::Requires> redirect, belongs on a route, mount or
+Router inside it.
+
+=item * Construction-time checks stop at the mount: a path parameter named both
+in the mount's path and in the application's routes fails when a request
+arrives, not when the application is built.
+
+=back
+
+Pass the Router itself to keep it transparent: C<< $router->to_app >>, or a
+Router wrapped in middleware by hand, is an application. Give the mount
+C<middleware> instead. Build the parts of one application as Routers and put
+one Compose at the root.
+
+C<mount> is for an application that owns a subtree. One that answers a single
+path is a route: C<< route('/health' => $app) >> gives it exactly that path,
+unchanged (its C<path> is still C</health>), and C<route_table> describes it as
+one route.
+
 =head2 meta
 
     mount('/notes', meta => { openapi => { tags => ['notes'] } }, routes => [

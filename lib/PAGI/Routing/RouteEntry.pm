@@ -68,7 +68,10 @@ a test of an application's surface) reads, from the public API.
 
 A Mount whose application is a Router contributes that Router's routes, not
 an entry of its own. A Mount whose application is anything else (a coderef,
-an application object, a Compose) is one entry of kind C<mount>. A child
+an application object, a Compose) is one entry of kind C<mount>: a separate
+application (see L<PAGI::Routing/mount>), which describes itself -- a Compose
+with its own C<route_table>, a L<PAGI::App::Compose> with
+C<< composition->route_table >>, their templates relative to the mount. A child
 Router placed under two mounts gives two entries per route, with the same
 C<node>.
 
@@ -98,8 +101,8 @@ C<route> of the C<pagi.routing> match record at request time.
 
 =head2 kind
 
-C<route> (HTTP), C<websocket>, C<sse>, or C<mount> for a mounted application
-the walk cannot enter.
+C<route> (HTTP), C<websocket>, C<sse>, or C<mount> for a mounted application,
+which is separate from this one.
 
 =head2 methods
 
