@@ -113,6 +113,8 @@ a larger framework:
 
 =item * L<PAGI::Middleware::Authentication> for request-based application authentication backends
 
+=item * L<PAGI::Middleware::Requires> to declare the scopes a route, mount or application requires
+
 =item * L<PAGI::State>, L<PAGI::Stash>, L<PAGI::Session>, L<PAGI::CSRF>, and L<PAGI::Transport>
 
 =item * L<PAGI::FutureOwner> for work an application starts and does not wait for

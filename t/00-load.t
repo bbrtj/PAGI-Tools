@@ -31,6 +31,7 @@ my @load_modules = qw(
     PAGI::Routing::HeadBoundary
     PAGI::Middleware
     PAGI::Middleware::Authentication
+    PAGI::Middleware::Requires
     PAGI::Middleware::Builder
     PAGI::Middleware::RequestClass
     PAGI::App::File
